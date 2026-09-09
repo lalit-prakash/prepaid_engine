@@ -22,7 +22,7 @@ reference calculation workbooks). Frontend is intentionally paused — see
   - `PrepaidEngine.Application` — use cases / integration ports (currently: `IRmsClient`)
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
-  - `PrepaidEngine.Tests` — xUnit test project (87 tests — see [Testing](#testing))
+  - `PrepaidEngine.Tests` — xUnit test project (104 tests — see [Testing](#testing))
 - `frontend/` — Angular + TypeScript (default CLI scaffold only; paused)
 - `docs/` — sourcing, security, and tariff-validation documentation (see [Documentation](#documentation))
 
@@ -34,6 +34,7 @@ reference calculation workbooks). Frontend is intentionally paused — see
 | `SmartMeter` | Meter number, phase (single/three), cumulative reading |
 | `Tariff` / `TariffSlab` | Versioned, category-scoped slab tariff: energy slabs, fixed charge, prepaid rebate %, emergency-credit limit, per-phase vend limits |
 | `ElectricityDuty` | Statutory per-unit duty, category-based (Domestic/BPL flat, Industrial tiered, Others flat) — modeled separately from `Tariff` since it isn't tariff-plan-specific |
+| `TransformerMaintenanceCharge` / `CtPtMaintenanceCharge` | Opt-in fixed monthly maintenance charges (TMC, CPMC) for consumer-owned transformers/CT-PT sets, by voltage and (for CPMC) wiring |
 | `PrepaidWallet` / `WalletTransaction` | Balance + append-only ledger; tracks emergency-credit usage separately from the normal balance |
 | `ConsumptionReading` | A metered consumption reading for a billing period |
 | `PrepaidBill` | A generated bill with payment/status tracking (`Generated`/`Paid`/`PartiallyPaid`/`Overdue`/`Cancelled`) |
@@ -92,8 +93,28 @@ energy charge with a 2% FPPAS notification correctly produces `225.00 − 4.50 (
 *when* a newly notified rate gets picked up for the next cycle — today the caller constructs
 the `FppasCharge` and passes its daily share in explicitly (see `DbSeeder`).
 
+### TMC and CPMC (transformer / CT-PT maintenance charges)
+
+Standalone calculators, same pattern as `ElectricityDuty` — sourced from the tariff book (no
+example values exist in either reference workbook, so nothing to cross-check numerically):
+
+- **`TransformerMaintenanceCharge.CalculateForExclusiveUse(voltage, optedIn, installedCapacityKva)`**
+  / **`.CalculateForSharedUse(voltage, optedIn, contractedDemandOrLoadKva)`** — ₹20/kVA/month at
+  11 kV or 33 kV, ₹25/kVA/month at 132 kV; zero unless the consumer opted in. Basis differs by
+  whether MePDCL also uses the transformer's spare capacity for other consumers (§5.1–5.2) —
+  choosing the right one is the caller's job, since that's a fact about the consumer's
+  equipment this calculator has no way to know.
+- **`CtPtMaintenanceCharge.Calculate(voltage, wiring, optedIn)`** — a flat monthly rate by
+  voltage and CT-PT wiring (₹800/1,000/1,500/1,900), zero unless opted in; throws for 132 kV
+  (no rate defined in the tariff book) unless not opted in, in which case it's zero regardless.
+
+**Not yet wired into `PrepaidBill`** (unlike FPPAS) — both depend on per-consumer equipment
+facts (transformer/CT-PT ownership, maintenance opt-in, exclusive vs. shared use) that aren't
+modeled on `Consumer` yet, and neither workbook has a worked example to verify a wired-in bill
+against.
+
 **Explicitly not yet implemented** (see `docs/tariff-validation-report.md` for detail on each):
-TMC, CPMC, arrear recovery, ToD/peak tariffs for Industrial HT/EHT, non-communicating meter
+arrear recovery, ToD/peak tariffs for Industrial HT/EHT, non-communicating meter
 estimated billing, delayed payment charges, disconnection/reconnection fee schedule.
 
 ## Recharge flow
@@ -191,7 +212,7 @@ cd backend
 dotnet test PrepaidEngine.sln
 ```
 
-**87 tests, all passing.** Breakdown:
+**104 tests, all passing.** Breakdown:
 
 | Test class | Count | What it covers |
 |---|---|---|
@@ -202,6 +223,8 @@ dotnet test PrepaidEngine.sln
 | `ElectricityDutyTests` | 15 | Category-based duty: Domestic/BPL flat rate, "Others" flat rate, Industrial tiered slabs (including cumulative-position vs. raw-delta correctness), negative-input validation |
 | `FppasChargeTests` | 10 | **Regression against both worked FPPAS examples in the reference workbook** — negative and positive rate cases, unrounded daily proration matching the workbook's exact precision, the paisa-accurate rounded variant, applicable-billing-month scheduling, input validation |
 | `PrepaidBillTests` | 6 | Charge-breakdown composition (energy net + fixed + duty + FPPAS), positive/negative FPPAS shares, rebate/negative-FPPAS validation guards, payment application with FPPAS included |
+| `TransformerMaintenanceChargeTests` | 4 | TMC by voltage (11/33/132 kV), opt-in/opt-out, exclusive- vs. shared-use billing basis, negative-input validation |
+| `CtPtMaintenanceChargeTests` | 7 | CPMC by voltage/wiring combination, opt-in/opt-out, undefined-132kV-rate handling |
 | `PrepaidWalletTests` | 12 | Wallet credit/debit, emergency-credit tracking, consumer connect/disconnect/reconnect rules |
 | `MockRmsClientTests` | 9 | Recharge success/failed/pending/unavailable outcomes, idempotent replay, **20-way concurrent-call race test**, input validation, transaction-status lookup |
 | `PrepaidEngineDbContextTests` | 5 | Real persistence round-trips against SQLite (keys, FKs, owned collections) — including a regression test for a real EF change-tracking bug found while building the recharge endpoint (crediting an already-loaded wallet), and a `PrepaidBill`↔`FppasCharge` round-trip |

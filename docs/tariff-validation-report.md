@@ -28,6 +28,8 @@ named legacy/reference test case, never silently substituted.
 | Fixed charge on zero-consumption days | Still accrues (e.g. 2026-08-25 through 08-31: consumption 0, fixed charge still 2.958904…) | "minimum charges shall not be billed during disconnection" (§3, about *minimum* charges specifically, not fixed charge) — implies fixed charge otherwise continues | Fixed charge accrues regardless of daily consumption | No conflict; confirms the domain method should be called independently of whether that day had any consumption | `TariffGoldenDataTests.NetBill_MatchesMepdclReferenceWorkbook` (222→222 case) |
 | **FPPAS** — amount | `EnergyCharge × Rate` for the prior month (e.g. ₹6,000 × -14% = -₹840; ₹3,250 × +6.65% = ₹216.125) | "billed to the consumers on a monthly basis" (tariff §A.4) — mechanism not specified | as Excel | Tariff book confirms FPPAS is monthly and separate from energy charge but doesn't specify the notification-lag/proration mechanism; that mechanism is sourced entirely from the workbook | `FppasChargeTests.TotalAmount_*` |
 | **FPPAS** — timing/proration | Deferred one month, then spread evenly across every day of the *next* billing month (₹840 ÷ 30 June days = ₹28.00/day exactly; ₹216.125 ÷ 31 Oct days = ₹6.971774193548387…/day, unrounded) | not specified | as Excel | Same as above — workbook-only mechanism, confirmed against both a negative and a positive worked example | `FppasChargeTests.AllocateAcrossDays_*` |
+| **TMC** (Transformer Maintenance Charge) | not shown in either workbook (column exists in `Individual Charge Calculation` header, but every example row is 0) | ₹20/kVA/month at 11 kV or 33 kV, ₹25/kVA/month at 132 kV (§5.3); opt-in only (§5.4); basis is installed capacity for exclusive use or contracted demand/connected load for shared use (§5.1–5.2) | as tariff book | Tariff book is the only source — no Excel example to cross-check. Choosing the correct basis (installed capacity vs. contracted demand/load) for a given consumer is left to the caller, since that depends on transformer ownership/usage facts this calculator has no way to know. | `TransformerMaintenanceChargeTests` |
+| **CPMC** (CT-PT Set Maintenance Charge) | not shown in either workbook (same as TMC) | ₹800 (11kV 3-wire) / ₹1,000 (11kV 4-wire) / ₹1,500 (33kV 3-wire) / ₹1,900 (33kV 4-wire) per month (§4.1); opt-in only (§4.2); no 132 kV rate defined | as tariff book | Tariff book is the only source. MePDCL's reference workbook notes CPMC "shall be levied monthly only for HT consumers whose metering is done on the LT side" — that eligibility check is left to the caller, not this calculator, which only prices an opted-in, eligible request. | `CtPtMaintenanceChargeTests` |
 
 ## Explicitly NOT implemented / NOT verified this pass
 
@@ -48,10 +50,12 @@ These are real, documented gaps — not silently dropped:
   FPPAS rate gets picked up and applied to the next billing cycle — today a caller must
   construct the `FppasCharge` and pass its daily share into `PrepaidBill` explicitly (see
   `DbSeeder` for the pattern). That scheduling/orchestration is the remaining follow-up.
-- **TMC / CPMC.** Rates are known from the tariff book (§4–5) and referenced in the
-  `Individual Charge Calculation` sheet's column headers, but no example values are populated
-  in either workbook, so no regression test exists yet. Domain entities for these do not exist
-  yet either.
+- ~~**TMC / CPMC.**~~ Implemented — see `TransformerMaintenanceCharge` and
+  `CtPtMaintenanceCharge` and the table rows above. Neither is wired into `PrepaidBill` yet
+  (unlike FPPAS) — no example values exist in either workbook to verify a wired-in bill
+  against, and both depend on per-consumer equipment facts (transformer/CT-PT ownership,
+  maintenance opt-in, exclusive vs. shared transformer use) that aren't modeled on `Consumer`
+  yet.
 - **Arrear recovery.** Column exists in the `Individual Charge Calculation` sheet but every
   example row has it at 0 — no worked example to regression-test against.
 - **TOU (time-of-use) tariffs** for Industrial HT/EHT — present in the tariff book, not present
