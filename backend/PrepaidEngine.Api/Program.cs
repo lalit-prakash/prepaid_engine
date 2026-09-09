@@ -88,7 +88,21 @@ app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, Pre
 
     var bills = await db.Bills
         .Where(b => b.ConsumerId == consumer.Id)
-        .Select(b => new { b.Id, b.Amount, b.AmountPaid, b.Status, b.GeneratedAt })
+        .Select(b => new
+        {
+            b.Id,
+            b.EnergyChargeGross,
+            b.PrepaidRebateAmount,
+            EnergyChargeNet = b.EnergyChargeGross - b.PrepaidRebateAmount,
+            b.FixedCharge,
+            b.ElectricityDutyAmount,
+            b.FppasAmount,
+            b.FppasChargeId,
+            b.Amount,
+            b.AmountPaid,
+            b.Status,
+            b.GeneratedAt
+        })
         .ToListAsync();
 
     return Results.Ok(new

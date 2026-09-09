@@ -42,10 +42,12 @@ These are real, documented gaps — not silently dropped:
   Aug–Sep date rows shown alongside it, so the exact day-count/boundary rules need
   confirmation from MePDCL before implementing — the algorithm shape is real, the precise
   edge-case arithmetic isn't fully unambiguous from this workbook alone.
-- ~~**FPPAS.**~~ Implemented — see `FppasCharge` and the table row above. Not yet wired into
-  `PrepaidBill`/the API (no persistence, no automatic scheduling of when a notified rate gets
-  applied) — the calculation engine itself is done and tested; orchestration is the remaining
-  follow-up.
+- ~~**FPPAS.**~~ Implemented and wired into `PrepaidBill` (see `FppasCharge`, `PrepaidBill.FppasAmount`/`FppasChargeId`,
+  and the API's per-bill breakdown at `GET /api/v1/consumers/{accountNumber}`) — verified live
+  against real PostgreSQL. **Still missing**: automatic scheduling of *when* a newly notified
+  FPPAS rate gets picked up and applied to the next billing cycle — today a caller must
+  construct the `FppasCharge` and pass its daily share into `PrepaidBill` explicitly (see
+  `DbSeeder` for the pattern). That scheduling/orchestration is the remaining follow-up.
 - **TMC / CPMC.** Rates are known from the tariff book (§4–5) and referenced in the
   `Individual Charge Calculation` sheet's column headers, but no example values are populated
   in either workbook, so no regression test exists yet. Domain entities for these do not exist

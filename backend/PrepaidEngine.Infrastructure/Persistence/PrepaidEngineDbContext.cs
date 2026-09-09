@@ -27,6 +27,7 @@ public class PrepaidEngineDbContext : DbContext
     public DbSet<WalletTransaction> WalletTransactions => Set<WalletTransaction>();
     public DbSet<PrepaidBill> Bills => Set<PrepaidBill>();
     public DbSet<RechargeTransaction> RechargeTransactions => Set<RechargeTransaction>();
+    public DbSet<FppasCharge> FppasCharges => Set<FppasCharge>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

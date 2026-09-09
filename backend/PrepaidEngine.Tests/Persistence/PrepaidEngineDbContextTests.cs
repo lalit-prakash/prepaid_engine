@@ -143,4 +143,41 @@ public class PrepaidEngineDbContextTests : IDisposable
         Assert.Equal(150m, final.Wallet.Balance);
         Assert.Equal(2, final.Wallet.Transactions.Count);
     }
+
+    [Fact]
+    public void CanPersistAndReloadPrepaidBillWithFppasCharge()
+    {
+        var meter = new SmartMeter(Guid.NewGuid(), "MTR-400", MeterPhase.SinglePhase);
+        var consumer = new Consumer(Guid.NewGuid(), "ACC-400", "FPPAS Test Consumer", "4 Test Street", meter, connectedLoadKw: 2m);
+        var tariff = new Tariff(Guid.NewGuid(), "FPPAS Test Tariff", ConsumerCategory.Domestic,
+            new[] { new TariffSlab(0, null, 5.00m) });
+        var reading = new ConsumptionReading(Guid.NewGuid(), consumer.Id, 45m, DateTime.UtcNow.AddDays(-1), DateTime.UtcNow);
+        var fppas = new FppasCharge(Guid.NewGuid(), sourceEnergyCharge: 3250m, rateFraction: 0.0665m, notifiedAt: DateTime.UtcNow);
+        var dailyShare = fppas.AllocateAcrossDaysRoundedToCents(31)[0];
+
+        var bill = new PrepaidBill(
+            Guid.NewGuid(), consumer.Id, reading.Id, tariff.Id,
+            energyChargeGross: 225m, prepaidRebateAmount: 4.50m, fixedCharge: 180m, electricityDutyAmount: 2.25m,
+            generatedAt: DateTime.UtcNow, fppasAmount: dailyShare, fppasChargeId: fppas.Id);
+
+        _context.Meters.Add(meter);
+        _context.Consumers.Add(consumer);
+        _context.Tariffs.Add(tariff);
+        _context.ConsumptionReadings.Add(reading);
+        _context.FppasCharges.Add(fppas);
+        _context.Bills.Add(bill);
+        _context.SaveChanges();
+
+        using var freshContext = new PrepaidEngineDbContext(
+            new DbContextOptionsBuilder<PrepaidEngineDbContext>().UseSqlite(_connection).Options);
+
+        var reloadedBill = freshContext.Bills.Single(b => b.Id == bill.Id);
+        var reloadedFppas = freshContext.FppasCharges.Single(f => f.Id == fppas.Id);
+
+        Assert.Equal(fppas.Id, reloadedBill.FppasChargeId);
+        Assert.Equal(dailyShare, reloadedBill.FppasAmount);
+        Assert.Equal(bill.Amount, reloadedBill.Amount);
+        Assert.Equal(3250m, reloadedFppas.SourceEnergyCharge);
+        Assert.Equal(216.125m, reloadedFppas.TotalAmount);
+    }
 }

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PrepaidEngine.Domain;
 using PrepaidEngine.Domain.Entities;
 using PrepaidEngine.Domain.Enums;
 
@@ -60,8 +61,27 @@ public static class DbSeeder
             periodStart: DateTime.UtcNow.AddDays(-10), periodEnd: DateTime.UtcNow);
         meter.RecordReading(cumulativeKwh: 45m, readAt: reading.PeriodEnd);
 
-        var billAmount = tariff.CalculateNetPrepaidCharge(reading.ConsumptionKwh, consumer.ConnectedLoadKw);
-        var bill = new PrepaidBill(Guid.NewGuid(), consumer.Id, reading.Id, tariff.Id, billAmount, DateTime.UtcNow);
+        var energyChargeGross = tariff.CalculateEnergyCharge(reading.ConsumptionKwh);
+        var rebate = energyChargeGross * (tariff.PrepaidEnergyRebatePercent / 100m);
+        var fixedCharge = tariff.CalculateFixedCharge(consumer.ConnectedLoadKw);
+        var duty = ElectricityDuty.Calculate(tariff.Category, reading.ConsumptionKwh);
+
+        // A small, illustrative FPPAS: a +2% rate notified against a prior month's energy
+        // charge (approximated here by this same month's gross EC for demo purposes),
+        // deferred and prorated across a 30-day billing month — this bill takes one day's
+        // share. See FppasCharge for the real mechanism, sourced from MePDCL's reference workbook.
+        var fppasCharge = new FppasCharge(Guid.NewGuid(), sourceEnergyCharge: energyChargeGross, rateFraction: 0.02m, notifiedAt: DateTime.UtcNow.AddDays(-11));
+        var fppasDailyShare = fppasCharge.AllocateAcrossDaysRoundedToCents(daysInBillingMonth: 30)[0];
+
+        var bill = new PrepaidBill(
+            Guid.NewGuid(), consumer.Id, reading.Id, tariff.Id,
+            energyChargeGross: energyChargeGross,
+            prepaidRebateAmount: rebate,
+            fixedCharge: fixedCharge,
+            electricityDutyAmount: duty,
+            generatedAt: DateTime.UtcNow,
+            fppasAmount: fppasDailyShare,
+            fppasChargeId: fppasCharge.Id);
         var billDebit = consumer.Wallet.Debit(bill.Amount, WalletTransactionType.BillDebit, bill.Id.ToString());
         bill.ApplyPayment(-billDebit.Amount); // billDebit.Amount is negative; ApplyPayment expects a positive amount
 
@@ -70,6 +90,7 @@ public static class DbSeeder
         context.Consumers.Add(consumer);
         context.RechargeTransactions.Add(initialRecharge);
         context.ConsumptionReadings.Add(reading);
+        context.FppasCharges.Add(fppasCharge);
         context.Bills.Add(bill);
 
         await context.SaveChangesAsync(cancellationToken);

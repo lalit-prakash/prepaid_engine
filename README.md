@@ -22,7 +22,7 @@ reference calculation workbooks). Frontend is intentionally paused — see
   - `PrepaidEngine.Application` — use cases / integration ports (currently: `IRmsClient`)
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
-  - `PrepaidEngine.Tests` — xUnit test project (80 tests — see [Testing](#testing))
+  - `PrepaidEngine.Tests` — xUnit test project (87 tests — see [Testing](#testing))
 - `frontend/` — Angular + TypeScript (default CLI scaffold only; paused)
 - `docs/` — sourcing, security, and tariff-validation documentation (see [Documentation](#documentation))
 
@@ -84,8 +84,13 @@ MePDCL's reference workbook (the tariff book only states FPPAS is monthly, not t
   reconciles exactly to the total (needed since the workbook's own unrounded figures don't sum
   to a clean rupee-and-paisa amount).
 
-Not yet wired into `PrepaidBill`/the API — this is the calculation engine only; scheduling
-(when a notified rate gets picked up and applied) and persistence are a follow-up.
+**Wired into `PrepaidBill`** — a bill carries `FppasAmount` (this bill's daily share) and
+`FppasChargeId` (a traceable link back to the notification it came from), both exposed via
+`GET /api/v1/consumers/{accountNumber}`. Verified live against real PostgreSQL: a ₹225 gross
+energy charge with a 2% FPPAS notification correctly produces `225.00 − 4.50 (rebate) + 180.00
+(fixed) + 2.25 (duty) + 0.15 (FPPAS share) = ₹402.90`. Still missing: automatic scheduling of
+*when* a newly notified rate gets picked up for the next cycle — today the caller constructs
+the `FppasCharge` and passes its daily share in explicitly (see `DbSeeder`).
 
 **Explicitly not yet implemented** (see `docs/tariff-validation-report.md` for detail on each):
 TMC, CPMC, arrear recovery, ToD/peak tariffs for Industrial HT/EHT, non-communicating meter
@@ -186,7 +191,7 @@ cd backend
 dotnet test PrepaidEngine.sln
 ```
 
-**80 tests, all passing.** Breakdown:
+**87 tests, all passing.** Breakdown:
 
 | Test class | Count | What it covers |
 |---|---|---|
@@ -196,9 +201,10 @@ dotnet test PrepaidEngine.sln
 | `DhtTariffDiscrepancyTests` | 2 | The documented DHT ₹5.85 (production) vs. ₹5.87 (legacy Excel reference) discrepancy — both kept as explicit, separately named tests, neither silently overriding the other |
 | `ElectricityDutyTests` | 15 | Category-based duty: Domestic/BPL flat rate, "Others" flat rate, Industrial tiered slabs (including cumulative-position vs. raw-delta correctness), negative-input validation |
 | `FppasChargeTests` | 10 | **Regression against both worked FPPAS examples in the reference workbook** — negative and positive rate cases, unrounded daily proration matching the workbook's exact precision, the paisa-accurate rounded variant, applicable-billing-month scheduling, input validation |
+| `PrepaidBillTests` | 6 | Charge-breakdown composition (energy net + fixed + duty + FPPAS), positive/negative FPPAS shares, rebate/negative-FPPAS validation guards, payment application with FPPAS included |
 | `PrepaidWalletTests` | 12 | Wallet credit/debit, emergency-credit tracking, consumer connect/disconnect/reconnect rules |
 | `MockRmsClientTests` | 9 | Recharge success/failed/pending/unavailable outcomes, idempotent replay, **20-way concurrent-call race test**, input validation, transaction-status lookup |
-| `PrepaidEngineDbContextTests` | 4 | Real persistence round-trips against SQLite (keys, FKs, owned collections) — including a regression test for a real EF change-tracking bug found while building the recharge endpoint (crediting an already-loaded wallet) |
+| `PrepaidEngineDbContextTests` | 5 | Real persistence round-trips against SQLite (keys, FKs, owned collections) — including a regression test for a real EF change-tracking bug found while building the recharge endpoint (crediting an already-loaded wallet), and a `PrepaidBill`↔`FppasCharge` round-trip |
 
 Every number in `TariffGoldenDataTests`, `BplTariffTests`, and `DhtTariffDiscrepancyTests` is
 taken verbatim from MePDCL's tariff book or reference workbooks, not invented — a failure there
