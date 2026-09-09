@@ -21,6 +21,34 @@ dotnet build PrepaidEngine.sln
 dotnet run --project PrepaidEngine.Api
 ```
 
+Data access uses EF Core with SQL Server as the configured provider
+(`ConnectionStrings:PrepaidEngine` in `PrepaidEngine.Api/appsettings.json`, defaulting to
+LocalDB). Note: **RMS remains the authoritative system of record for the consumer's real
+financial wallet** — the `PrepaidWallets`/`WalletTransactions` tables here are the Prepaid
+Engine's own working ledger used for billing/recharge orchestration, not a competing wallet.
+
+Apply migrations to a local SQL Server / LocalDB instance:
+```bash
+dotnet tool restore
+dotnet tool run dotnet-ef database update \
+  --project backend/PrepaidEngine.Infrastructure/PrepaidEngine.Infrastructure.csproj \
+  --startup-project backend/PrepaidEngine.Api/PrepaidEngine.Api.csproj
+```
+
+Add a new migration after changing the model:
+```bash
+dotnet tool run dotnet-ef migrations add <Name> \
+  --project backend/PrepaidEngine.Infrastructure/PrepaidEngine.Infrastructure.csproj \
+  --startup-project backend/PrepaidEngine.Api/PrepaidEngine.Api.csproj \
+  --output-dir Persistence/Migrations
+```
+
+### Backend tests
+```bash
+cd backend
+dotnet test PrepaidEngine.sln
+```
+
 ### Frontend
 ```bash
 cd frontend

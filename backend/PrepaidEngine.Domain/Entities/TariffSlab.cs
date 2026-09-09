@@ -6,6 +6,7 @@ namespace PrepaidEngine.Domain.Entities;
 /// </summary>
 public class TariffSlab
 {
+    public Guid Id { get; private set; }
     public decimal FromKwh { get; private set; }
     public decimal? UpToKwh { get; private set; }
     public decimal RatePerKwh { get; private set; }
@@ -19,6 +20,7 @@ public class TariffSlab
         if (ratePerKwh < 0)
             throw new ArgumentOutOfRangeException(nameof(ratePerKwh));
 
+        Id = Guid.NewGuid();
         FromKwh = fromKwh;
         UpToKwh = upToKwh;
         RatePerKwh = ratePerKwh;
