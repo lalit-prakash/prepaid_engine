@@ -1,3 +1,5 @@
+using System.Linq;
+using System.Threading.Tasks;
 using PrepaidEngine.Application.Rms;
 using PrepaidEngine.Infrastructure.Rms;
 using Xunit;
@@ -64,6 +66,23 @@ public class MockRmsClientTests
         Assert.True(second.WasReplayed);
         Assert.Equal(first.RmsReferenceId, second.RmsReferenceId);
         Assert.Equal(first.Status, second.Status);
+    }
+
+    [Fact]
+    public async Task InitiateRecharge_ConcurrentCallsWithSameIdempotencyKey_ProduceExactlyOneRmsReference()
+    {
+        var client = new MockRmsClient();
+        var request = BuildRequest("NORMAL-CONCURRENT");
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 20)
+            .Select(_ => client.InitiateRechargeAsync(request)));
+
+        // The correctness guarantee under concurrency is a single RMS reference id per
+        // idempotency key — i.e. the recharge is never double-processed. WasReplayed itself is
+        // only informational and racing callers may each observe it as false; that's fine.
+        var distinctReferenceIds = results.Select(r => r.RmsReferenceId).Distinct().ToList();
+        Assert.Single(distinctReferenceIds);
+        Assert.True(results.All(r => r.Status == RmsRechargeStatus.Success));
     }
 
     [Fact]

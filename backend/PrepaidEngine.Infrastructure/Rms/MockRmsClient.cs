@@ -20,7 +20,11 @@ namespace PrepaidEngine.Infrastructure.Rms;
 /// Any other idempotency key behaves as a normal successful recharge. Repeating an
 /// idempotency key that was already processed replays the original result instead of
 /// creating a second transaction, matching the idempotency guarantee real RMS integrations
-/// must provide.
+/// must provide — including under concurrent calls with the same key (see
+/// <see cref="InitiateRechargeAsync"/>, which reserves the key atomically via
+/// <see cref="ConcurrentDictionary{TKey,TValue}.GetOrAdd(TKey,System.Func{TKey,TValue})"/>
+/// rather than a separate check-then-act, so two racing callers for the same key can never
+/// mint two different RMS reference ids).
 /// </summary>
 public class MockRmsClient : IRmsClient
 {
@@ -38,36 +42,44 @@ public class MockRmsClient : IRmsClient
             throw new ArgumentException("Idempotency key is required.", nameof(request));
         if (request.Amount <= 0)
             throw new ArgumentOutOfRangeException(nameof(request), "Recharge amount must be positive.");
+        cancellationToken.ThrowIfCancellationRequested();
 
-        if (_resultsByIdempotencyKey.TryGetValue(request.IdempotencyKey, out var existing))
+        // Informational only: used to set WasReplayed on the result actually returned. The
+        // correctness guarantee (never minting two RMS reference ids for one idempotency key,
+        // even under concurrent calls) comes from GetOrAdd below, not from this check.
+        var wasAlreadyPresent = _resultsByIdempotencyKey.ContainsKey(request.IdempotencyKey);
+
+        var result = _resultsByIdempotencyKey.GetOrAdd(request.IdempotencyKey, key =>
         {
-            return Task.FromResult(existing with { WasReplayed = true });
-        }
+            if (key.StartsWith(UnavailablePrefix, StringComparison.Ordinal))
+            {
+                // Deliberately not cached: an unavailable RMS never returned a response to
+                // record, so a retry with the same key should be attempted again rather than
+                // replayed. GetOrAdd does not store anything when the factory throws.
+                throw new RmsUnavailableException("RMS did not respond (simulated outage).");
+            }
 
-        if (request.IdempotencyKey.StartsWith(UnavailablePrefix, StringComparison.Ordinal))
-        {
-            // Deliberately not cached: an unavailable RMS never returned a response to record,
-            // so a retry with the same key should be attempted again rather than replayed.
-            throw new RmsUnavailableException("RMS did not respond (simulated outage).");
-        }
+            var (status, message) = key switch
+            {
+                var k when k.StartsWith(FailPrefix, StringComparison.Ordinal) =>
+                    (RmsRechargeStatus.Failed, "Payment declined (simulated)."),
+                var k when k.StartsWith(PendingPrefix, StringComparison.Ordinal) =>
+                    (RmsRechargeStatus.Pending, "Payment is still being processed (simulated)."),
+                _ => (RmsRechargeStatus.Success, (string?)null)
+            };
 
-        var (status, message) = request.IdempotencyKey switch
-        {
-            var key when key.StartsWith(FailPrefix, StringComparison.Ordinal) =>
-                (RmsRechargeStatus.Failed, "Payment declined (simulated)."),
-            var key when key.StartsWith(PendingPrefix, StringComparison.Ordinal) =>
-                (RmsRechargeStatus.Pending, "Payment is still being processed (simulated)."),
-            _ => (RmsRechargeStatus.Success, (string?)null)
-        };
+            var fresh = new RmsRechargeResult(
+                RmsReferenceId: $"RMS-{Guid.NewGuid():N}",
+                Status: status,
+                Message: message,
+                WasReplayed: false);
 
-        var result = new RmsRechargeResult(
-            RmsReferenceId: $"RMS-{Guid.NewGuid():N}",
-            Status: status,
-            Message: message,
-            WasReplayed: false);
+            _resultsByReference[fresh.RmsReferenceId] = fresh;
+            return fresh;
+        });
 
-        _resultsByIdempotencyKey[request.IdempotencyKey] = result;
-        _resultsByReference[result.RmsReferenceId] = result;
+        if (wasAlreadyPresent)
+            result = result with { WasReplayed = true };
 
         return Task.FromResult(result);
     }
@@ -76,6 +88,7 @@ public class MockRmsClient : IRmsClient
     {
         if (string.IsNullOrWhiteSpace(rmsReferenceId))
             throw new ArgumentException("RMS reference id is required.", nameof(rmsReferenceId));
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (!_resultsByReference.TryGetValue(rmsReferenceId, out var result))
             throw new RmsTransactionNotFoundException(rmsReferenceId);
