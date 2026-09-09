@@ -22,7 +22,7 @@ reference calculation workbooks). Frontend is intentionally paused — see
   - `PrepaidEngine.Application` — use cases / integration ports (currently: `IRmsClient`)
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
-  - `PrepaidEngine.Tests` — xUnit test project (70 tests — see [Testing](#testing))
+  - `PrepaidEngine.Tests` — xUnit test project (80 tests — see [Testing](#testing))
 - `frontend/` — Angular + TypeScript (default CLI scaffold only; paused)
 - `docs/` — sourcing, security, and tariff-validation documentation (see [Documentation](#documentation))
 
@@ -38,6 +38,7 @@ reference calculation workbooks). Frontend is intentionally paused — see
 | `ConsumptionReading` | A metered consumption reading for a billing period |
 | `PrepaidBill` | A generated bill with payment/status tracking (`Generated`/`Paid`/`PartiallyPaid`/`Overdue`/`Cancelled`) |
 | `RechargeTransaction` | A recharge processed through RMS, with its own status lifecycle (`Initiated`/`Success`/`Failed`/`Reversed`) |
+| `FppasCharge` | A notified FPPAS (Fuel and Power Purchase Adjustment Surcharge) rate change, deferred one billing month and prorated across every day of the following month |
 
 ### Tariff engine — verified calculation methods
 
@@ -65,9 +66,30 @@ sourcing detail, including one documented tariff-vs-Excel discrepancy, is in
   "first 30 kWh special rate, excess at normal domestic slabs" rule turns out to be exactly a
   standard cumulative slab table once the DLT boundaries stay absolute.
 
+### FPPAS engine
+
+`FppasCharge` implements the notification-lag/proration mechanism sourced entirely from
+MePDCL's reference workbook (the tariff book only states FPPAS is monthly, not the mechanism):
+
+- **`TotalAmount`** = the prior month's gross energy charge × the notified rate (a signed
+  fraction, e.g. `-0.14` for a 14% decrease). Verified against a negative and a positive
+  worked example (₹6,000 × -14% = -₹840; ₹3,250 × +6.65% = ₹216.125).
+- **`DetermineApplicableBillingMonth(sourceBillDate)`** — a notified rate is never applied to
+  the bill it was computed from; it's deferred to the *next* billing month.
+- **`AllocateAcrossDays(daysInMonth)`** — spreads the total evenly, unrounded, across every day
+  of that month (matches the workbook's shown precision exactly, including a non-terminating
+  repeating decimal case: ₹216.125 ÷ 31 days = ₹6.971774193548387…/day).
+- **`AllocateAcrossDaysRoundedToCents(daysInMonth)`** — the paisa-accurate variant for actually
+  posting to a ledger, where the last day absorbs the rounding residual so the sum always
+  reconciles exactly to the total (needed since the workbook's own unrounded figures don't sum
+  to a clean rupee-and-paisa amount).
+
+Not yet wired into `PrepaidBill`/the API — this is the calculation engine only; scheduling
+(when a notified rate gets picked up and applied) and persistence are a follow-up.
+
 **Explicitly not yet implemented** (see `docs/tariff-validation-report.md` for detail on each):
-FPPAS, TMC, CPMC, arrear recovery, ToD/peak tariffs for Industrial HT/EHT, non-communicating
-meter estimated billing, delayed payment charges, disconnection/reconnection fee schedule.
+TMC, CPMC, arrear recovery, ToD/peak tariffs for Industrial HT/EHT, non-communicating meter
+estimated billing, delayed payment charges, disconnection/reconnection fee schedule.
 
 ## Recharge flow
 
@@ -164,7 +186,7 @@ cd backend
 dotnet test PrepaidEngine.sln
 ```
 
-**70 tests, all passing.** Breakdown:
+**80 tests, all passing.** Breakdown:
 
 | Test class | Count | What it covers |
 |---|---|---|
@@ -173,6 +195,7 @@ dotnet test PrepaidEngine.sln
 | `BplTariffTests` | 6 | BPL/Kutir Jyoti 4-slab tariff (special first-30-kWh rate + normal domestic slabs) |
 | `DhtTariffDiscrepancyTests` | 2 | The documented DHT ₹5.85 (production) vs. ₹5.87 (legacy Excel reference) discrepancy — both kept as explicit, separately named tests, neither silently overriding the other |
 | `ElectricityDutyTests` | 15 | Category-based duty: Domestic/BPL flat rate, "Others" flat rate, Industrial tiered slabs (including cumulative-position vs. raw-delta correctness), negative-input validation |
+| `FppasChargeTests` | 10 | **Regression against both worked FPPAS examples in the reference workbook** — negative and positive rate cases, unrounded daily proration matching the workbook's exact precision, the paisa-accurate rounded variant, applicable-billing-month scheduling, input validation |
 | `PrepaidWalletTests` | 12 | Wallet credit/debit, emergency-credit tracking, consumer connect/disconnect/reconnect rules |
 | `MockRmsClientTests` | 9 | Recharge success/failed/pending/unavailable outcomes, idempotent replay, **20-way concurrent-call race test**, input validation, transaction-status lookup |
 | `PrepaidEngineDbContextTests` | 4 | Real persistence round-trips against SQLite (keys, FKs, owned collections) — including a regression test for a real EF change-tracking bug found while building the recharge endpoint (crediting an already-loaded wallet) |

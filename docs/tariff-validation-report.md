@@ -26,6 +26,8 @@ named legacy/reference test case, never silently substituted.
 | BPL/Kutir Jyoti slabs | 4-tier cumulative table: 0–30@4.57, 30–100@5.00, 100–200@5.04, 200+@5.10 (`BPL_Prepaid Calculation` sheet) | "up to 30 kWh: ₹4.57/kWh; excess billed at appropriate normal domestic slab" (§A.1 note) | 4-tier cumulative slab table, same absolute boundaries as DLT | No conflict once read correctly: the tariff book's plain-English rule and the Excel's literal 4-slab table are mathematically the same thing, as long as the 100/200 boundaries stay absolute (not restarted after the 30 kWh tier). No new domain code was needed — the existing cumulative `Tariff`/`TariffSlab` model already handles it. | `BplTariffTests` |
 | Cumulative/daily billing method | Each day's EC = `EnergyCharge(currentCumulative) − EnergyCharge(previousCumulative)` (`DLT` sheet, day-by-day rows) | Not stated explicitly (tariff book gives monthly slabs; doesn't say how to bill daily against them) | Cumulative-differencing, as in Excel | This is the only sane way to bill monthly cumulative slabs day-by-day from a smart meter; confirmed against 4+ real rows spanning slab boundaries (crossing into slab 2, crossing into slab 3, and a zero-consumption day) | `Tariff.CalculateEnergyChargeForPeriod`, `TariffGoldenDataTests` |
 | Fixed charge on zero-consumption days | Still accrues (e.g. 2026-08-25 through 08-31: consumption 0, fixed charge still 2.958904…) | "minimum charges shall not be billed during disconnection" (§3, about *minimum* charges specifically, not fixed charge) — implies fixed charge otherwise continues | Fixed charge accrues regardless of daily consumption | No conflict; confirms the domain method should be called independently of whether that day had any consumption | `TariffGoldenDataTests.NetBill_MatchesMepdclReferenceWorkbook` (222→222 case) |
+| **FPPAS** — amount | `EnergyCharge × Rate` for the prior month (e.g. ₹6,000 × -14% = -₹840; ₹3,250 × +6.65% = ₹216.125) | "billed to the consumers on a monthly basis" (tariff §A.4) — mechanism not specified | as Excel | Tariff book confirms FPPAS is monthly and separate from energy charge but doesn't specify the notification-lag/proration mechanism; that mechanism is sourced entirely from the workbook | `FppasChargeTests.TotalAmount_*` |
+| **FPPAS** — timing/proration | Deferred one month, then spread evenly across every day of the *next* billing month (₹840 ÷ 30 June days = ₹28.00/day exactly; ₹216.125 ÷ 31 Oct days = ₹6.971774193548387…/day, unrounded) | not specified | as Excel | Same as above — workbook-only mechanism, confirmed against both a negative and a positive worked example | `FppasChargeTests.AllocateAcrossDays_*` |
 
 ## Explicitly NOT implemented / NOT verified this pass
 
@@ -40,11 +42,10 @@ These are real, documented gaps — not silently dropped:
   Aug–Sep date rows shown alongside it, so the exact day-count/boundary rules need
   confirmation from MePDCL before implementing — the algorithm shape is real, the precise
   edge-case arithmetic isn't fully unambiguous from this workbook alone.
-- **FPPAS.** The `FPPAS Calculation` sheet documents a real proration algorithm (a rate change
-  notified mid-cycle is applied to the *prior* month's energy charge, then the resulting amount
-  is spread evenly across every day of the *following* billing month — confirmed for both a
-  negative-FAC and a positive-FAC example). Not yet implemented in the domain; tracked as a
-  follow-up, not fabricated here.
+- ~~**FPPAS.**~~ Implemented — see `FppasCharge` and the table row above. Not yet wired into
+  `PrepaidBill`/the API (no persistence, no automatic scheduling of when a notified rate gets
+  applied) — the calculation engine itself is done and tested; orchestration is the remaining
+  follow-up.
 - **TMC / CPMC.** Rates are known from the tariff book (§4–5) and referenced in the
   `Individual Charge Calculation` sheet's column headers, but no example values are populated
   in either workbook, so no regression test exists yet. Domain entities for these do not exist
