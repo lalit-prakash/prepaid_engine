@@ -33,6 +33,9 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<decimal>("ConnectedLoadKw")
+                        .HasColumnType("decimal(18,3)");
+
                     b.Property<string>("ConnectionStatus")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -140,6 +143,9 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("ConsumerId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<decimal>("EmergencyCreditLimit")
+                        .HasColumnType("decimal(18,2)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ConsumerId")
@@ -203,6 +209,11 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<string>("Phase")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("MeterNumber")
@@ -217,10 +228,36 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<decimal>("EmergencyCreditLimit")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("FixedChargePerUnitPerMonth")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("MaxVendAmountSinglePhase")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("MaxVendAmountThreePhase")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("MinVendAmountSinglePhase")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("MinVendAmountThreePhase")
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal>("PrepaidEnergyRebatePercent")
+                        .HasColumnType("decimal(5,2)");
 
                     b.HasKey("Id");
 

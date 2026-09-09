@@ -17,6 +17,7 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     MeterNumber = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Phase = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
                     LastReadingKwh = table.Column<decimal>(type: "decimal(18,3)", nullable: false),
                     LastReadingAt = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
@@ -30,7 +31,15 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false)
+                    Name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    Category = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: false),
+                    FixedChargePerUnitPerMonth = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
+                    PrepaidEnergyRebatePercent = table.Column<decimal>(type: "decimal(5,2)", nullable: false),
+                    EmergencyCreditLimit = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
+                    MinVendAmountSinglePhase = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
+                    MaxVendAmountSinglePhase = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
+                    MinVendAmountThreePhase = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
+                    MaxVendAmountThreePhase = table.Column<decimal>(type: "decimal(18,2)", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -46,7 +55,8 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                     Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
                     ServiceAddress = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
                     ConnectionStatus = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: false),
-                    MeterId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                    MeterId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ConnectedLoadKw = table.Column<decimal>(type: "decimal(18,3)", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -107,7 +117,8 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     ConsumerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Balance = table.Column<decimal>(type: "decimal(18,2)", nullable: false)
+                    Balance = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
+                    EmergencyCreditLimit = table.Column<decimal>(type: "decimal(18,2)", nullable: false)
                 },
                 constraints: table =>
                 {

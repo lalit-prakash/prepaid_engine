@@ -16,6 +16,11 @@ public class SmartMeterConfiguration : IEntityTypeConfiguration<SmartMeter>
             .HasMaxLength(50);
         builder.HasIndex(m => m.MeterNumber).IsUnique();
 
+        builder.Property(m => m.Phase)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .IsRequired();
+
         builder.Property(m => m.LastReadingKwh)
             .HasColumnType("decimal(18,3)");
     }

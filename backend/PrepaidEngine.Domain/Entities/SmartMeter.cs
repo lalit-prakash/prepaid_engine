@@ -1,3 +1,5 @@
+using PrepaidEngine.Domain.Enums;
+
 namespace PrepaidEngine.Domain.Entities;
 
 /// <summary>
@@ -7,16 +9,18 @@ public class SmartMeter
 {
     public Guid Id { get; private set; }
     public string MeterNumber { get; private set; }
+    public MeterPhase Phase { get; private set; }
     public decimal LastReadingKwh { get; private set; }
     public DateTime? LastReadingAt { get; private set; }
 
-    public SmartMeter(Guid id, string meterNumber)
+    public SmartMeter(Guid id, string meterNumber, MeterPhase phase)
     {
         if (string.IsNullOrWhiteSpace(meterNumber))
             throw new ArgumentException("Meter number is required.", nameof(meterNumber));
 
         Id = id;
         MeterNumber = meterNumber;
+        Phase = phase;
         LastReadingKwh = 0m;
     }
 

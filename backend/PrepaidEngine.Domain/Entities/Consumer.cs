@@ -15,18 +15,24 @@ public class Consumer
     public SmartMeter Meter { get; private set; }
     public PrepaidWallet Wallet { get; private set; }
 
-    public Consumer(Guid id, string accountNumber, string name, string serviceAddress, SmartMeter meter)
+    /// <summary>Connected load (kW) or contract demand (kVA), used to compute the tariff's fixed/demand charge.</summary>
+    public decimal ConnectedLoadKw { get; private set; }
+
+    public Consumer(Guid id, string accountNumber, string name, string serviceAddress, SmartMeter meter, decimal connectedLoadKw)
     {
         if (string.IsNullOrWhiteSpace(accountNumber))
             throw new ArgumentException("Account number is required.", nameof(accountNumber));
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Name is required.", nameof(name));
+        if (connectedLoadKw <= 0)
+            throw new ArgumentOutOfRangeException(nameof(connectedLoadKw), "Connected load must be positive.");
 
         Id = id;
         AccountNumber = accountNumber;
         Name = name;
         ServiceAddress = serviceAddress;
         Meter = meter ?? throw new ArgumentNullException(nameof(meter));
+        ConnectedLoadKw = connectedLoadKw;
         ConnectionStatus = ConnectionStatus.Active;
         Wallet = new PrepaidWallet(Guid.NewGuid(), Id);
     }
@@ -40,6 +46,14 @@ public class Consumer
         Meter = null!;
         Wallet = null!;
     }
+
+    /// <summary>
+    /// True once the wallet has exhausted both its balance and its emergency credit allowance
+    /// — the credit-based precondition for disconnection. Other factors (grace period,
+    /// exemptions, pending commands, etc.) belong to a separate disconnect decision engine and
+    /// are intentionally not part of this simple check.
+    /// </summary>
+    public bool IsDisconnectEligibleOnCredit => !Wallet.IsWithinEmergencyCredit;
 
     public void Disconnect()
     {

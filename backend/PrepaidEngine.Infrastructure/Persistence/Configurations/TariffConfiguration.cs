@@ -16,6 +16,19 @@ public class TariffConfiguration : IEntityTypeConfiguration<Tariff>
             .HasMaxLength(100);
         builder.HasIndex(t => t.Name).IsUnique();
 
+        builder.Property(t => t.Category)
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .IsRequired();
+
+        builder.Property(t => t.FixedChargePerUnitPerMonth).HasColumnType("decimal(18,2)").IsRequired();
+        builder.Property(t => t.PrepaidEnergyRebatePercent).HasColumnType("decimal(5,2)").IsRequired();
+        builder.Property(t => t.EmergencyCreditLimit).HasColumnType("decimal(18,2)").IsRequired();
+        builder.Property(t => t.MinVendAmountSinglePhase).HasColumnType("decimal(18,2)");
+        builder.Property(t => t.MaxVendAmountSinglePhase).HasColumnType("decimal(18,2)");
+        builder.Property(t => t.MinVendAmountThreePhase).HasColumnType("decimal(18,2)");
+        builder.Property(t => t.MaxVendAmountThreePhase).HasColumnType("decimal(18,2)");
+
         // TariffSlab has no identity of its own; it is a value object owned by Tariff and
         // persisted in its own table keyed by (TariffId, a shadow slab index).
         builder.OwnsMany(t => t.Slabs, slab =>

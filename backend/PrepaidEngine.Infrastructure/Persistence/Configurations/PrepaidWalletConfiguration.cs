@@ -15,6 +15,10 @@ public class PrepaidWalletConfiguration : IEntityTypeConfiguration<PrepaidWallet
             .HasColumnType("decimal(18,2)")
             .IsRequired();
 
+        builder.Property(w => w.EmergencyCreditLimit)
+            .HasColumnType("decimal(18,2)")
+            .IsRequired();
+
         builder.HasIndex(w => w.ConsumerId).IsUnique();
 
         // The ledger is exposed only as a read-only collection backed by a private List<T>

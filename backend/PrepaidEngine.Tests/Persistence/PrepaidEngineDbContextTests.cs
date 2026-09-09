@@ -42,8 +42,8 @@ public class PrepaidEngineDbContextTests : IDisposable
     [Fact]
     public void CanPersistAndReloadConsumerWithMeterAndWallet()
     {
-        var meter = new SmartMeter(Guid.NewGuid(), "MTR-100");
-        var consumer = new Consumer(Guid.NewGuid(), "ACC-100", "Jane Doe", "1 Test Street", meter);
+        var meter = new SmartMeter(Guid.NewGuid(), "MTR-100", MeterPhase.SinglePhase);
+        var consumer = new Consumer(Guid.NewGuid(), "ACC-100", "Jane Doe", "1 Test Street", meter, connectedLoadKw: 2m);
         consumer.Wallet.Credit(250m, WalletTransactionType.Recharge, "RMS-1");
 
         _context.Meters.Add(meter);
@@ -67,7 +67,7 @@ public class PrepaidEngineDbContextTests : IDisposable
     [Fact]
     public void CanPersistAndReloadTariffWithSlabs()
     {
-        var tariff = new Tariff(Guid.NewGuid(), "Domestic", new[]
+        var tariff = new Tariff(Guid.NewGuid(), "Domestic", ConsumerCategory.Domestic, new[]
         {
             new TariffSlab(0, 100, 5.00m),
             new TariffSlab(100, null, 7.50m)
@@ -82,14 +82,14 @@ public class PrepaidEngineDbContextTests : IDisposable
         var reloaded = freshContext.Tariffs.Include(t => t.Slabs).Single(t => t.Id == tariff.Id);
 
         Assert.Equal(2, reloaded.Slabs.Count);
-        Assert.Equal(875.00m, reloaded.CalculateAmount(150));
+        Assert.Equal(875.00m, reloaded.CalculateEnergyCharge(150));
     }
 
     [Fact]
     public void RmsReferenceId_IsUniqueAcrossRechargeTransactions()
     {
-        var meter = new SmartMeter(Guid.NewGuid(), "MTR-200");
-        var consumer = new Consumer(Guid.NewGuid(), "ACC-200", "John Roe", "2 Test Street", meter);
+        var meter = new SmartMeter(Guid.NewGuid(), "MTR-200", MeterPhase.SinglePhase);
+        var consumer = new Consumer(Guid.NewGuid(), "ACC-200", "John Roe", "2 Test Street", meter, connectedLoadKw: 2m);
         _context.Consumers.Add(consumer);
         _context.SaveChanges();
 
