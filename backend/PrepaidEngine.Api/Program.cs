@@ -11,7 +11,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddDbContext<PrepaidEngineDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("PrepaidEngine")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("PrepaidEngine")));
 
 // TODO(RMS integration): swap for a real HTTP-based IRmsClient adapter once RMS's API
 // contract is available; keep MockRmsClient registered for local dev / tests until then.

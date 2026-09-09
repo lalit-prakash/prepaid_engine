@@ -15,11 +15,11 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                 name: "Meters",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    MeterNumber = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
-                    Phase = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    LastReadingKwh = table.Column<decimal>(type: "decimal(18,3)", nullable: false),
-                    LastReadingAt = table.Column<DateTime>(type: "datetime2", nullable: true)
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    MeterNumber = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    Phase = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    LastReadingKwh = table.Column<decimal>(type: "numeric(18,3)", nullable: false),
+                    LastReadingAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -30,16 +30,16 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                 name: "Tariffs",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    Category = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: false),
-                    FixedChargePerUnitPerMonth = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
-                    PrepaidEnergyRebatePercent = table.Column<decimal>(type: "decimal(5,2)", nullable: false),
-                    EmergencyCreditLimit = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
-                    MinVendAmountSinglePhase = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
-                    MaxVendAmountSinglePhase = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
-                    MinVendAmountThreePhase = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
-                    MaxVendAmountThreePhase = table.Column<decimal>(type: "decimal(18,2)", nullable: true)
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    Name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    Category = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    FixedChargePerUnitPerMonth = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
+                    PrepaidEnergyRebatePercent = table.Column<decimal>(type: "numeric(5,2)", nullable: false),
+                    EmergencyCreditLimit = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
+                    MinVendAmountSinglePhase = table.Column<decimal>(type: "numeric(18,2)", nullable: true),
+                    MaxVendAmountSinglePhase = table.Column<decimal>(type: "numeric(18,2)", nullable: true),
+                    MinVendAmountThreePhase = table.Column<decimal>(type: "numeric(18,2)", nullable: true),
+                    MaxVendAmountThreePhase = table.Column<decimal>(type: "numeric(18,2)", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -50,13 +50,13 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                 name: "Consumers",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    AccountNumber = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    ServiceAddress = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
-                    ConnectionStatus = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: false),
-                    MeterId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ConnectedLoadKw = table.Column<decimal>(type: "decimal(18,3)", nullable: false)
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    AccountNumber = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    ServiceAddress = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
+                    ConnectionStatus = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    MeterId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ConnectedLoadKw = table.Column<decimal>(type: "numeric(18,3)", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -73,11 +73,11 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                 name: "TariffSlabs",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    FromKwh = table.Column<decimal>(type: "decimal(18,3)", nullable: false),
-                    UpToKwh = table.Column<decimal>(type: "decimal(18,3)", nullable: true),
-                    RatePerKwh = table.Column<decimal>(type: "decimal(18,4)", nullable: false),
-                    TariffId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    FromKwh = table.Column<decimal>(type: "numeric(18,3)", nullable: false),
+                    UpToKwh = table.Column<decimal>(type: "numeric(18,3)", nullable: true),
+                    RatePerKwh = table.Column<decimal>(type: "numeric(18,4)", nullable: false),
+                    TariffId = table.Column<Guid>(type: "uuid", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -94,11 +94,11 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                 name: "ConsumptionReadings",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ConsumerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ConsumptionKwh = table.Column<decimal>(type: "decimal(18,3)", nullable: false),
-                    PeriodStart = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    PeriodEnd = table.Column<DateTime>(type: "datetime2", nullable: false)
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    ConsumerId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ConsumptionKwh = table.Column<decimal>(type: "numeric(18,3)", nullable: false),
+                    PeriodStart = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    PeriodEnd = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -115,10 +115,10 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                 name: "PrepaidWallets",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ConsumerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Balance = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
-                    EmergencyCreditLimit = table.Column<decimal>(type: "decimal(18,2)", nullable: false)
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    ConsumerId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Balance = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
+                    EmergencyCreditLimit = table.Column<decimal>(type: "numeric(18,2)", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -135,13 +135,13 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                 name: "RechargeTransactions",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ConsumerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Amount = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
-                    RmsReferenceId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    Status = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: false),
-                    InitiatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    CompletedAt = table.Column<DateTime>(type: "datetime2", nullable: true)
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    ConsumerId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Amount = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
+                    RmsReferenceId = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    InitiatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CompletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -158,14 +158,14 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                 name: "PrepaidBills",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ConsumerId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ConsumptionReadingId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    TariffId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Amount = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
-                    AmountPaid = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
-                    GeneratedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    Status = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: false)
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    ConsumerId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ConsumptionReadingId = table.Column<Guid>(type: "uuid", nullable: false),
+                    TariffId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Amount = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
+                    AmountPaid = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
+                    GeneratedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    Status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -194,12 +194,12 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                 name: "WalletTransactions",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    WalletId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Amount = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
-                    Type = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: false),
-                    OccurredAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    Reference = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true)
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    WalletId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Amount = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
+                    Type = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    OccurredAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    Reference = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true)
                 },
                 constraints: table =>
                 {

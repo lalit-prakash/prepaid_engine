@@ -21,19 +21,28 @@ dotnet build PrepaidEngine.sln
 dotnet run --project PrepaidEngine.Api
 ```
 
-Data access uses EF Core with SQL Server as the configured provider
-(`ConnectionStrings:PrepaidEngine` in `PrepaidEngine.Api/appsettings.json`, defaulting to
-LocalDB). Note: **RMS remains the authoritative system of record for the consumer's real
-financial wallet** — the `PrepaidWallets`/`WalletTransactions` tables here are the Prepaid
-Engine's own working ledger used for billing/recharge orchestration, not a competing wallet.
+Data access uses EF Core with **PostgreSQL** (Npgsql) as the configured provider. Note: **RMS
+remains the authoritative system of record for the consumer's real financial wallet** — the
+`PrepaidWallets`/`WalletTransactions` tables here are the Prepaid Engine's own working ledger
+used for billing/recharge orchestration, not a competing wallet.
 
-Apply migrations to a local SQL Server / LocalDB instance:
-```bash
-dotnet tool restore
-dotnet tool run dotnet-ef database update \
-  --project backend/PrepaidEngine.Infrastructure/PrepaidEngine.Infrastructure.csproj \
-  --startup-project backend/PrepaidEngine.Api/PrepaidEngine.Api.csproj
-```
+#### Database setup
+
+1. Create the database once: `createdb prepaid_engine` (or via `psql`: `CREATE DATABASE prepaid_engine;`).
+2. Set the real connection string via .NET User Secrets (never commit real credentials —
+   `appsettings.json` only holds a placeholder password):
+   ```bash
+   cd backend/PrepaidEngine.Api
+   dotnet user-secrets set "ConnectionStrings:PrepaidEngine" "Host=localhost;Port=5432;Database=prepaid_engine;Username=postgres;Password=<your-password>"
+   ```
+3. Apply migrations:
+   ```bash
+   dotnet tool restore
+   dotnet tool run dotnet-ef database update \
+     --project backend/PrepaidEngine.Infrastructure/PrepaidEngine.Infrastructure.csproj \
+     --startup-project backend/PrepaidEngine.Api/PrepaidEngine.Api.csproj
+   ```
+4. Verify: `dotnet run --project backend/PrepaidEngine.Api`, then `curl http://localhost:5299/health` → `{"status":"Healthy"}`, and Swagger UI at `http://localhost:5299/swagger`.
 
 Add a new migration after changing the model:
 ```bash
