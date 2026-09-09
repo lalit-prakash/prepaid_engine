@@ -44,6 +44,16 @@ used for billing/recharge orchestration, not a competing wallet.
    ```
 4. Verify: `dotnet run --project backend/PrepaidEngine.Api`, then `curl http://localhost:5299/health` → `{"status":"Healthy"}`, and Swagger UI at `http://localhost:5299/swagger`.
 
+In Development, the app auto-applies any pending migrations and seeds one demo consumer
+(`DEMO-0001`) end-to-end through tariff/consumption/billing/recharge on startup (see
+`DbSeeder`) — safe to leave on since it's a no-op once a consumer already exists, and never
+runs outside Development.
+
+#### Demo endpoints (local/no auth yet — see docs/assumptions-and-security.md)
+
+- `GET /api/v1/consumers` — list consumers with wallet balance
+- `GET /api/v1/consumers/{accountNumber}` — full detail: meter, wallet ledger, bills (try `DEMO-0001`)
+
 Add a new migration after changing the model:
 ```bash
 dotnet tool run dotnet-ef migrations add <Name> \

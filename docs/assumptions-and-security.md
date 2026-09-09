@@ -42,14 +42,16 @@ changes.
 ## Security review (of what's actually built so far)
 
 Scope: `PrepaidEngine.Domain`, `.Application`, `.Infrastructure`, `.Api` as of this commit —
-domain entities, EF Core persistence, mock RMS adapter. No web API endpoints beyond `/health`
-exist yet, so most OWASP API-security concerns (authn/authz, rate limiting) aren't applicable
-yet but are flagged as required before any real endpoint ships.
+domain entities, EF Core persistence, mock RMS adapter. Beyond `/health`, two **read-only,
+unauthenticated** demo endpoints exist (`GET /api/v1/consumers`, `GET /api/v1/consumers/{accountNumber}`)
+added specifically for a local demo — they expose consumer PII (name, address) and wallet
+balances with no auth check. **Do not deploy these outside local development as-is.**
+Authentication/authorization must land before any of this is exposed on a shared network.
 
 | Area | Status | Notes |
 |---|---|---|
 | SQL injection | Not applicable / mitigated | All data access goes through EF Core's parameterized LINQ; no raw SQL/string-concatenated queries anywhere in the codebase. |
-| Secrets in source control | OK, with a caveat | `appsettings.json`'s `ConnectionStrings:PrepaidEngine` points at local LocalDB with Windows integrated auth (`Trusted_Connection=True`) — no password. This is fine for local dev but **must** move to environment variables / a secrets manager (e.g. `dotnet user-secrets`, Azure Key Vault) before any shared or production connection string (especially one with a SQL login/password) is used. |
+| Secrets in source control | OK | `appsettings.json`'s `ConnectionStrings:PrepaidEngine` holds only a `Password=CHANGE_ME` placeholder. The real PostgreSQL password is stored via `dotnet user-secrets` (outside the repo, under `%APPDATA%\Microsoft\UserSecrets\<id>\secrets.json`), not committed. Before any shared/production deployment, move this to an actual secrets manager (Azure Key Vault, AWS Secrets Manager, etc.) rather than user-secrets, which is dev-only. |
 | Money precision | OK | All monetary fields use `decimal` with explicit `decimal(18,2)` column precision; no `float`/`double` in financial paths. |
 | Recharge idempotency | OK | `RechargeTransactions.RmsReferenceId` has a unique index; `MockRmsClient` replays the original result for a repeated `IdempotencyKey` rather than reprocessing. A real RMS adapter must preserve this guarantee. |
 | Input validation | OK for current scope | Entity constructors and mutators throw on invalid state (negative amounts, empty required strings, invalid slab/vend ranges, etc.) — validation lives in the domain, not scattered across callers. |
