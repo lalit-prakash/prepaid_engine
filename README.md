@@ -4,15 +4,21 @@ Prepaid Engine is a backend service responsible for managing the end-to-end prep
 
 ## Structure
 
-- `backend/` — ASP.NET Core Web API (C#)
+- `backend/` — .NET 8 solution (`PrepaidEngine.sln`)
+  - `PrepaidEngine.Api` — ASP.NET Core Web API (entry point)
+  - `PrepaidEngine.Application` — use cases / business logic orchestration
+  - `PrepaidEngine.Domain` — core domain models, no external dependencies
+  - `PrepaidEngine.Infrastructure` — data access, external integrations (e.g. RMS)
+  - `PrepaidEngine.Tests` — xUnit test project
 - `frontend/` — Angular + TypeScript
 
 ## Getting Started
 
 ### Backend
 ```bash
-cd backend/PrepaidEngine.Api
-dotnet run
+cd backend
+dotnet build PrepaidEngine.sln
+dotnet run --project PrepaidEngine.Api
 ```
 
 ### Frontend

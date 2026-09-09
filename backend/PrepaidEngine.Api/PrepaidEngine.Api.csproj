@@ -11,4 +11,9 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\PrepaidEngine.Application\PrepaidEngine.Application.csproj" />
+    <ProjectReference Include="..\PrepaidEngine.Infrastructure\PrepaidEngine.Infrastructure.csproj" />
+  </ItemGroup>
+
 </Project>
