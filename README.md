@@ -22,7 +22,7 @@ reference calculation workbooks). Frontend is intentionally paused — see
   - `PrepaidEngine.Application` — use cases / integration ports (currently: `IRmsClient`)
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
-  - `PrepaidEngine.Tests` — xUnit test project (104 tests — see [Testing](#testing))
+  - `PrepaidEngine.Tests` — xUnit test project (108 tests — see [Testing](#testing))
 - `frontend/` — Angular + TypeScript (default CLI scaffold only; paused)
 - `docs/` — sourcing, security, and tariff-validation documentation (see [Documentation](#documentation))
 
@@ -108,10 +108,15 @@ example values exist in either reference workbook, so nothing to cross-check num
   voltage and CT-PT wiring (₹800/1,000/1,500/1,900), zero unless opted in; throws for 132 kV
   (no rate defined in the tariff book) unless not opted in, in which case it's zero regardless.
 
-**Not yet wired into `PrepaidBill`** (unlike FPPAS) — both depend on per-consumer equipment
-facts (transformer/CT-PT ownership, maintenance opt-in, exclusive vs. shared use) that aren't
-modeled on `Consumer` yet, and neither workbook has a worked example to verify a wired-in bill
-against.
+**Wired into `PrepaidBill`** — `TmcAmount`/`CpmcAmount` are both included in `Amount`. Verified
+live against real PostgreSQL: the existing residential DLT demo bill correctly still shows both
+as zero (that consumer owns no transformer/CT-PT set), and unit tests hand-verify a non-zero
+case (100 kVA transformer + an 11kV 3-wire CT-PT set, both opted in → ₹2,000 TMC + ₹800 CPMC
+composed correctly into the total) since neither workbook has a worked example to
+regression-test against. **Still missing**: per-consumer equipment facts (transformer/CT-PT
+ownership, maintenance opt-in, exclusive vs. shared use) aren't modeled on `Consumer` — today
+the caller computes `TmcAmount`/`CpmcAmount` via the calculators and passes them in explicitly,
+same as FPPAS's daily share.
 
 **Explicitly not yet implemented** (see `docs/tariff-validation-report.md` for detail on each):
 arrear recovery, ToD/peak tariffs for Industrial HT/EHT, non-communicating meter
@@ -212,7 +217,7 @@ cd backend
 dotnet test PrepaidEngine.sln
 ```
 
-**104 tests, all passing.** Breakdown:
+**108 tests, all passing.** Breakdown:
 
 | Test class | Count | What it covers |
 |---|---|---|
@@ -222,7 +227,7 @@ dotnet test PrepaidEngine.sln
 | `DhtTariffDiscrepancyTests` | 2 | The documented DHT ₹5.85 (production) vs. ₹5.87 (legacy Excel reference) discrepancy — both kept as explicit, separately named tests, neither silently overriding the other |
 | `ElectricityDutyTests` | 15 | Category-based duty: Domestic/BPL flat rate, "Others" flat rate, Industrial tiered slabs (including cumulative-position vs. raw-delta correctness), negative-input validation |
 | `FppasChargeTests` | 10 | **Regression against both worked FPPAS examples in the reference workbook** — negative and positive rate cases, unrounded daily proration matching the workbook's exact precision, the paisa-accurate rounded variant, applicable-billing-month scheduling, input validation |
-| `PrepaidBillTests` | 6 | Charge-breakdown composition (energy net + fixed + duty + FPPAS), positive/negative FPPAS shares, rebate/negative-FPPAS validation guards, payment application with FPPAS included |
+| `PrepaidBillTests` | 10 | Charge-breakdown composition (energy net + fixed + duty + FPPAS + TMC + CPMC), positive/negative FPPAS shares, TMC/CPMC line items, all six components together, validation guards, payment application |
 | `TransformerMaintenanceChargeTests` | 4 | TMC by voltage (11/33/132 kV), opt-in/opt-out, exclusive- vs. shared-use billing basis, negative-input validation |
 | `CtPtMaintenanceChargeTests` | 7 | CPMC by voltage/wiring combination, opt-in/opt-out, undefined-132kV-rate handling |
 | `PrepaidWalletTests` | 12 | Wallet credit/debit, emergency-credit tracking, consumer connect/disconnect/reconnect rules |

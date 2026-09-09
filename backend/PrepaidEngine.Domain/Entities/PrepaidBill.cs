@@ -7,9 +7,11 @@ namespace PrepaidEngine.Domain.Entities;
 ///
 /// Carries a full, auditable charge breakdown rather than a single opaque total — matching the
 /// column layout MePDCL's own reference workbook uses to explain a bill ("Individual Charge
-/// Calculation" sheet: EC Gross → Rebate → EC Net → Fixed Charge → Energy Duty → FPPAS → Final
-/// Bill). <see cref="Amount"/> is exactly that final total, computed once at construction:
-/// <c>(EnergyChargeGross - PrepaidRebateAmount) + FixedCharge + ElectricityDutyAmount + FppasAmount</c>.
+/// Calculation" sheet: EC Gross → Rebate → EC Net → Fixed Charge → Energy Duty → FPPAS → [TMC →
+/// CPMC] → Final Bill; TMC/CPMC aren't in that workbook's example rows, but are tariff-book
+/// line items §4–5, so they're included here in the same position). <see cref="Amount"/> is
+/// exactly that final total, computed once at construction:
+/// <c>(EnergyChargeGross - PrepaidRebateAmount) + FixedCharge + ElectricityDutyAmount + FppasAmount + TmcAmount + CpmcAmount</c>.
 /// </summary>
 public class PrepaidBill
 {
@@ -34,7 +36,22 @@ public class PrepaidBill
     /// <summary>The <see cref="FppasCharge"/> this bill's <see cref="FppasAmount"/> was allocated from, if any.</summary>
     public Guid? FppasChargeId { get; private set; }
 
-    /// <summary>The final billed amount: net energy charge + fixed charge + duty + FPPAS.</summary>
+    /// <summary>
+    /// Transformer Maintenance Charge for this billing period — see
+    /// <see cref="TransformerMaintenanceCharge"/>. Zero unless the consumer owns a transformer
+    /// and has opted into MePDCL maintenance of it; this bill has no way to know that on its
+    /// own, so the amount (already computed by the caller) is simply recorded here.
+    /// </summary>
+    public decimal TmcAmount { get; private set; }
+
+    /// <summary>
+    /// CT-PT Set Maintenance Charge for this billing period — see
+    /// <see cref="CtPtMaintenanceCharge"/>. Zero unless the consumer owns a CT-PT set and has
+    /// opted into MePDCL maintenance of it, same caveat as <see cref="TmcAmount"/>.
+    /// </summary>
+    public decimal CpmcAmount { get; private set; }
+
+    /// <summary>The final billed amount: net energy charge + fixed charge + duty + FPPAS + TMC + CPMC.</summary>
     public decimal Amount { get; private set; }
 
     public decimal AmountPaid { get; private set; }
@@ -52,7 +69,9 @@ public class PrepaidBill
         decimal electricityDutyAmount,
         DateTime generatedAt,
         decimal fppasAmount = 0m,
-        Guid? fppasChargeId = null)
+        Guid? fppasChargeId = null,
+        decimal tmcAmount = 0m,
+        decimal cpmcAmount = 0m)
     {
         if (energyChargeGross < 0)
             throw new ArgumentOutOfRangeException(nameof(energyChargeGross));
@@ -64,8 +83,12 @@ public class PrepaidBill
             throw new ArgumentOutOfRangeException(nameof(fixedCharge));
         if (electricityDutyAmount < 0)
             throw new ArgumentOutOfRangeException(nameof(electricityDutyAmount));
+        if (tmcAmount < 0)
+            throw new ArgumentOutOfRangeException(nameof(tmcAmount));
+        if (cpmcAmount < 0)
+            throw new ArgumentOutOfRangeException(nameof(cpmcAmount));
 
-        var amount = (energyChargeGross - prepaidRebateAmount) + fixedCharge + electricityDutyAmount + fppasAmount;
+        var amount = (energyChargeGross - prepaidRebateAmount) + fixedCharge + electricityDutyAmount + fppasAmount + tmcAmount + cpmcAmount;
         if (amount < 0)
             throw new ArgumentOutOfRangeException(nameof(fppasAmount), "The resulting bill amount cannot be negative; a credit note is not supported by this constructor.");
 
@@ -79,6 +102,8 @@ public class PrepaidBill
         ElectricityDutyAmount = electricityDutyAmount;
         FppasAmount = fppasAmount;
         FppasChargeId = fppasChargeId;
+        TmcAmount = tmcAmount;
+        CpmcAmount = cpmcAmount;
         Amount = amount;
         AmountPaid = 0m;
         GeneratedAt = generatedAt;

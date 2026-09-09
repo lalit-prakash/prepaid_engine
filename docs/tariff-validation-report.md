@@ -50,12 +50,17 @@ These are real, documented gaps — not silently dropped:
   FPPAS rate gets picked up and applied to the next billing cycle — today a caller must
   construct the `FppasCharge` and pass its daily share into `PrepaidBill` explicitly (see
   `DbSeeder` for the pattern). That scheduling/orchestration is the remaining follow-up.
-- ~~**TMC / CPMC.**~~ Implemented — see `TransformerMaintenanceCharge` and
-  `CtPtMaintenanceCharge` and the table rows above. Neither is wired into `PrepaidBill` yet
-  (unlike FPPAS) — no example values exist in either workbook to verify a wired-in bill
-  against, and both depend on per-consumer equipment facts (transformer/CT-PT ownership,
-  maintenance opt-in, exclusive vs. shared transformer use) that aren't modeled on `Consumer`
-  yet.
+- ~~**TMC / CPMC.**~~ Implemented and wired into `PrepaidBill` (`TmcAmount`/`CpmcAmount`,
+  included in `Amount`) — verified live against real PostgreSQL (existing residential DLT
+  demo bill correctly still shows both as zero, since that consumer owns no transformer/CT-PT
+  set). No example values exist in either workbook to regression-test a *non-zero* wired-in
+  case against, so that's covered by hand-verified unit tests instead
+  (`PrepaidBillTests.Amount_ComposesAllSixOptionalAndCoreComponentsTogether`). **Still
+  missing**: per-consumer equipment facts (does this consumer own a transformer/CT-PT set,
+  have they opted into MePDCL maintenance, is transformer usage exclusive or shared) are not
+  modeled on `Consumer` — today a caller must compute `TmcAmount`/`CpmcAmount` via the
+  calculators themselves and pass them into `PrepaidBill` explicitly, the same pattern as
+  FPPAS's daily share.
 - **Arrear recovery.** Column exists in the `Individual Charge Calculation` sheet but every
   example row has it at 0 — no worked example to regression-test against.
 - **TOU (time-of-use) tariffs** for Industrial HT/EHT — present in the tariff book, not present

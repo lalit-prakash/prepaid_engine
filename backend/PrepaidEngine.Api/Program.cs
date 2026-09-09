@@ -98,6 +98,8 @@ app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, Pre
             b.ElectricityDutyAmount,
             b.FppasAmount,
             b.FppasChargeId,
+            b.TmcAmount,
+            b.CpmcAmount,
             b.Amount,
             b.AmountPaid,
             b.Status,
