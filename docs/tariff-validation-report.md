@@ -30,6 +30,8 @@ named legacy/reference test case, never silently substituted.
 | **FPPAS** — timing/proration | Deferred one month, then spread evenly across every day of the *next* billing month (₹840 ÷ 30 June days = ₹28.00/day exactly; ₹216.125 ÷ 31 Oct days = ₹6.971774193548387…/day, unrounded) | not specified | as Excel | Same as above — workbook-only mechanism, confirmed against both a negative and a positive worked example | `FppasChargeTests.AllocateAcrossDays_*` |
 | **TMC** (Transformer Maintenance Charge) | not shown in either workbook (column exists in `Individual Charge Calculation` header, but every example row is 0) | ₹20/kVA/month at 11 kV or 33 kV, ₹25/kVA/month at 132 kV (§5.3); opt-in only (§5.4); basis is installed capacity for exclusive use or contracted demand/connected load for shared use (§5.1–5.2) | as tariff book | Tariff book is the only source — no Excel example to cross-check. Choosing the correct basis (installed capacity vs. contracted demand/load) for a given consumer is left to the caller, since that depends on transformer ownership/usage facts this calculator has no way to know. | `TransformerMaintenanceChargeTests` |
 | **CPMC** (CT-PT Set Maintenance Charge) | not shown in either workbook (same as TMC) | ₹800 (11kV 3-wire) / ₹1,000 (11kV 4-wire) / ₹1,500 (33kV 3-wire) / ₹1,900 (33kV 4-wire) per month (§4.1); opt-in only (§4.2); no 132 kV rate defined | as tariff book | Tariff book is the only source. MePDCL's reference workbook notes CPMC "shall be levied monthly only for HT consumers whose metering is done on the LT side" — that eligibility check is left to the caller, not this calculator, which only prices an opted-in, eligible request. | `CtPtMaintenanceChargeTests` |
+| **Arrear recovery** — bill payment | Column exists in `Individual Charge Calculation` sheet header but every example row is 0 | "Any payment made by the consumer shall first be adjusted towards the arrears including LPS and then current bills" (§13.4) — uncapped, arrears-first | Uncapped, arrears-first, matching §13.4 exactly (this is `ArrearRecovery.Calculate`'s default with no cap supplied) | No conflict with the tariff book; no Excel example to cross-check the specific numbers | `ArrearRecoveryTests` (the no-cap cases) |
+| **Arrear recovery** — prepaid recharge cap | not in either workbook | not in the tariff book at all | **Not a production default.** No cap is applied unless a caller explicitly supplies one. | **Sourced only from the supplied RFP** ("no more than 50% of an installment may be applied toward arrears" — the RFP itself calls this "indicative"), a lower-authority tertiary source per this project's own source hierarchy. 50% (or any cap) must come from utility-specific configuration if and when it's adopted — it is deliberately not hard-coded anywhere in `ArrearRecovery`. | `ArrearRecoveryTests` (the with-cap cases demonstrate the mechanism generically, using illustrative percentages, not asserting 50% as correct) |
 
 ## Explicitly NOT implemented / NOT verified this pass
 
@@ -61,8 +63,12 @@ These are real, documented gaps — not silently dropped:
   modeled on `Consumer` — today a caller must compute `TmcAmount`/`CpmcAmount` via the
   calculators themselves and pass them into `PrepaidBill` explicitly, the same pattern as
   FPPAS's daily share.
-- **Arrear recovery.** Column exists in the `Individual Charge Calculation` sheet but every
-  example row has it at 0 — no worked example to regression-test against.
+- ~~**Arrear recovery.**~~ Implemented — see `ArrearRecovery` and the table rows above. Supports
+  both the verified tariff-book rule (uncapped, arrears-first) and an optional caller-supplied
+  cap for a prepaid-recharge scenario (RFP-indicative only, never a hard-coded default). Not
+  yet wired into `PrepaidBill`/the recharge flow — no per-consumer arrears balance is tracked
+  anywhere yet (there's no `Consumer.OutstandingArrears` or equivalent), so there's nothing for
+  this calculator to be called against in a real flow yet.
 - **TOU (time-of-use) tariffs** for Industrial HT/EHT — present in the tariff book, not present
   in either workbook, not implemented.
 

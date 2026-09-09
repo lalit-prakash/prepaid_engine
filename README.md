@@ -22,7 +22,7 @@ reference calculation workbooks). Frontend is intentionally paused — see
   - `PrepaidEngine.Application` — use cases / integration ports (currently: `IRmsClient`)
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
-  - `PrepaidEngine.Tests` — xUnit test project (108 tests — see [Testing](#testing))
+  - `PrepaidEngine.Tests` — xUnit test project (119 tests — see [Testing](#testing))
 - `frontend/` — Angular + TypeScript (default CLI scaffold only; paused)
 - `docs/` — sourcing, security, and tariff-validation documentation (see [Documentation](#documentation))
 
@@ -35,6 +35,7 @@ reference calculation workbooks). Frontend is intentionally paused — see
 | `Tariff` / `TariffSlab` | Versioned, category-scoped slab tariff: energy slabs, fixed charge, prepaid rebate %, emergency-credit limit, per-phase vend limits |
 | `ElectricityDuty` | Statutory per-unit duty, category-based (Domestic/BPL flat, Industrial tiered, Others flat) — modeled separately from `Tariff` since it isn't tariff-plan-specific |
 | `TransformerMaintenanceCharge` / `CtPtMaintenanceCharge` | Opt-in fixed monthly maintenance charges (TMC, CPMC) for consumer-owned transformers/CT-PT sets, by voltage and (for CPMC) wiring |
+| `ArrearRecovery` | Applies a payment against outstanding arrears — uncapped/arrears-first (tariff book) by default, or an optional caller-supplied recovery cap (RFP-indicative only) |
 | `PrepaidWallet` / `WalletTransaction` | Balance + append-only ledger; tracks emergency-credit usage separately from the normal balance |
 | `ConsumptionReading` | A metered consumption reading for a billing period |
 | `PrepaidBill` | A generated bill with payment/status tracking (`Generated`/`Paid`/`PartiallyPaid`/`Overdue`/`Cancelled`) |
@@ -118,9 +119,27 @@ ownership, maintenance opt-in, exclusive vs. shared use) aren't modeled on `Cons
 the caller computes `TmcAmount`/`CpmcAmount` via the calculators and passes them in explicitly,
 same as FPPAS's daily share.
 
+### Arrear recovery
+
+`ArrearRecovery.Calculate(paymentAmount, outstandingArrears, maxRecoveryPercentOfPayment?)` —
+two distinct rules from two different-strength sources, kept deliberately separate:
+
+- **Default (no cap supplied)**: uncapped, arrears-first — matches tariff book §13.4 exactly
+  ("any payment shall first be adjusted towards the arrears... and then current bills").
+- **Optional cap**: a caller-supplied `maxRecoveryPercentOfPayment` limits how much of a
+  payment (e.g. a prepaid recharge) can go to arrears regardless of how much is owed. This
+  models the supplied RFP's own "indicative rule" of a 50% cap on prepaid recharges — **the RFP
+  is a lower-authority source than the tariff book in this project (see
+  `docs/tariff-validation-report.md`), so no percentage is hard-coded anywhere**; a cap is only
+  ever applied if a caller explicitly configures one.
+
+**Not yet wired into `PrepaidBill`/the recharge flow** — there's no per-consumer arrears
+balance tracked anywhere yet (`Consumer` has no `OutstandingArrears` or equivalent), so there's
+nothing for this calculator to be called against in a real flow yet.
+
 **Explicitly not yet implemented** (see `docs/tariff-validation-report.md` for detail on each):
-arrear recovery, ToD/peak tariffs for Industrial HT/EHT, non-communicating meter
-estimated billing, delayed payment charges, disconnection/reconnection fee schedule.
+ToD/peak tariffs for Industrial HT/EHT, non-communicating meter estimated billing, delayed
+payment charges, disconnection/reconnection fee schedule.
 
 ## Recharge flow
 
@@ -217,7 +236,7 @@ cd backend
 dotnet test PrepaidEngine.sln
 ```
 
-**108 tests, all passing.** Breakdown:
+**119 tests, all passing.** Breakdown:
 
 | Test class | Count | What it covers |
 |---|---|---|
@@ -230,6 +249,7 @@ dotnet test PrepaidEngine.sln
 | `PrepaidBillTests` | 10 | Charge-breakdown composition (energy net + fixed + duty + FPPAS + TMC + CPMC), positive/negative FPPAS shares, TMC/CPMC line items, all six components together, validation guards, payment application |
 | `TransformerMaintenanceChargeTests` | 4 | TMC by voltage (11/33/132 kV), opt-in/opt-out, exclusive- vs. shared-use billing basis, negative-input validation |
 | `CtPtMaintenanceChargeTests` | 7 | CPMC by voltage/wiring combination, opt-in/opt-out, undefined-132kV-rate handling |
+| `ArrearRecoveryTests` | 11 | Uncapped arrears-first behavior (tariff book §13.4 default), optional caller-supplied recovery cap, 100%-cap-equivalence, input validation |
 | `PrepaidWalletTests` | 12 | Wallet credit/debit, emergency-credit tracking, consumer connect/disconnect/reconnect rules |
 | `MockRmsClientTests` | 9 | Recharge success/failed/pending/unavailable outcomes, idempotent replay, **20-way concurrent-call race test**, input validation, transaction-status lookup |
 | `PrepaidEngineDbContextTests` | 5 | Real persistence round-trips against SQLite (keys, FKs, owned collections) — including a regression test for a real EF change-tracking bug found while building the recharge endpoint (crediting an already-loaded wallet), and a `PrepaidBill`↔`FppasCharge` round-trip |
