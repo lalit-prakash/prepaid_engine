@@ -20,12 +20,23 @@ Concepts and figures taken from it and reflected in the domain model:
 | No load security deposit for prepaid consumers | §1.3.5(a) | not yet modeled (no `SecurityDeposit` entity) |
 | Consumer categories (Domestic, Non-Domestic, Industrial, etc.) | §II | `ConsumerCategory` enum |
 
+**Also verified** against MePDCL's own reference calculation workbooks (`Prepaid bill
+calculation.xlsx`, `Prepaid Calculation Category wise.xlsx`) — including a real, documented
+discrepancy (DHT: Excel ₹5.87/kVAh vs. tariff book ₹5.85/kVAh, tariff book governs production)
+and a day-by-day golden dataset used for regression tests. Full detail in
+[tariff-validation-report.md](tariff-validation-report.md), including electricity duty
+(`ElectricityDuty`), the daily fixed-charge proration formula and cumulative-differencing
+energy charge (`Tariff.CalculateDailyFixedCharge` / `CalculateEnergyChargeForPeriod`), and BPL
+slabs.
+
 **Not yet modeled from this source** (explicitly open, not silently dropped): ToD/peak-off-peak
-tariffs for Industrial HT/EHT (§A.2–A.3), electricity duty (§21), delayed payment charges
-(§12), disconnection/reconnection fee schedule (§14), "friendly credit hours" during which
-supply should not be cut even at zero balance (§22.4), initial credit on meter installation
-(§22.7). These need consumption-interval data (for ToD) or a billing/collections module we
-haven't built yet, not just tariff fields.
+tariffs for Industrial HT/EHT (§A.2–A.3), delayed payment charges (§12), disconnection/
+reconnection fee schedule (§14), "friendly credit hours" during which supply should not be cut
+even at zero balance (§22.4), initial credit on meter installation (§22.7), FPPAS, TMC, CPMC,
+arrear recovery, and non-communicating-meter estimated billing (algorithm documented in the
+Excel workbooks but not yet implemented — see tariff-validation-report.md). These need
+consumption-interval data (for ToD) or a billing/collections module we haven't built yet, not
+just tariff fields.
 
 **Not sourced at all — do not assume compliance**: CEA metering/cyber-security regulations,
 RDSS/AMISP technical standards, BIS/IEC meter standards (IS 15959, IEC 62056/DLMS-COSEM,

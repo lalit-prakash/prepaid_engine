@@ -12,6 +12,18 @@ namespace PrepaidEngine.Domain.Entities;
 /// </summary>
 public class Tariff
 {
+    /// <summary>
+    /// Divisor used to prorate a monthly fixed/demand charge into a daily amount for prepaid
+    /// daily billing: <c>DailyFixedCharge = MonthlyRate × Load × 12 / 365</c>. Verified against
+    /// MePDCL's own reference calculation workbook ("Prepaid bill calculation.xlsx" /
+    /// "Prepaid Calculation Category wise.xlsx"): the daily fixed charge for a 1&#160;kW DLT
+    /// consumer at ₹90/kW/month is consistently ₹2.958904109589041 = 90 × 12 / 365, on every
+    /// day of the billing cycle including zero-consumption days, and the divisor stays 365
+    /// regardless of the actual number of days in that particular month or a leap year — this
+    /// is a deliberate simplification in the source workbook, not an inference on our part.
+    /// </summary>
+    public const decimal DaysPerYearForFixedChargeProration = 365m;
+
     private readonly List<TariffSlab> _slabs = new();
 
     public Guid Id { get; private set; }
@@ -117,6 +129,38 @@ public class Tariff
             throw new ArgumentOutOfRangeException(nameof(connectedLoadOrContractDemand));
 
         return FixedChargePerUnitPerMonth * connectedLoadOrContractDemand;
+    }
+
+    /// <summary>
+    /// Computes the daily-prorated fixed/demand charge for prepaid daily billing:
+    /// <c>MonthlyRate × Load × 12 / 365</c> (see <see cref="DaysPerYearForFixedChargeProration"/>).
+    /// This accrues every day of the billing cycle, including days with zero consumption —
+    /// callers should not skip calling this just because a day's energy charge is zero.
+    /// </summary>
+    public decimal CalculateDailyFixedCharge(decimal connectedLoadOrContractDemand)
+    {
+        return CalculateFixedCharge(connectedLoadOrContractDemand) * 12m / DaysPerYearForFixedChargeProration;
+    }
+
+    /// <summary>
+    /// Computes the gross energy charge for one billing period (typically one day of prepaid
+    /// billing) from a smart meter's cumulative reading, as the difference between the slab
+    /// charge at the new cumulative reading and at the previous one. This is the correct way to
+    /// bill against monthly cumulative slabs from a cumulative meter — treating each day's
+    /// consumption as if it restarted the slabs from zero would misprice every day after the
+    /// consumer crosses a slab boundary. Verified against MePDCL's reference calculation
+    /// workbook: e.g. for the DLT slabs (0-100@5.00, 100-200@5.04, 200+@5.10), a day moving the
+    /// cumulative reading from 90 to 102 kWh bills ₹60.08 — exactly
+    /// CalculateEnergyCharge(102) − CalculateEnergyCharge(90) = 510.08 − 450.00.
+    /// </summary>
+    public decimal CalculateEnergyChargeForPeriod(decimal previousCumulativeKwh, decimal currentCumulativeKwh)
+    {
+        if (previousCumulativeKwh < 0)
+            throw new ArgumentOutOfRangeException(nameof(previousCumulativeKwh));
+        if (currentCumulativeKwh < previousCumulativeKwh)
+            throw new ArgumentOutOfRangeException(nameof(currentCumulativeKwh), "Current cumulative reading cannot be lower than the previous one.");
+
+        return CalculateEnergyCharge(currentCumulativeKwh) - CalculateEnergyCharge(previousCumulativeKwh);
     }
 
     /// <summary>
