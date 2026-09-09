@@ -124,15 +124,19 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
     if (request.Amount <= 0)
         return Results.BadRequest(new { error = "Amount must be positive." });
 
+    // The idempotency key must come from the caller and stay stable across their own retries
+    // of this logical request — a server-generated key would defeat the whole guarantee, since
+    // a lost response followed by a client retry would mint a new key and double-recharge.
+    if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
+        return Results.BadRequest(new { error = "IdempotencyKey is required and must be stable across retries of the same recharge attempt." });
+
     var consumer = await db.Consumers
         .Include(c => c.Wallet).ThenInclude(w => w.Transactions)
         .FirstOrDefaultAsync(c => c.AccountNumber == accountNumber);
     if (consumer is null)
         return Results.NotFound();
 
-    var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
-        ? Guid.NewGuid().ToString("N")
-        : request.IdempotencyKey;
+    var idempotencyKey = request.IdempotencyKey;
     var correlationId = Guid.NewGuid().ToString("N");
 
     RmsRechargeResult rmsResult;
@@ -186,9 +190,15 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
                 new { recharge.RmsReferenceId, Status = recharge.Status.ToString(), rmsResult.Message },
                 statusCode: StatusCodes.Status402PaymentRequired);
 
-        default: // Pending
+        case RmsRechargeStatus.Pending:
             await db.SaveChangesAsync();
             return Results.Accepted(value: new { recharge.RmsReferenceId, Status = recharge.Status.ToString(), rmsResult.Message });
+
+        default:
+            // Explicitly reject any status this endpoint doesn't know how to handle yet,
+            // rather than silently treating it as Pending.
+            return Results.Problem(statusCode: StatusCodes.Status500InternalServerError,
+                title: "Unhandled RMS recharge status", detail: $"No handling defined for RMS status '{rmsResult.Status}'.");
     }
 })
 .WithName("RechargeConsumer")
@@ -198,9 +208,10 @@ app.Run();
 
 /// <param name="Amount">Recharge amount.</param>
 /// <param name="IdempotencyKey">
-/// Optional. Reuse the same value to safely retry a request without risking a double
-/// recharge; a random one is generated if omitted. In the mock RMS, prefix this with
-/// "FAIL-", "PENDING-", or "UNAVAILABLE-" to demo those outcomes.
+/// Required. Caller-supplied and must stay the same across retries of this exact recharge
+/// attempt — the server deliberately does not generate one, since a server-generated key
+/// would not survive a client retry after a lost response, defeating the whole guarantee.
+/// In the mock RMS, prefix this with "FAIL-", "PENDING-", or "UNAVAILABLE-" to demo those outcomes.
 /// </param>
 public record RechargeRequest(decimal Amount, string? IdempotencyKey = null);
 
