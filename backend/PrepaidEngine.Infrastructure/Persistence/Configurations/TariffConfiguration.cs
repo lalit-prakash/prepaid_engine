@@ -44,5 +44,23 @@ public class TariffConfiguration : IEntityTypeConfiguration<Tariff>
 
         builder.Navigation(t => t.Slabs)
             .UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        // TouPeriod has its own identity (unlike TariffSlab) so it can be referenced/audited
+        // independently if needed, but is still owned by Tariff — only IHT/IEHT tariffs
+        // populate this collection; it's empty for everything else.
+        builder.OwnsMany(t => t.TouPeriods, tou =>
+        {
+            tou.ToTable("TouPeriods");
+            tou.WithOwner().HasForeignKey("TariffId");
+            tou.HasKey(t => t.Id);
+
+            tou.Property(t => t.Label).IsRequired().HasMaxLength(30);
+            tou.Property(t => t.StartTime).IsRequired();
+            tou.Property(t => t.EndTime).IsRequired();
+            tou.Property(t => t.RatePerKvah).HasColumnType("decimal(18,4)").IsRequired();
+        });
+
+        builder.Navigation(t => t.TouPeriods)
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

@@ -25,11 +25,19 @@ public class Tariff
     public const decimal DaysPerYearForFixedChargeProration = 365m;
 
     private readonly List<TariffSlab> _slabs = new();
+    private readonly List<TouPeriod> _touPeriods = new();
 
     public Guid Id { get; private set; }
     public string Name { get; private set; }
     public ConsumerCategory Category { get; private set; }
     public IReadOnlyCollection<TariffSlab> Slabs => _slabs.AsReadOnly();
+
+    /// <summary>
+    /// Time-of-Day rate bands for this tariff (e.g. Normal/Peak/Off-peak), if any. Only the
+    /// tariff book's Industrial HT (IHT) and Industrial EHT (IEHT) categories define these;
+    /// empty for every other tariff. See <see cref="CalculateTouEnergyCharge"/>.
+    /// </summary>
+    public IReadOnlyCollection<TouPeriod> TouPeriods => _touPeriods.AsReadOnly();
 
     /// <summary>Fixed/demand charge per unit of connected load or contract demand (₹/kW or ₹/kVA per month).</summary>
     public decimal FixedChargePerUnitPerMonth { get; private set; }
@@ -65,7 +73,8 @@ public class Tariff
         decimal? minVendAmountSinglePhase = null,
         decimal? maxVendAmountSinglePhase = null,
         decimal? minVendAmountThreePhase = null,
-        decimal? maxVendAmountThreePhase = null)
+        decimal? maxVendAmountThreePhase = null,
+        IEnumerable<TouPeriod>? touPeriods = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Name is required.", nameof(name));
@@ -90,8 +99,11 @@ public class Tariff
         MaxVendAmountThreePhase = maxVendAmountThreePhase;
 
         _slabs.AddRange(slabs ?? throw new ArgumentNullException(nameof(slabs)));
-        if (_slabs.Count == 0)
-            throw new ArgumentException("A tariff must define at least one slab.", nameof(slabs));
+        if (touPeriods is not null)
+            _touPeriods.AddRange(touPeriods);
+
+        if (_slabs.Count == 0 && _touPeriods.Count == 0)
+            throw new ArgumentException("A tariff must define at least one slab or ToD period.", nameof(slabs));
     }
 
     // EF Core / serialization
@@ -175,6 +187,56 @@ public class Tariff
         var fixedCharge = CalculateFixedCharge(connectedLoadOrContractDemand);
 
         return energyCharge - rebate + fixedCharge;
+    }
+
+    /// <summary>
+    /// Which <see cref="TouPeriod"/> a given time of day falls under, by label (e.g. "Normal",
+    /// "Peak", "Off-Peak"). Throws if this tariff has no ToD periods configured, or if the
+    /// configured periods leave a gap that doesn't cover <paramref name="timeOfDay"/> — a
+    /// correctly configured 24-hour schedule (as the tariff book's IHT/IEHT schedules are)
+    /// should never leave a gap.
+    /// </summary>
+    public string ClassifyTimeOfDay(TimeSpan timeOfDay)
+    {
+        if (_touPeriods.Count == 0)
+            throw new InvalidOperationException($"Tariff '{Name}' has no ToD periods configured.");
+
+        var period = _touPeriods.FirstOrDefault(p => p.Contains(timeOfDay));
+        if (period is null)
+            throw new InvalidOperationException($"No ToD period on tariff '{Name}' covers {timeOfDay:hh\\:mm} — the configured schedule has a gap.");
+
+        return period.Label;
+    }
+
+    /// <summary>
+    /// Computes the Time-of-Day energy charge from consumption already broken down by ToD
+    /// period label (as MDM/HES interval data aggregated per band would provide) — e.g.
+    /// <c>{"Normal": 500, "Peak": 120, "Off-Peak": 80}</c> kVAh. Every key must match a
+    /// configured <see cref="TouPeriod"/>'s <see cref="TouPeriod.Label"/> exactly; an unknown
+    /// label throws rather than silently being ignored, since that would otherwise
+    /// under-bill without any indication why.
+    /// </summary>
+    public decimal CalculateTouEnergyCharge(IReadOnlyDictionary<string, decimal> consumptionKvahByPeriodLabel)
+    {
+        if (_touPeriods.Count == 0)
+            throw new InvalidOperationException($"Tariff '{Name}' has no ToD periods configured.");
+
+        var knownLabels = _touPeriods.Select(p => p.Label).ToHashSet();
+        var unknownLabel = consumptionKvahByPeriodLabel.Keys.FirstOrDefault(label => !knownLabels.Contains(label));
+        if (unknownLabel is not null)
+            throw new ArgumentException($"'{unknownLabel}' is not a ToD period configured on tariff '{Name}'.", nameof(consumptionKvahByPeriodLabel));
+
+        decimal total = 0m;
+        foreach (var period in _touPeriods)
+        {
+            var consumption = consumptionKvahByPeriodLabel.GetValueOrDefault(period.Label, 0m);
+            if (consumption < 0)
+                throw new ArgumentOutOfRangeException(nameof(consumptionKvahByPeriodLabel), $"Consumption for '{period.Label}' cannot be negative.");
+
+            total += consumption * period.RatePerKvah;
+        }
+
+        return total;
     }
 
     /// <summary>

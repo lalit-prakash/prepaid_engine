@@ -32,6 +32,8 @@ named legacy/reference test case, never silently substituted.
 | **CPMC** (CT-PT Set Maintenance Charge) | not shown in either workbook (same as TMC) | ₹800 (11kV 3-wire) / ₹1,000 (11kV 4-wire) / ₹1,500 (33kV 3-wire) / ₹1,900 (33kV 4-wire) per month (§4.1); opt-in only (§4.2); no 132 kV rate defined | as tariff book | Tariff book is the only source. MePDCL's reference workbook notes CPMC "shall be levied monthly only for HT consumers whose metering is done on the LT side" — that eligibility check is left to the caller, not this calculator, which only prices an opted-in, eligible request. | `CtPtMaintenanceChargeTests` |
 | **Arrear recovery** — bill payment | Column exists in `Individual Charge Calculation` sheet header but every example row is 0 | "Any payment made by the consumer shall first be adjusted towards the arrears including LPS and then current bills" (§13.4) — uncapped, arrears-first | Uncapped, arrears-first, matching §13.4 exactly (this is `ArrearRecovery.Calculate`'s default with no cap supplied) | No conflict with the tariff book; no Excel example to cross-check the specific numbers | `ArrearRecoveryTests` (the no-cap cases) |
 | **Arrear recovery** — prepaid recharge cap | not in either workbook | not in the tariff book at all | **Not a production default.** No cap is applied unless a caller explicitly supplies one. | **Sourced only from the supplied RFP** ("no more than 50% of an installment may be applied toward arrears" — the RFP itself calls this "indicative"), a lower-authority tertiary source per this project's own source hierarchy. 50% (or any cap) must come from utility-specific configuration if and when it's adopted — it is deliberately not hard-coded anywhere in `ArrearRecovery`. | `ArrearRecoveryTests` (the with-cap cases demonstrate the mechanism generically, using illustrative percentages, not asserting 50% as correct) |
+| **IHT ToD schedule** | not in either workbook | 06:00-17:00 Normal ₹5.55/kVAh, 17:00-23:00 Peak ₹6.66/kVAh, 23:00-06:00 Off-peak ₹4.72/kVAh (tariff book "ToD Tariff for IHT consumers") | as tariff book, stored as three explicit rates | Tariff book is the only source. The published Off-peak rate (₹4.72) is the utility's own rounding of 5.55 × 0.85 = 4.7175 — stored verbatim rather than re-derived by formula, so this implementation never silently drifts from what's actually gazetted if the base rate or percentages ever change independently. | `TouTariffTests` |
+| **IEHT ToD schedule** | not in either workbook | 06:00-17:00 Normal ₹6.60/kVAh, 17:00-23:00 Peak ₹7.92/kVAh, 23:00-06:00 Off-peak ₹5.61/kVAh | as tariff book | Same treatment as IHT above (₹5.61 = 6.60 × 0.85 exactly, no rounding difference here) | `TouTariffTests` |
 
 ## Explicitly NOT implemented / NOT verified this pass
 
@@ -76,8 +78,15 @@ These are real, documented gaps — not silently dropped:
   missing**: nothing computes `ArrearsAmount` automatically from a consumer's actual unpaid
   bill history — a caller must sum prior bills' `OutstandingAmount` and pass it in when
   constructing a new bill, the same pattern established for FPPAS/TMC/CPMC.
-- **TOU (time-of-use) tariffs** for Industrial HT/EHT — present in the tariff book, not present
-  in either workbook, not implemented.
+- ~~**TOU (time-of-use) tariffs**~~ for Industrial HT/EHT — implemented (`TouPeriod`,
+  `Tariff.CalculateTouEnergyCharge`, `Tariff.ClassifyTimeOfDay`); see the IHT/IEHT rows above.
+  Present in the tariff book, not present in either workbook, so no golden numeric example to
+  regression-test against — verified by hand-computed unit tests instead. **Not wired into
+  `PrepaidBill`**: `CalculateTouEnergyCharge` takes consumption already bucketed by ToD band
+  (as interval metering data aggregated per band would provide), and nothing in this repo yet
+  produces that bucketing from raw meter readings — this project's scope is the Prepaid
+  Engine, not MDM/HES/interval-data processing, so that bucketing is expected to happen
+  upstream and be handed to this method already summarized.
 
 ## Assumptions made (flagged, not silently decided)
 

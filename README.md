@@ -22,7 +22,7 @@ reference calculation workbooks). Frontend is intentionally paused — see
   - `PrepaidEngine.Application` — use cases / integration ports (currently: `IRmsClient`)
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
-  - `PrepaidEngine.Tests` — xUnit test project (125 tests — see [Testing](#testing))
+  - `PrepaidEngine.Tests` — xUnit test project (155 tests — see [Testing](#testing))
 - `frontend/` — Angular + TypeScript (default CLI scaffold only; paused)
 - `docs/` — sourcing, security, and tariff-validation documentation (see [Documentation](#documentation))
 
@@ -36,6 +36,7 @@ reference calculation workbooks). Frontend is intentionally paused — see
 | `ElectricityDuty` | Statutory per-unit duty, category-based (Domestic/BPL flat, Industrial tiered, Others flat) — modeled separately from `Tariff` since it isn't tariff-plan-specific |
 | `TransformerMaintenanceCharge` / `CtPtMaintenanceCharge` | Opt-in fixed monthly maintenance charges (TMC, CPMC) for consumer-owned transformers/CT-PT sets, by voltage and (for CPMC) wiring |
 | `ArrearRecovery` | Applies a payment against outstanding arrears — uncapped/arrears-first (tariff book) by default, or an optional caller-supplied recovery cap (RFP-indicative only) |
+| `TouPeriod` | A Time-of-Day rate band (Normal/Peak/Off-peak) on a `Tariff` — only IHT/IEHT tariffs populate these |
 | `PrepaidWallet` / `WalletTransaction` | Balance + append-only ledger; tracks emergency-credit usage separately from the normal balance |
 | `ConsumptionReading` | A metered consumption reading for a billing period |
 | `PrepaidBill` | A generated bill with payment/status tracking (`Generated`/`Paid`/`PartiallyPaid`/`Overdue`/`Cancelled`) |
@@ -144,9 +145,33 @@ fields as zero, `Amount` unchanged) and hand-verified for multi-installment reco
 unpaid bill history — a caller sums prior bills' `OutstandingAmount` and passes it in, same
 pattern as FPPAS/TMC/CPMC.
 
+### ToD (Time-of-Day) tariffs for Industrial HT/EHT
+
+`Tariff` now supports Time-of-Day rate bands (only IHT/IEHT define these in the tariff book):
+
+- **`TouPeriod`** — one band (e.g. "Peak", 17:00-23:00, ₹6.66/kVAh); `EndTime < StartTime`
+  means it wraps past midnight (the Off-peak band, 23:00-06:00). Rates are stored verbatim from
+  the tariff book, not derived from a "±X%" formula at runtime — the book's own published
+  Off-peak figures are already rounded (IHT: 5.55 × 0.85 = 4.7175, published as 4.72).
+- **`Tariff.ClassifyTimeOfDay(timeOfDay)`** — which band a given clock time falls in.
+- **`Tariff.CalculateTouEnergyCharge(consumptionByBandLabel)`** — sums each band's own rate ×
+  its consumption; an unrecognized band label throws rather than silently under-billing.
+- A pure-ToD tariff (like IHT/IEHT) can be constructed with zero ordinary slabs — the
+  constructor now only requires *either* slabs *or* ToD periods, not always slabs.
+
+Verified against both the tariff book's IHT (₹5.55/6.66/4.72) and IEHT (₹6.60/7.92/5.61)
+schedules exactly, including every stated time boundary (05:59→Off-Peak, 06:00→Normal,
+16:59→Normal, 17:00→Peak, 22:59→Peak, 23:00→Off-Peak) and midnight wraparound. Confirmed live
+persisting/reloading a ToD tariff against real PostgreSQL.
+
+**Not wired into `PrepaidBill`** — `CalculateTouEnergyCharge` expects consumption already
+bucketed by band, which this project doesn't produce from raw meter readings itself (that's
+interval-data/MDM territory, outside this project's stated Prepaid Engine scope); it's meant
+to be called with band totals handed in from upstream.
+
 **Explicitly not yet implemented** (see `docs/tariff-validation-report.md` for detail on each):
-ToD/peak tariffs for Industrial HT/EHT, non-communicating meter estimated billing, delayed
-payment charges, disconnection/reconnection fee schedule.
+non-communicating meter estimated billing, delayed payment charges, disconnection/reconnection
+fee schedule.
 
 ## Recharge flow
 
@@ -243,7 +268,7 @@ cd backend
 dotnet test PrepaidEngine.sln
 ```
 
-**125 tests, all passing.** Breakdown:
+**155 tests, all passing.** Breakdown:
 
 | Test class | Count | What it covers |
 |---|---|---|
@@ -259,7 +284,9 @@ dotnet test PrepaidEngine.sln
 | `ArrearRecoveryTests` | 11 | Uncapped arrears-first behavior (tariff book §13.4 default), optional caller-supplied recovery cap, 100%-cap-equivalence, input validation |
 | `PrepaidWalletTests` | 12 | Wallet credit/debit, emergency-credit tracking, consumer connect/disconnect/reconnect rules |
 | `MockRmsClientTests` | 9 | Recharge success/failed/pending/unavailable outcomes, idempotent replay, **20-way concurrent-call race test**, input validation, transaction-status lookup |
-| `PrepaidEngineDbContextTests` | 5 | Real persistence round-trips against SQLite (keys, FKs, owned collections) — including a regression test for a real EF change-tracking bug found while building the recharge endpoint (crediting an already-loaded wallet), and a `PrepaidBill`↔`FppasCharge` round-trip |
+| `PrepaidEngineDbContextTests` | 6 | Real persistence round-trips against SQLite (keys, FKs, owned collections) — including a regression test for a real EF change-tracking bug found while building the recharge endpoint (crediting an already-loaded wallet), a `PrepaidBill`↔`FppasCharge` round-trip, and a `Tariff`↔`TouPeriod` round-trip (classify + charge calculation after reload) |
+| `TouTariffTests` | 14 | Reproduces the exact IHT (5.55/6.66/4.72 kVAh) and IEHT (6.60/7.92/5.61 kVAh) ToD schedules from the tariff book — boundary transitions, midnight wraparound, unknown-label and negative-consumption validation, and the relaxed slabs-OR-ToD-periods constructor rule |
+| `TouPeriodTests` | 15 | `Contains` boundary behavior for wrapping and non-wrapping periods, constructor validation (equal start/end, negative rate, empty label, time ≥ 24h) |
 
 Every number in `TariffGoldenDataTests`, `BplTariffTests`, and `DhtTariffDiscrepancyTests` is
 taken verbatim from MePDCL's tariff book or reference workbooks, not invented — a failure there

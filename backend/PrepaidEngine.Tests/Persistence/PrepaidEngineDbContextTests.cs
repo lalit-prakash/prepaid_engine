@@ -86,6 +86,33 @@ public class PrepaidEngineDbContextTests : IDisposable
     }
 
     [Fact]
+    public void CanPersistAndReloadTariffWithTouPeriods()
+    {
+        var tariff = new Tariff(
+            Guid.NewGuid(), "IHT", ConsumerCategory.Industrial,
+            slabs: Array.Empty<TariffSlab>(),
+            fixedChargePerUnitPerMonth: 340.00m,
+            touPeriods: new[]
+            {
+                new TouPeriod("Normal", TimeSpan.FromHours(6), TimeSpan.FromHours(17), 5.55m),
+                new TouPeriod("Peak", TimeSpan.FromHours(17), TimeSpan.FromHours(23), 6.66m),
+                new TouPeriod("Off-Peak", TimeSpan.FromHours(23), TimeSpan.FromHours(6), 4.72m),
+            });
+
+        _context.Tariffs.Add(tariff);
+        _context.SaveChanges();
+
+        using var freshContext = new PrepaidEngineDbContext(
+            new DbContextOptionsBuilder<PrepaidEngineDbContext>().UseSqlite(_connection).Options);
+
+        var reloaded = freshContext.Tariffs.Include(t => t.TouPeriods).Single(t => t.Id == tariff.Id);
+
+        Assert.Equal(3, reloaded.TouPeriods.Count);
+        Assert.Equal("Peak", reloaded.ClassifyTimeOfDay(TimeSpan.FromHours(20)));
+        Assert.Equal(6.66m * 50, reloaded.CalculateTouEnergyCharge(new Dictionary<string, decimal> { ["Peak"] = 50m }));
+    }
+
+    [Fact]
     public void RmsReferenceId_IsUniqueAcrossRechargeTransactions()
     {
         var meter = new SmartMeter(Guid.NewGuid(), "MTR-200", MeterPhase.SinglePhase);
