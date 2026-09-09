@@ -42,11 +42,15 @@ changes.
 ## Security review (of what's actually built so far)
 
 Scope: `PrepaidEngine.Domain`, `.Application`, `.Infrastructure`, `.Api` as of this commit —
-domain entities, EF Core persistence, mock RMS adapter. Beyond `/health`, two **read-only,
-unauthenticated** demo endpoints exist (`GET /api/v1/consumers`, `GET /api/v1/consumers/{accountNumber}`)
-added specifically for a local demo — they expose consumer PII (name, address) and wallet
-balances with no auth check. **Do not deploy these outside local development as-is.**
-Authentication/authorization must land before any of this is exposed on a shared network.
+domain entities, EF Core persistence, mock RMS adapter. Beyond `/health`, two **read-only**
+demo endpoints exist (`GET /api/v1/consumers`, `GET /api/v1/consumers/{accountNumber}`),
+protected by HTTP Basic auth (`BasicAuthenticationHandler`, credentials in
+`DemoAuth:Username`/`DemoAuth:Password` via user-secrets, compared with
+`CryptographicOperations.FixedTimeEquals`). This is a stop-gap for a local demo — Basic auth
+sends credentials on every request (mitigated locally by HTTPS via `UseHttpsRedirection`, but
+still a single shared password, no per-user identity, no token expiry, no lockout on repeated
+failures) and is **not** a substitute for real auth (token/OIDC + per-user authorization,
+rate limiting on the auth endpoint) before any shared or production exposure.
 
 | Area | Status | Notes |
 |---|---|---|
@@ -55,7 +59,7 @@ Authentication/authorization must land before any of this is exposed on a shared
 | Money precision | OK | All monetary fields use `decimal` with explicit `decimal(18,2)` column precision; no `float`/`double` in financial paths. |
 | Recharge idempotency | OK | `RechargeTransactions.RmsReferenceId` has a unique index; `MockRmsClient` replays the original result for a repeated `IdempotencyKey` rather than reprocessing. A real RMS adapter must preserve this guarantee. |
 | Input validation | OK for current scope | Entity constructors and mutators throw on invalid state (negative amounts, empty required strings, invalid slab/vend ranges, etc.) — validation lives in the domain, not scattered across callers. |
-| Authentication / authorization | **Not implemented** | No auth on any endpoint. Required before any endpoint beyond `/health` is exposed outside local dev. |
+| Authentication / authorization | Basic auth on demo endpoints only | `/health` is intentionally open (health-probe convention). The two demo consumer endpoints require HTTP Basic auth with credentials from user-secrets; verified live: no credentials → 401, wrong password → 401, correct credentials → 200. Still a single shared password with no per-user identity, no lockout, no rate limiting — real token/OIDC auth is required before any shared or production exposure. |
 | Audit logging | **Not implemented** | No audit trail yet for wallet credits/debits, tariff changes, or connection-status changes. Needed before this handles real consumer data. |
 | Transport security | Partial | `app.UseHttpsRedirection()` is wired in `Program.cs`; no HSTS/security headers configured yet. |
 | Dependency versions | Checked — 2 fixed, 1 accepted | Ran `dotnet list package --vulnerable --include-transitive`. Found 3 high-severity transitive advisories, all in `PrepaidEngine.Tests` only (never shipped): `System.Net.Http` 4.3.0 and `System.Text.RegularExpressions` 4.3.0 — fixed by pinning to 4.3.4/4.3.1. `SQLitePCLRaw.lib.e_sqlite3` 2.1.6 (GHSA-2m69-gcr7-jv3q) — tried 2.1.10 and 2.1.11 (latest available on NuGet at time of check), both still flagged; no patched version exists upstream yet. Accepted as a known, unresolved, test-only risk — re-check when a fixed version ships. |

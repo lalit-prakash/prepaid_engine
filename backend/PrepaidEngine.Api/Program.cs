@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PrepaidEngine.Api.Auth;
 using PrepaidEngine.Application.Rms;
 using PrepaidEngine.Infrastructure.Persistence;
 using PrepaidEngine.Infrastructure.Persistence.Seed;
@@ -18,6 +19,12 @@ builder.Services.AddDbContext<PrepaidEngineDbContext>(options =>
 // contract is available; keep MockRmsClient registered for local dev / tests until then.
 builder.Services.AddSingleton<IRmsClient, MockRmsClient>();
 
+// Basic auth for the demo endpoints only — a stop-gap, not a substitute for real
+// authentication before any shared/production exposure (see docs/assumptions-and-security.md).
+builder.Services.AddAuthentication("Basic")
+    .AddScheme<BasicAuthenticationSchemeOptions, BasicAuthenticationHandler>("Basic", null);
+builder.Services.AddAuthorization();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -36,11 +43,16 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
     .WithName("Health");
 
-// Demo/local-only read endpoints — no authentication yet (see docs/assumptions-and-security.md).
-// Do not expose these unauthenticated outside local development.
+// Demo/local-only read endpoints, behind HTTP Basic auth (DemoAuth:Username/Password, set
+// via user-secrets). This is a stop-gap for a local demo, not a substitute for real
+// authentication/authorization before any shared or production exposure — see
+// docs/assumptions-and-security.md.
 app.MapGet("/api/v1/consumers", async (PrepaidEngineDbContext db) =>
 {
     var consumers = await db.Consumers
@@ -59,7 +71,8 @@ app.MapGet("/api/v1/consumers", async (PrepaidEngineDbContext db) =>
 
     return Results.Ok(consumers);
 })
-.WithName("ListConsumers");
+.WithName("ListConsumers")
+.RequireAuthorization();
 
 app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, PrepaidEngineDbContext db) =>
 {
@@ -94,7 +107,8 @@ app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, Pre
         Bills = bills
     });
 })
-.WithName("GetConsumerByAccountNumber");
+.WithName("GetConsumerByAccountNumber")
+.RequireAuthorization();
 
 app.Run();
 

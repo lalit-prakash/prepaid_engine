@@ -49,10 +49,20 @@ In Development, the app auto-applies any pending migrations and seeds one demo c
 `DbSeeder`) — safe to leave on since it's a no-op once a consumer already exists, and never
 runs outside Development.
 
-#### Demo endpoints (local/no auth yet — see docs/assumptions-and-security.md)
+#### Demo endpoints (HTTP Basic auth — see docs/assumptions-and-security.md)
 
 - `GET /api/v1/consumers` — list consumers with wallet balance
 - `GET /api/v1/consumers/{accountNumber}` — full detail: meter, wallet ledger, bills (try `DEMO-0001`)
+
+Both require HTTP Basic auth. Set demo credentials via user-secrets before running
+(`appsettings.json` only holds `CHANGE_ME` placeholders):
+```bash
+cd backend/PrepaidEngine.Api
+dotnet user-secrets set "DemoAuth:Username" "<username>"
+dotnet user-secrets set "DemoAuth:Password" "<password>"
+```
+Then: `curl -u <username>:<password> http://localhost:5299/api/v1/consumers/DEMO-0001`.
+`/health` remains unauthenticated (needed for load-balancer/health-probe checks).
 
 Add a new migration after changing the model:
 ```bash
