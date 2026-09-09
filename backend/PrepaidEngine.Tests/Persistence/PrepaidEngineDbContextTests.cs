@@ -102,4 +102,45 @@ public class PrepaidEngineDbContextTests : IDisposable
 
         Assert.Throws<DbUpdateException>(() => _context.SaveChanges());
     }
+
+    [Fact]
+    public void CreditingAnAlreadyPersistedWallet_PersistsTheNewTransaction()
+    {
+        // Regression test: crediting a wallet that was freshly created (never round-tripped
+        // through the DB) works fine because the whole graph is new/Added. Crediting a wallet
+        // that was *loaded back* from the DB is a different, easy-to-get-wrong case — EF's
+        // change detection does not reliably infer "Added" for an entity appended to an
+        // already-tracked entity's backing-field collection, and can instead emit a bogus
+        // UPDATE for a row that doesn't exist yet (see Program.cs's recharge endpoint, which
+        // works around this by explicitly calling context.WalletTransactions.Add(...) on the
+        // entity Credit()/Debit() returns). This test locks in that workaround's correctness.
+        var meter = new SmartMeter(Guid.NewGuid(), "MTR-300", MeterPhase.SinglePhase);
+        var consumer = new Consumer(Guid.NewGuid(), "ACC-300", "Pat Doe", "3 Test Street", meter, connectedLoadKw: 2m);
+        consumer.Wallet.Credit(100m, WalletTransactionType.Recharge, "RMS-INITIAL");
+        _context.Consumers.Add(consumer);
+        _context.SaveChanges();
+
+        using (var loadingContext = new PrepaidEngineDbContext(
+            new DbContextOptionsBuilder<PrepaidEngineDbContext>().UseSqlite(_connection).Options))
+        {
+            var reloaded = loadingContext.Consumers
+                .Include(c => c.Wallet).ThenInclude(w => w.Transactions)
+                .Single(c => c.Id == consumer.Id);
+
+            var newTransaction = reloaded.Wallet.Credit(50m, WalletTransactionType.Recharge, "RMS-SECOND");
+            loadingContext.WalletTransactions.Add(newTransaction); // the required workaround
+
+            loadingContext.SaveChanges();
+        }
+
+        using var verifyingContext = new PrepaidEngineDbContext(
+            new DbContextOptionsBuilder<PrepaidEngineDbContext>().UseSqlite(_connection).Options);
+
+        var final = verifyingContext.Consumers
+            .Include(c => c.Wallet).ThenInclude(w => w.Transactions)
+            .Single(c => c.Id == consumer.Id);
+
+        Assert.Equal(150m, final.Wallet.Balance);
+        Assert.Equal(2, final.Wallet.Transactions.Count);
+    }
 }

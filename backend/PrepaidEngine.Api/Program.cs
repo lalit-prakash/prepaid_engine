@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Api.Auth;
 using PrepaidEngine.Application.Rms;
+using PrepaidEngine.Domain.Entities;
+using PrepaidEngine.Domain.Enums;
 using PrepaidEngine.Infrastructure.Persistence;
 using PrepaidEngine.Infrastructure.Persistence.Seed;
 using PrepaidEngine.Infrastructure.Rms;
@@ -110,7 +112,97 @@ app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, Pre
 .WithName("GetConsumerByAccountNumber")
 .RequireAuthorization();
 
+// Recharge flow, orchestrated through IRmsClient (MockRmsClient for now — see the TODO
+// above). RMS remains authoritative: this endpoint only credits the wallet once RMS reports
+// Success, and never re-credits for a repeated idempotency key or a duplicated RMS reference.
+app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
+    string accountNumber,
+    RechargeRequest request,
+    PrepaidEngineDbContext db,
+    IRmsClient rmsClient) =>
+{
+    if (request.Amount <= 0)
+        return Results.BadRequest(new { error = "Amount must be positive." });
+
+    var consumer = await db.Consumers
+        .Include(c => c.Wallet).ThenInclude(w => w.Transactions)
+        .FirstOrDefaultAsync(c => c.AccountNumber == accountNumber);
+    if (consumer is null)
+        return Results.NotFound();
+
+    var idempotencyKey = string.IsNullOrWhiteSpace(request.IdempotencyKey)
+        ? Guid.NewGuid().ToString("N")
+        : request.IdempotencyKey;
+    var correlationId = Guid.NewGuid().ToString("N");
+
+    RmsRechargeResult rmsResult;
+    try
+    {
+        rmsResult = await rmsClient.InitiateRechargeAsync(
+            new RmsRechargeRequest(consumer.Id, request.Amount, idempotencyKey, correlationId));
+    }
+    catch (RmsUnavailableException ex)
+    {
+        return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable,
+            title: "RMS unavailable", detail: ex.Message);
+    }
+
+    // Our own idempotency guard: never re-credit for an RMS reference we've already recorded,
+    // even if this call raced with another request for the same idempotency key.
+    var existing = await db.RechargeTransactions
+        .FirstOrDefaultAsync(r => r.RmsReferenceId == rmsResult.RmsReferenceId);
+    if (existing is not null)
+    {
+        return Results.Ok(new
+        {
+            existing.RmsReferenceId,
+            Status = existing.Status.ToString(),
+            WalletBalance = consumer.Wallet.Balance,
+            Replayed = true
+        });
+    }
+
+    var recharge = new RechargeTransaction(Guid.NewGuid(), consumer.Id, request.Amount, rmsResult.RmsReferenceId, DateTime.UtcNow);
+    db.RechargeTransactions.Add(recharge);
+
+    switch (rmsResult.Status)
+    {
+        case RmsRechargeStatus.Success:
+            recharge.MarkSuccessful(DateTime.UtcNow);
+            // Explicitly track the new ledger entry as Added: the wallet was loaded from the
+            // DB (already tracked, not part of a brand-new graph), and EF's change detection
+            // does not reliably infer "newly added" for an entity appended to an
+            // already-tracked entity's backing-field collection — it can mis-detect it as
+            // Modified and emit a bogus UPDATE for a row that doesn't exist yet.
+            var walletTransaction = consumer.Wallet.Credit(request.Amount, WalletTransactionType.Recharge, rmsResult.RmsReferenceId);
+            db.WalletTransactions.Add(walletTransaction);
+            await db.SaveChangesAsync();
+            return Results.Ok(new { recharge.RmsReferenceId, Status = recharge.Status.ToString(), WalletBalance = consumer.Wallet.Balance });
+
+        case RmsRechargeStatus.Failed:
+            recharge.MarkFailed(DateTime.UtcNow);
+            await db.SaveChangesAsync();
+            return Results.Json(
+                new { recharge.RmsReferenceId, Status = recharge.Status.ToString(), rmsResult.Message },
+                statusCode: StatusCodes.Status402PaymentRequired);
+
+        default: // Pending
+            await db.SaveChangesAsync();
+            return Results.Accepted(value: new { recharge.RmsReferenceId, Status = recharge.Status.ToString(), rmsResult.Message });
+    }
+})
+.WithName("RechargeConsumer")
+.RequireAuthorization();
+
 app.Run();
+
+/// <param name="Amount">Recharge amount.</param>
+/// <param name="IdempotencyKey">
+/// Optional. Reuse the same value to safely retry a request without risking a double
+/// recharge; a random one is generated if omitted. In the mock RMS, prefix this with
+/// "FAIL-", "PENDING-", or "UNAVAILABLE-" to demo those outcomes.
+/// </param>
+public record RechargeRequest(decimal Amount, string? IdempotencyKey = null);
 
 // Exposed so WebApplicationFactory-based integration tests can bootstrap this Api project.
 public partial class Program { }
