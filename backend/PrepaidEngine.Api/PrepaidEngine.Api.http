@@ -1,0 +1,6 @@
+@PrepaidEngine.Api_HostAddress = http://localhost:5043
+
+GET {{PrepaidEngine.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
