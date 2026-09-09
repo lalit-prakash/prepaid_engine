@@ -63,12 +63,19 @@ These are real, documented gaps — not silently dropped:
   modeled on `Consumer` — today a caller must compute `TmcAmount`/`CpmcAmount` via the
   calculators themselves and pass them into `PrepaidBill` explicitly, the same pattern as
   FPPAS's daily share.
-- ~~**Arrear recovery.**~~ Implemented — see `ArrearRecovery` and the table rows above. Supports
-  both the verified tariff-book rule (uncapped, arrears-first) and an optional caller-supplied
-  cap for a prepaid-recharge scenario (RFP-indicative only, never a hard-coded default). Not
-  yet wired into `PrepaidBill`/the recharge flow — no per-consumer arrears balance is tracked
-  anywhere yet (there's no `Consumer.OutstandingArrears` or equivalent), so there's nothing for
-  this calculator to be called against in a real flow yet.
+- ~~**Arrear recovery.**~~ Implemented and wired into `PrepaidBill` — `ArrearsAmount` (arrears
+  carried onto this bill from prior unpaid bills, added to `Amount`) and `ArrearsRecovered`
+  (tracked separately from `AmountPaid` for audit). `PrepaidBill.ApplyPayment` now actually
+  calls `ArrearRecovery.Calculate` internally, so an incoming payment is split against this
+  bill's own outstanding arrears before the rest counts as "paid" in the ordinary sense —
+  matching tariff book §13.4 by default (uncapped), with the same optional RFP-indicative cap
+  available per payment. Verified live against real PostgreSQL: the existing residential DLT
+  demo bill correctly still shows both fields as zero (no prior arrears) with `Amount`
+  unchanged. Multi-installment recovery (arrears clearing across several partial payments) is
+  hand-verified in tests since neither workbook has a non-zero arrears example. **Still
+  missing**: nothing computes `ArrearsAmount` automatically from a consumer's actual unpaid
+  bill history — a caller must sum prior bills' `OutstandingAmount` and pass it in when
+  constructing a new bill, the same pattern established for FPPAS/TMC/CPMC.
 - **TOU (time-of-use) tariffs** for Industrial HT/EHT — present in the tariff book, not present
   in either workbook, not implemented.
 

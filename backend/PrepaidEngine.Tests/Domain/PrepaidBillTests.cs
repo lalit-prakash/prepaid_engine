@@ -7,7 +7,7 @@ namespace PrepaidEngine.Tests.Domain;
 
 public class PrepaidBillTests
 {
-    private static PrepaidBill BuildBill(decimal fppasAmount = 0m, Guid? fppasChargeId = null, decimal tmcAmount = 0m, decimal cpmcAmount = 0m) => new(
+    private static PrepaidBill BuildBill(decimal fppasAmount = 0m, Guid? fppasChargeId = null, decimal tmcAmount = 0m, decimal cpmcAmount = 0m, decimal arrearsAmount = 0m) => new(
         Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
         energyChargeGross: 225.00m,
         prepaidRebateAmount: 4.50m,
@@ -17,7 +17,8 @@ public class PrepaidBillTests
         fppasAmount: fppasAmount,
         fppasChargeId: fppasChargeId,
         tmcAmount: tmcAmount,
-        cpmcAmount: cpmcAmount);
+        cpmcAmount: cpmcAmount,
+        arrearsAmount: arrearsAmount);
 
     [Fact]
     public void Amount_ComposesFromEnergyNetPlusFixedPlusDutyPlusFppas_NoFppas()
@@ -75,6 +76,79 @@ public class PrepaidBillTests
         Assert.Equal(2000.00m, tmc);
         Assert.Equal(800.00m, cpmc);
         Assert.Equal(3212.75m, bill.Amount);
+    }
+
+    [Fact]
+    public void Amount_IncludesArrears()
+    {
+        var bill = BuildBill(arrearsAmount: 300.00m);
+
+        // 402.75 + 300.00 = 702.75
+        Assert.Equal(702.75m, bill.Amount);
+        Assert.Equal(300.00m, bill.ArrearsAmount);
+        Assert.Equal(0m, bill.ArrearsRecovered);
+    }
+
+    [Fact]
+    public void ApplyPayment_RecoversArrearsFirst_UncappedTariffBookDefault()
+    {
+        // Tariff book §13.4: payment goes to arrears first, then current charges.
+        // Bill total = 402.75 (current) + 300.00 (arrears) = 702.75.
+        var bill = BuildBill(arrearsAmount: 300.00m);
+
+        bill.ApplyPayment(400m);
+
+        Assert.Equal(300.00m, bill.ArrearsRecovered); // all 300 of arrears cleared first
+        Assert.Equal(400m, bill.AmountPaid);
+        Assert.Equal(302.75m, bill.OutstandingAmount); // 702.75 - 400
+        Assert.Equal(BillStatus.PartiallyPaid, bill.Status);
+    }
+
+    [Fact]
+    public void ApplyPayment_ArrearsRecoveryIsCappedAtWhatIsActuallyOwed_NotThePayment()
+    {
+        var bill = BuildBill(arrearsAmount: 50.00m);
+
+        bill.ApplyPayment(500m);
+
+        // Only Rs 50 was ever owed as arrears, even though the payment could cover more.
+        Assert.Equal(50.00m, bill.ArrearsRecovered);
+    }
+
+    [Fact]
+    public void ApplyPayment_WithConfiguredCap_LimitsArrearsRecoveryPerPayment()
+    {
+        // A utility-configured 50% cap (RFP-indicative only, never a hard default — see
+        // ArrearRecovery) limits how much of each payment can go toward arrears.
+        var bill = BuildBill(arrearsAmount: 300.00m);
+
+        bill.ApplyPayment(400m, maxArrearsRecoveryPercentOfPayment: 50m);
+
+        Assert.Equal(200.00m, bill.ArrearsRecovered); // 50% of 400, not the full 300 owed
+        Assert.Equal(400m, bill.AmountPaid);
+    }
+
+    [Fact]
+    public void ApplyPayment_AcrossMultipleInstallments_ArrearsRecoveredAccumulatesCorrectly()
+    {
+        var bill = BuildBill(arrearsAmount: 300.00m);
+
+        bill.ApplyPayment(100m); // all 100 -> arrears (200 still owed)
+        Assert.Equal(100.00m, bill.ArrearsRecovered);
+
+        bill.ApplyPayment(250m); // 200 clears the rest of arrears, 50 -> current charges
+        Assert.Equal(300.00m, bill.ArrearsRecovered);
+        Assert.Equal(350m, bill.AmountPaid);
+    }
+
+    [Fact]
+    public void Constructor_NegativeArrears_Throws()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PrepaidBill(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            energyChargeGross: 100m, prepaidRebateAmount: 0m,
+            fixedCharge: 0m, electricityDutyAmount: 0m, generatedAt: DateTime.UtcNow,
+            arrearsAmount: -1m));
     }
 
     [Fact]

@@ -8,10 +8,10 @@ namespace PrepaidEngine.Domain.Entities;
 /// Carries a full, auditable charge breakdown rather than a single opaque total — matching the
 /// column layout MePDCL's own reference workbook uses to explain a bill ("Individual Charge
 /// Calculation" sheet: EC Gross → Rebate → EC Net → Fixed Charge → Energy Duty → FPPAS → [TMC →
-/// CPMC] → Final Bill; TMC/CPMC aren't in that workbook's example rows, but are tariff-book
-/// line items §4–5, so they're included here in the same position). <see cref="Amount"/> is
-/// exactly that final total, computed once at construction:
-/// <c>(EnergyChargeGross - PrepaidRebateAmount) + FixedCharge + ElectricityDutyAmount + FppasAmount + TmcAmount + CpmcAmount</c>.
+/// CPMC → Arrears] → Final Bill; TMC/CPMC/Arrears aren't in that workbook's example rows, but
+/// are tariff-book line items §4–5/§13.4, so they're included here in the same position).
+/// <see cref="Amount"/> is exactly that final total, computed once at construction:
+/// <c>(EnergyChargeGross - PrepaidRebateAmount) + FixedCharge + ElectricityDutyAmount + FppasAmount + TmcAmount + CpmcAmount + ArrearsAmount</c>.
 /// </summary>
 public class PrepaidBill
 {
@@ -51,7 +51,23 @@ public class PrepaidBill
     /// </summary>
     public decimal CpmcAmount { get; private set; }
 
-    /// <summary>The final billed amount: net energy charge + fixed charge + duty + FPPAS + TMC + CPMC.</summary>
+    /// <summary>
+    /// Arrears carried forward onto this bill from prior unpaid bills (tariff book §13
+    /// context), added to the current period's charges. The caller supplies this — typically
+    /// the sum of <see cref="OutstandingAmount"/> across the consumer's prior bills — since a
+    /// bill has no way to look that up on its own.
+    /// </summary>
+    public decimal ArrearsAmount { get; private set; }
+
+    /// <summary>
+    /// How much of <see cref="ArrearsAmount"/> has actually been recovered so far via
+    /// <see cref="ApplyPayment"/>, per the tariff book §13.4 arrears-first rule. Distinct from
+    /// <see cref="AmountPaid"/>, which is the total paid toward the whole bill (arrears portion
+    /// included).
+    /// </summary>
+    public decimal ArrearsRecovered { get; private set; }
+
+    /// <summary>The final billed amount: net energy charge + fixed charge + duty + FPPAS + TMC + CPMC + arrears.</summary>
     public decimal Amount { get; private set; }
 
     public decimal AmountPaid { get; private set; }
@@ -71,7 +87,8 @@ public class PrepaidBill
         decimal fppasAmount = 0m,
         Guid? fppasChargeId = null,
         decimal tmcAmount = 0m,
-        decimal cpmcAmount = 0m)
+        decimal cpmcAmount = 0m,
+        decimal arrearsAmount = 0m)
     {
         if (energyChargeGross < 0)
             throw new ArgumentOutOfRangeException(nameof(energyChargeGross));
@@ -87,8 +104,10 @@ public class PrepaidBill
             throw new ArgumentOutOfRangeException(nameof(tmcAmount));
         if (cpmcAmount < 0)
             throw new ArgumentOutOfRangeException(nameof(cpmcAmount));
+        if (arrearsAmount < 0)
+            throw new ArgumentOutOfRangeException(nameof(arrearsAmount));
 
-        var amount = (energyChargeGross - prepaidRebateAmount) + fixedCharge + electricityDutyAmount + fppasAmount + tmcAmount + cpmcAmount;
+        var amount = (energyChargeGross - prepaidRebateAmount) + fixedCharge + electricityDutyAmount + fppasAmount + tmcAmount + cpmcAmount + arrearsAmount;
         if (amount < 0)
             throw new ArgumentOutOfRangeException(nameof(fppasAmount), "The resulting bill amount cannot be negative; a credit note is not supported by this constructor.");
 
@@ -104,6 +123,8 @@ public class PrepaidBill
         FppasChargeId = fppasChargeId;
         TmcAmount = tmcAmount;
         CpmcAmount = cpmcAmount;
+        ArrearsAmount = arrearsAmount;
+        ArrearsRecovered = 0m;
         Amount = amount;
         AmountPaid = 0m;
         GeneratedAt = generatedAt;
@@ -119,13 +140,33 @@ public class PrepaidBill
 
     /// <summary>
     /// Applies a payment (typically a wallet debit settling this bill) and updates status.
+    ///
+    /// Per tariff book §13.4 ("any payment made by the consumer shall first be adjusted
+    /// towards the arrears... and then current bills"), the payment is run through
+    /// <see cref="ArrearRecovery"/> against this bill's still-outstanding
+    /// <see cref="ArrearsAmount"/> before anything is considered applied to current charges —
+    /// tracked separately in <see cref="ArrearsRecovered"/>, purely for traceability/audit;
+    /// <see cref="AmountPaid"/> and <see cref="OutstandingAmount"/> (and therefore
+    /// <see cref="Status"/>) reflect the payment against the bill's full total exactly as
+    /// before, regardless of that internal split.
     /// </summary>
-    public void ApplyPayment(decimal amount)
+    /// <param name="amount">Amount being paid toward this bill.</param>
+    /// <param name="maxArrearsRecoveryPercentOfPayment">
+    /// Optional cap on how much of <paramref name="amount"/> may go toward arrears, as a
+    /// percentage (0-100). Omit for the tariff book's uncapped default; only supply this if a
+    /// utility-specific configuration calls for a capped recovery rate (see
+    /// <see cref="ArrearRecovery"/> — such a cap is not itself a verified tariff book value).
+    /// </param>
+    public void ApplyPayment(decimal amount, decimal? maxArrearsRecoveryPercentOfPayment = null)
     {
         if (amount <= 0)
             throw new ArgumentOutOfRangeException(nameof(amount));
         if (Status is BillStatus.Cancelled)
             throw new InvalidOperationException("Cannot apply payment to a cancelled bill.");
+
+        var outstandingArrears = Math.Max(0m, ArrearsAmount - ArrearsRecovered);
+        var recovery = ArrearRecovery.Calculate(amount, outstandingArrears, maxArrearsRecoveryPercentOfPayment);
+        ArrearsRecovered += recovery.AmountAppliedToArrears;
 
         AmountPaid += amount;
         Status = OutstandingAmount <= 0m ? BillStatus.Paid : BillStatus.PartiallyPaid;

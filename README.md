@@ -22,7 +22,7 @@ reference calculation workbooks). Frontend is intentionally paused — see
   - `PrepaidEngine.Application` — use cases / integration ports (currently: `IRmsClient`)
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
-  - `PrepaidEngine.Tests` — xUnit test project (119 tests — see [Testing](#testing))
+  - `PrepaidEngine.Tests` — xUnit test project (125 tests — see [Testing](#testing))
 - `frontend/` — Angular + TypeScript (default CLI scaffold only; paused)
 - `docs/` — sourcing, security, and tariff-validation documentation (see [Documentation](#documentation))
 
@@ -133,9 +133,16 @@ two distinct rules from two different-strength sources, kept deliberately separa
   `docs/tariff-validation-report.md`), so no percentage is hard-coded anywhere**; a cap is only
   ever applied if a caller explicitly configures one.
 
-**Not yet wired into `PrepaidBill`/the recharge flow** — there's no per-consumer arrears
-balance tracked anywhere yet (`Consumer` has no `OutstandingArrears` or equivalent), so there's
-nothing for this calculator to be called against in a real flow yet.
+**Wired into `PrepaidBill`** — `ArrearsAmount` (prior arrears carried onto this bill, included
+in `Amount`) and `ArrearsRecovered` (tracked separately for audit). `PrepaidBill.ApplyPayment`
+actually calls `ArrearRecovery.Calculate` internally: an incoming payment is split against this
+bill's own outstanding arrears first, per §13.4, before the rest counts toward current charges
+— `AmountPaid`/`OutstandingAmount`/`Status` behave exactly as before regardless of that internal
+split. Verified live against real PostgreSQL (existing demo bill correctly still shows both
+fields as zero, `Amount` unchanged) and hand-verified for multi-installment recovery in tests.
+**Still missing**: nothing computes `ArrearsAmount` automatically from a consumer's actual
+unpaid bill history — a caller sums prior bills' `OutstandingAmount` and passes it in, same
+pattern as FPPAS/TMC/CPMC.
 
 **Explicitly not yet implemented** (see `docs/tariff-validation-report.md` for detail on each):
 ToD/peak tariffs for Industrial HT/EHT, non-communicating meter estimated billing, delayed
@@ -236,7 +243,7 @@ cd backend
 dotnet test PrepaidEngine.sln
 ```
 
-**119 tests, all passing.** Breakdown:
+**125 tests, all passing.** Breakdown:
 
 | Test class | Count | What it covers |
 |---|---|---|
@@ -246,7 +253,7 @@ dotnet test PrepaidEngine.sln
 | `DhtTariffDiscrepancyTests` | 2 | The documented DHT ₹5.85 (production) vs. ₹5.87 (legacy Excel reference) discrepancy — both kept as explicit, separately named tests, neither silently overriding the other |
 | `ElectricityDutyTests` | 15 | Category-based duty: Domestic/BPL flat rate, "Others" flat rate, Industrial tiered slabs (including cumulative-position vs. raw-delta correctness), negative-input validation |
 | `FppasChargeTests` | 10 | **Regression against both worked FPPAS examples in the reference workbook** — negative and positive rate cases, unrounded daily proration matching the workbook's exact precision, the paisa-accurate rounded variant, applicable-billing-month scheduling, input validation |
-| `PrepaidBillTests` | 10 | Charge-breakdown composition (energy net + fixed + duty + FPPAS + TMC + CPMC), positive/negative FPPAS shares, TMC/CPMC line items, all six components together, validation guards, payment application |
+| `PrepaidBillTests` | 16 | Full charge-breakdown composition (energy net + fixed + duty + FPPAS + TMC + CPMC + arrears), arrears-first payment allocation (uncapped and capped), multi-installment arrears recovery, validation guards |
 | `TransformerMaintenanceChargeTests` | 4 | TMC by voltage (11/33/132 kV), opt-in/opt-out, exclusive- vs. shared-use billing basis, negative-input validation |
 | `CtPtMaintenanceChargeTests` | 7 | CPMC by voltage/wiring combination, opt-in/opt-out, undefined-132kV-rate handling |
 | `ArrearRecoveryTests` | 11 | Uncapped arrears-first behavior (tariff book §13.4 default), optional caller-supplied recovery cap, 100%-cap-equivalence, input validation |

@@ -18,6 +18,8 @@ public class PrepaidBillConfiguration : IEntityTypeConfiguration<PrepaidBill>
         builder.Property(b => b.FppasAmount).HasColumnType("decimal(18,2)").IsRequired();
         builder.Property(b => b.TmcAmount).HasColumnType("decimal(18,2)").IsRequired();
         builder.Property(b => b.CpmcAmount).HasColumnType("decimal(18,2)").IsRequired();
+        builder.Property(b => b.ArrearsAmount).HasColumnType("decimal(18,2)").IsRequired();
+        builder.Property(b => b.ArrearsRecovered).HasColumnType("decimal(18,2)").IsRequired();
         builder.Property(b => b.Amount).HasColumnType("decimal(18,2)").IsRequired();
         builder.Property(b => b.AmountPaid).HasColumnType("decimal(18,2)").IsRequired();
         builder.Property(b => b.GeneratedAt).IsRequired();
