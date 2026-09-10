@@ -1,0 +1,66 @@
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, var(--color-primary-darker), var(--color-primary-dark) 60%, var(--color-secondary-dark));
+}
+
+.login__card {
+  width: 360px;
+  background: var(--surface-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-8) var(--space-6);
+}
+
+.login__brand {
+  font-size: 18px;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.04em;
+  color: var(--color-primary-dark);
+}
+.login__subtitle {
+  color: var(--text-muted);
+  font-size: var(--font-size-meta);
+  margin-top: 2px;
+  margin-bottom: var(--space-6);
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+}
+label {
+  font-size: var(--font-size-meta);
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+input {
+  padding: 9px var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  font-size: var(--font-size-body);
+  margin-bottom: var(--space-4);
+}
+input:focus {
+  border-color: var(--color-primary);
+}
+button {
+  padding: 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-button);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: var(--color-primary-dark); }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.login__error {
+  margin-top: var(--space-3);
+  color: var(--color-danger-dark);
+  font-size: var(--font-size-meta);
+}

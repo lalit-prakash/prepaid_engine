@@ -1,0 +1,127 @@
+// ============================================================================
+// PREPAID ENGINE — DESIGN TOKENS
+// ----------------------------------------------------------------------------
+// Centralized visual language for the whole app. Nothing outside this file
+// should hardcode a hex color, spacing value, radius, or shadow — components
+// consume these as CSS custom properties so the palette/scale can change in
+// one place. Teal-first enterprise-utility identity (see README's frontend
+// design notes) — not a generic blue admin-dashboard palette.
+// ============================================================================
+
+:root {
+  // ---- Brand / primary (deep teal → teal → cyan) --------------------------
+  --color-primary-darker: #043c3f;
+  --color-primary-dark: #05585c;
+  --color-primary: #089790;
+  --color-primary-light: #b7e4e1;
+  --color-primary-lighter: #e6f5f4;
+
+  --color-secondary: #54c0cc;
+  --color-secondary-dark: #1f4f59;
+  --color-secondary-light: #d6f0f3;
+
+  // ---- Semantic status colors ----------------------------------------------
+  --color-success: #4a7a1f;
+  --color-success-dark: #235502;
+  --color-success-light: #e6f0da;
+
+  --color-warning: #a08a1f;
+  --color-warning-dark: #7a6a13;
+  --color-warning-light: #f7f0cf;
+
+  --color-danger: #b1503f;
+  --color-danger-dark: #8a3a2c;
+  --color-danger-light: #f7e2dd;
+
+  --color-info: #3a7c9c;
+  --color-info-dark: #235a73;
+  --color-info-light: #e0f0f6;
+
+  // ---- Analytical accent (tariff comparison, simulations) ------------------
+  --color-analytic: #8474a1;
+  --color-analytic-dark: #5d4f77;
+  --color-analytic-light: #ede8f2;
+
+  // ---- Neutrals --------------------------------------------------------------
+  --color-neutral-0: #ffffff;
+  --color-neutral-50: #f6f8f8;
+  --color-neutral-100: #eef2f2;
+  --color-neutral-200: #dde5e5;
+  --color-neutral-300: #c3d0d0;
+  --color-neutral-400: #9aabab;
+  --color-neutral-500: #718484;
+  --color-neutral-600: #526363;
+  --color-neutral-700: #3c4a4a;
+  --color-neutral-800: #283434;
+  --color-neutral-900: #182222;
+
+  // ---- Surfaces --------------------------------------------------------------
+  --surface-app-bg: var(--color-neutral-50);
+  --surface-card: var(--color-neutral-0);
+  --surface-sidebar: var(--color-primary-darker);
+  --surface-sidebar-hover: rgba(255, 255, 255, 0.08);
+  --surface-sidebar-active: rgba(255, 255, 255, 0.14);
+  --surface-header: var(--color-neutral-0);
+  --surface-drawer: var(--color-neutral-0);
+
+  // ---- Text -------------------------------------------------------------------
+  --text-primary: var(--color-neutral-900);
+  --text-secondary: var(--color-neutral-600);
+  --text-muted: var(--color-neutral-500);
+  --text-inverse: var(--color-neutral-0);
+  --text-link: var(--color-primary);
+
+  // ---- Borders ------------------------------------------------------------------
+  --border-subtle: var(--color-neutral-200);
+  --border-default: var(--color-neutral-300);
+
+  // ---- Spacing scale (4px base) --------------------------------------------------
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  // ---- Radius ---------------------------------------------------------------------
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  // ---- Shadows ---------------------------------------------------------------------
+  --shadow-sm: 0 1px 2px rgba(15, 30, 30, 0.06);
+  --shadow-md: 0 2px 8px rgba(15, 30, 30, 0.08);
+  --shadow-lg: 0 8px 24px rgba(15, 30, 30, 0.12);
+
+  // ---- Typography -------------------------------------------------------------------
+  --font-family-base: 'Inter', 'Segoe UI', Roboto, Arial, sans-serif;
+
+  --font-size-page-title: 28px;
+  --font-size-section-title: 18px;
+  --font-size-card-title: 15px;
+  --font-size-body: 14px;
+  --font-size-table: 13px;
+  --font-size-meta: 12px;
+  --font-size-kpi: 32px;
+  --font-size-kpi-sm: 22px;
+  --font-size-button: 13px;
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  // ---- Layout ------------------------------------------------------------------------
+  --shell-sidebar-width: 248px;
+  --shell-sidebar-width-collapsed: 64px;
+  --shell-header-height: 56px;
+
+  // ---- Motion ------------------------------------------------------------------------
+  --transition-fast: 120ms ease;
+  --transition-base: 200ms ease;
+}

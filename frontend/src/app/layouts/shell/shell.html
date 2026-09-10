@@ -1,0 +1,53 @@
+<div class="shell" [class.shell--collapsed]="collapsed()">
+  <aside class="sidebar" aria-label="Primary navigation">
+    <div class="sidebar__brand">
+      <span class="sidebar__brand-mark">⚡</span>
+      @if (!collapsed()) {
+        <span class="sidebar__brand-name">PREPAID ENGINE</span>
+      }
+    </div>
+
+    <nav class="sidebar__nav">
+      @for (item of navItems; track item.path) {
+        <a
+          class="sidebar__link"
+          [routerLink]="item.path"
+          routerLinkActive="sidebar__link--active"
+          [title]="item.label + (item.stub ? ' (not yet implemented)' : '')"
+        >
+          <span class="sidebar__icon" aria-hidden="true">{{ item.icon }}</span>
+          @if (!collapsed()) {
+            <span class="sidebar__label">{{ item.label }}</span>
+            @if (item.stub) {
+              <span class="sidebar__soon">Soon</span>
+            }
+          }
+        </a>
+      }
+    </nav>
+
+    <button type="button" class="sidebar__collapse-toggle" (click)="toggleCollapsed()"
+      [attr.aria-label]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'">
+      {{ collapsed() ? '»' : '« Collapse' }}
+    </button>
+  </aside>
+
+  <div class="shell__main">
+    <header class="header">
+      <div class="header__search">
+        <input type="search" placeholder="Search consumer, meter, bill, recharge ID…" aria-label="Global search" />
+      </div>
+      <div class="header__context">
+        <span class="header__org">MePDCL · Demo Environment</span>
+        <span class="header__health" title="All illustrative system-health signals are nominal">
+          <span class="header__health-dot"></span> Systems Nominal
+        </span>
+        <button type="button" class="header__signout" (click)="signOut()">Sign out</button>
+      </div>
+    </header>
+
+    <main class="content">
+      <router-outlet />
+    </main>
+  </div>
+</div>

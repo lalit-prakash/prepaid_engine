@@ -1,0 +1,58 @@
+<div class="consumer-list">
+  <div class="page-header">
+    <h1>Consumers</h1>
+    <p class="page-header__subtitle">{{ consumers().length }} prepaid consumer(s) on record</p>
+  </div>
+
+  <div class="toolbar">
+    <input
+      type="search"
+      placeholder="Search account number, name, or meter number…"
+      [value]="searchTerm()"
+      (input)="searchTerm.set($any($event.target).value)"
+    />
+  </div>
+
+  @if (loading()) {
+    <div class="table-skeleton">
+      @for (i of [1,2,3]; track i) { <div class="table-skeleton__row"></div> }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else if (filtered.length === 0) {
+    <div class="empty-panel">No consumers matched your search.</div>
+  } @else {
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Account Number</th>
+            <th>Name</th>
+            <th>Meter Number</th>
+            <th>Connection Status</th>
+            <th class="num">RMS Wallet Balance</th>
+            <th class="num">Emergency Credit Limit</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (c of filtered; track c.accountNumber) {
+            <tr (click)="open(c.accountNumber)" class="row-clickable">
+              <td>{{ c.accountNumber }}</td>
+              <td>{{ c.name }}</td>
+              <td>{{ c.meterNumber }}</td>
+              <td>
+                @if (c.connectionStatus === ConnectionStatus.Connected) {
+                  <pe-status-badge label="Connected" tone="success" />
+                } @else {
+                  <pe-status-badge label="Disconnected" tone="danger" />
+                }
+              </td>
+              <td class="num">₹{{ c.walletBalance | number: '1.2-2' }}</td>
+              <td class="num">₹{{ c.emergencyCreditLimit | number: '1.2-2' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>

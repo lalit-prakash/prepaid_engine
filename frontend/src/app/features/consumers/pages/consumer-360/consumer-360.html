@@ -1,0 +1,194 @@
+<div class="c360">
+  @if (loading()) {
+    <div class="skeleton-block"></div>
+  } @else if (error()) {
+    <div class="error-panel">
+      <strong>{{ error() }}</strong>
+      <p>Check the account number, or the API's health status.</p>
+    </div>
+  } @else if (consumer(); as c) {
+    <header class="c360-header">
+      <div>
+        <h1>{{ c.name }}</h1>
+        <div class="c360-header__meta">
+          <span>{{ c.accountNumber }}</span>
+          <span>·</span>
+          <span>Meter {{ c.meter.meterNumber }}</span>
+          <span>·</span>
+          <span>{{ c.connectedLoadKw }} kW load</span>
+        </div>
+      </div>
+      @if (c.connectionStatus === ConnectionStatus.Connected) {
+        <pe-status-badge label="Connected" tone="success" />
+      } @else {
+        <pe-status-badge label="Disconnected" tone="danger" />
+      }
+    </header>
+
+    <section class="financial-strip" aria-label="Financial summary — each figure kept distinct">
+      <div class="financial-tile financial-tile--primary">
+        <div class="financial-tile__label">RMS Wallet Balance</div>
+        <div class="financial-tile__value num">₹{{ c.wallet.balance | number: '1.2-2' }}</div>
+        <div class="financial-tile__note">Source of truth: RMS, mirrored here for orchestration</div>
+      </div>
+      <div class="financial-tile">
+        <div class="financial-tile__label">Emergency Credit Limit</div>
+        <div class="financial-tile__value num">₹{{ c.wallet.emergencyCreditLimit | number: '1.2-2' }}</div>
+        <div class="financial-tile__note">
+          {{ c.wallet.isWithinEmergencyCredit ? 'Currently within emergency credit' : 'Emergency credit exhausted' }}
+        </div>
+      </div>
+      @if (latestBill; as bill) {
+        <div class="financial-tile">
+          <div class="financial-tile__label">Latest Engine Charge</div>
+          <div class="financial-tile__value num">₹{{ bill.amount | number: '1.2-2' }}</div>
+          <div class="financial-tile__note">Engine-calculated, generated {{ bill.generatedAt | date: 'mediumDate' }}</div>
+        </div>
+        <div class="financial-tile">
+          <div class="financial-tile__label">Arrears Recovered</div>
+          <div class="financial-tile__value num">₹{{ bill.arrearsRecovered | number: '1.2-2' }} / ₹{{ bill.arrearsAmount | number: '1.2-2' }}</div>
+          <div class="financial-tile__note">Recovered against outstanding arrears on this bill</div>
+        </div>
+      }
+    </section>
+
+    <div class="c360-grid">
+      <section class="panel">
+        <h2>Recharge</h2>
+        <p class="panel__hint">
+          Orchestrated through RMS (mock in this environment). Prefix the idempotency key with
+          <code>FAIL-</code>, <code>PENDING-</code>, or <code>UNAVAILABLE-</code> to demo those outcomes.
+        </p>
+        <form (ngSubmit)="submitRecharge()">
+          <div class="form-row">
+            <label>
+              Amount (₹)
+              <input type="number" min="1" step="1" name="amount" [(ngModel)]="rechargeAmount" />
+            </label>
+            <label>
+              Idempotency key
+              <input type="text" name="idempotencyKey" [(ngModel)]="idempotencyKey" />
+            </label>
+          </div>
+          <button type="submit" [disabled]="rechargeSubmitting()">
+            {{ rechargeSubmitting() ? 'Submitting to RMS…' : 'Recharge' }}
+          </button>
+        </form>
+
+        @if (rechargeOutcome(); as outcome) {
+          @switch (outcome.kind) {
+            @case ('success') {
+              <div class="outcome outcome--success">
+                <pe-status-badge [label]="outcome.replayed ? 'Replayed' : 'RMS Confirmed'" tone="success" />
+                New RMS wallet balance: ₹{{ outcome.balance | number: '1.2-2' }}.
+                @if (outcome.replayed) {
+                  <div class="outcome__note">This idempotency key was already processed — no duplicate credit applied.</div>
+                }
+                <div class="outcome__note">Meter credit orchestration is not modeled in this environment yet.</div>
+              </div>
+            }
+            @case ('pending') {
+              <div class="outcome outcome--pending">
+                <pe-status-badge label="Pending" tone="warning" /> {{ outcome.message }}
+              </div>
+            }
+            @case ('declined') {
+              <div class="outcome outcome--danger">
+                <pe-status-badge label="Declined" tone="danger" /> {{ outcome.message }}
+              </div>
+            }
+            @case ('unavailable') {
+              <div class="outcome outcome--danger">
+                <pe-status-badge label="RMS Unavailable" tone="danger" /> {{ outcome.message }}
+              </div>
+            }
+            @case ('invalid') {
+              <div class="outcome outcome--danger">{{ outcome.message }}</div>
+            }
+          }
+        }
+      </section>
+
+      <section class="panel">
+        <h2>Wallet Ledger</h2>
+        @if (c.wallet.transactions.length === 0) {
+          <p class="empty-note">No wallet transactions recorded for this consumer yet.</p>
+        } @else {
+          <table class="mini-table">
+            <thead>
+              <tr><th>Type</th><th class="num">Amount</th><th>When</th><th>Reference</th></tr>
+            </thead>
+            <tbody>
+              @for (t of [...c.wallet.transactions].reverse(); track t.reference + t.occurredAt) {
+                <tr>
+                  <td>
+                    @if (t.type === WalletTransactionType.Recharge) {
+                      <pe-status-badge label="Recharge" tone="success" />
+                    } @else {
+                      <pe-status-badge label="Bill Debit" tone="info" />
+                    }
+                  </td>
+                  <td class="num">{{ t.amount < 0 ? '' : '+' }}₹{{ t.amount | number: '1.2-2' }}</td>
+                  <td>{{ t.occurredAt | date: 'medium' }}</td>
+                  <td class="mono">{{ t.reference }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>Bills</h2>
+      @if (c.bills.length === 0) {
+        <p class="empty-note">No bills generated for this consumer yet.</p>
+      } @else {
+        <table class="mini-table">
+          <thead>
+            <tr>
+              <th>Generated</th>
+              <th class="num">Gross Energy</th>
+              <th class="num">Rebate</th>
+              <th class="num">Net Energy</th>
+              <th class="num">Fixed</th>
+              <th class="num">Duty</th>
+              <th class="num">FPPAS</th>
+              <th class="num">TMC</th>
+              <th class="num">CPMC</th>
+              <th class="num">Arrears</th>
+              <th class="num">Total</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (b of [...c.bills].reverse(); track b.id) {
+              <tr>
+                <td>{{ b.generatedAt | date: 'mediumDate' }}</td>
+                <td class="num">₹{{ b.energyChargeGross | number: '1.2-2' }}</td>
+                <td class="num">-₹{{ b.prepaidRebateAmount | number: '1.2-2' }}</td>
+                <td class="num">₹{{ b.energyChargeNet | number: '1.2-2' }}</td>
+                <td class="num">₹{{ b.fixedCharge | number: '1.2-2' }}</td>
+                <td class="num">₹{{ b.electricityDutyAmount | number: '1.2-2' }}</td>
+                <td class="num">₹{{ b.fppasAmount | number: '1.2-2' }}</td>
+                <td class="num">₹{{ b.tmcAmount | number: '1.2-2' }}</td>
+                <td class="num">₹{{ b.cpmcAmount | number: '1.2-2' }}</td>
+                <td class="num">₹{{ b.arrearsAmount | number: '1.2-2' }}</td>
+                <td class="num"><strong>₹{{ b.amount | number: '1.2-2' }}</strong></td>
+                <td>
+                  @switch (b.status) {
+                    @case (BillStatus.Paid) { <pe-status-badge label="Paid" tone="success" /> }
+                    @case (BillStatus.PartiallyPaid) { <pe-status-badge label="Partially Paid" tone="warning" /> }
+                    @case (BillStatus.Overdue) { <pe-status-badge label="Overdue" tone="danger" /> }
+                    @case (BillStatus.Cancelled) { <pe-status-badge label="Cancelled" tone="neutral" /> }
+                    @default { <pe-status-badge label="Generated" tone="info" /> }
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+  }
+</div>

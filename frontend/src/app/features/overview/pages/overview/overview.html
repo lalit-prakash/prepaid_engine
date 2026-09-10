@@ -1,0 +1,61 @@
+<div class="overview">
+  <div class="overview__header">
+    <h1>Overview</h1>
+    <p class="overview__subtitle">Prepaid operation health — MePDCL demo environment</p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2,3,4]; track i) {
+        <div class="skeleton-card"></div>
+      }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">
+      <strong>{{ error() }}</strong>
+      <p>Retry, or check the API's health endpoint and integration status.</p>
+    </div>
+  } @else {
+    <section class="kpi-row" aria-label="Key performance indicators">
+      <pe-kpi-card label="Total Prepaid Consumers" [value]="consumers().length" tone="primary"
+        [clickable]="true" (click)="goToConsumers()" />
+      <pe-kpi-card label="Low Credit Consumers" [value]="lowCreditCount" tone="warning" />
+      <pe-kpi-card label="Recharge Success Rate" value="—" tone="info" [illustrative]="true" />
+      <pe-kpi-card label="Bills Generated Today" value="—" tone="neutral" [illustrative]="true" />
+      <pe-kpi-card label="Pending Meter Credit" value="—" tone="neutral" [illustrative]="true" />
+      <pe-kpi-card label="Unreconciled Transactions" value="—" tone="neutral" [illustrative]="true" />
+    </section>
+
+    <section class="panel-row">
+      <div class="panel">
+        <h2>Operational Alerts</h2>
+        <ul class="alert-list">
+          @if (lowCreditCount > 0) {
+            <li>
+              <button type="button" (click)="goToConsumers()">
+                {{ lowCreditCount }} consumer(s) at or below their emergency-credit threshold.
+              </button>
+            </li>
+          } @else {
+            <li class="alert-list__empty">No consumers are currently below their emergency-credit threshold.</li>
+          }
+          <li class="alert-list__illustrative">
+            Meter-credit, reconciliation, and exception alerts will appear here once those
+            backend workflows exist — see the System Health panel.
+          </li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h2>System Health <span class="panel__illustrative">Illustrative</span></h2>
+        <ul class="health-list">
+          <li><pe-status-badge label="Healthy" tone="success" /> Prepaid Engine API</li>
+          <li><pe-status-badge label="Healthy" tone="success" /> PostgreSQL</li>
+          <li><pe-status-badge label="Not integrated" tone="neutral" /> RMS</li>
+          <li><pe-status-badge label="Not integrated" tone="neutral" /> Meter Command Service</li>
+          <li><pe-status-badge label="Not integrated" tone="neutral" /> Notification Service</li>
+        </ul>
+      </div>
+    </section>
+  }
+</div>

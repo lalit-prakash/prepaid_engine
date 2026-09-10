@@ -11,9 +11,12 @@ financial wallet; the Prepaid Engine's own `PrepaidWallets`/`WalletTransactions`
 working ledger for billing/recharge orchestration, not a competing wallet.
 
 **Current status**: backend domain + persistence + a mock RMS integration + a small demo API +
-a minimal hand-built demo console, all verified against real data (a live PostgreSQL database
-and MePDCL's own tariff book + reference calculation workbooks). The Angular frontend is
-intentionally paused — see [Frontend](#frontend) below.
+a minimal hand-built demo console + an Angular enterprise-operations frontend covering the
+real API surface (Overview, Consumers, Consumer 360, recharge), all verified against real data
+(a live PostgreSQL database and MePDCL's own tariff book + reference calculation workbooks).
+The frontend's remaining modules (Billing, Meter Credit, RC/DC, Reports, ...) are routed but
+render an explicit "not yet backed" stub rather than invented data — see
+[docs/frontend-scope.md](docs/frontend-scope.md) for the real-vs-planned boundary.
 
 ## Structure
 
@@ -23,8 +26,9 @@ intentionally paused — see [Frontend](#frontend) below.
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
   - `PrepaidEngine.Tests` — xUnit test project (155 tests — see [Testing](#testing))
-- `frontend/` — Angular + TypeScript (default CLI scaffold only; paused)
-- `docs/` — sourcing, security, and tariff-validation documentation (see [Documentation](#documentation))
+- `frontend/` — Angular 22 enterprise operations UI (see [Frontend](#frontend) below and
+  [docs/frontend-scope.md](docs/frontend-scope.md))
+- `docs/` — sourcing, security, tariff-validation, and frontend-scope documentation (see [Documentation](#documentation))
 
 ## Domain model
 
@@ -305,14 +309,41 @@ means a real divergence from the utility's own numbers, not a made-up expectatio
 
 ### Frontend
 
-**Paused** — this is a deliberate, explicit decision (not a gap), pending further instruction.
-The `frontend/` directory currently holds only the default `ng new` scaffold.
+Angular 22 standalone-component app implementing the real API surface as an enterprise
+operations UI — see [docs/frontend-scope.md](docs/frontend-scope.md) for exactly what's
+real vs. an explicitly-labeled stub.
 
 ```bash
 cd frontend
 npm install
-npm start
+npm start        # serves at http://localhost:4200
+npm run build    # production build
+npm test         # vitest unit tests
 ```
+
+The API must be running first (`dotnet run --project backend/PrepaidEngine.Api`) — the
+frontend calls it directly at `http://localhost:5043` (see `src/environments/environment.ts`).
+The API's Development-only CORS policy allows `http://localhost:4200` specifically (see
+`Program.cs`); it is never enabled outside Development.
+
+Built:
+- **Design system** — centralized tokens (`src/styles/_tokens.scss`): a teal/cyan-first
+  enterprise-utility palette (not a generic blue admin dashboard), spacing/radius/shadow/type
+  scales, Inter typography. No component hardcodes a color.
+- **Shell** — collapsible sidebar (all planned modules listed, unbuilt ones marked "Soon") +
+  header with global search input (not yet wired to a search API) + sign-out.
+- **Sign-in** (`/login`) — verifies the HTTP Basic credential against a real API call before
+  caching it in `sessionStorage`, mirroring the static demo console's approach.
+- **Overview** (`/overview`) — real consumer count and a derived low-credit count; every
+  other KPI is explicitly labeled "Illustrative" rather than inventing a number.
+- **Consumers** (`/consumers`) — real, API-backed consumer list with client-side search.
+- **Consumer 360** (`/consumers/:accountNumber`) — the primary screen: RMS Wallet Balance kept
+  visually and semantically distinct from engine-calculated charges/arrears/emergency credit
+  (RMS remains the source of truth for the real wallet — see Scope above), full real bill
+  breakdown, wallet ledger, and the complete recharge flow wired to every actual API response
+  (200 success, 200 replayed, 202 pending, 402 declined, 503 unavailable, 400 invalid) —
+  verified live in-browser against the real Postgres-backed API.
+- Every other sidebar module routes to an honest "not yet backed" stub, never a fake dashboard.
 
 ## Documentation
 

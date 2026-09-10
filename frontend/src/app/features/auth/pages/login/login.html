@@ -1,0 +1,22 @@
+<div class="login">
+  <div class="login__card">
+    <div class="login__brand">⚡ PREPAID ENGINE</div>
+    <p class="login__subtitle">Electricity Prepaid Operations</p>
+
+    <form (ngSubmit)="submit()">
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" [(ngModel)]="username" autocomplete="username" />
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" [(ngModel)]="password" autocomplete="current-password" />
+
+      <button type="submit" [disabled]="checking()">
+        {{ checking() ? 'Signing in…' : 'Sign in' }}
+      </button>
+
+      @if (errorMessage()) {
+        <p class="login__error">{{ errorMessage() }}</p>
+      }
+    </form>
+  </div>
+</div>

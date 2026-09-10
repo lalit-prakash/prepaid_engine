@@ -1,0 +1,141 @@
+.skeleton-block {
+  height: 300px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(90deg, var(--color-neutral-100) 25%, var(--color-neutral-200) 37%, var(--color-neutral-100) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+.error-panel {
+  background: var(--color-danger-light);
+  color: var(--color-danger-dark);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+.c360-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+}
+.c360-header h1 { font-size: var(--font-size-page-title); }
+.c360-header__meta {
+  display: flex;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-meta);
+  margin-top: 4px;
+}
+
+.financial-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.financial-tile {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-left: 4px solid var(--color-neutral-300);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+.financial-tile--primary { border-left-color: var(--color-primary); }
+.financial-tile__label { font-size: var(--font-size-meta); color: var(--text-secondary); font-weight: var(--font-weight-medium); }
+.financial-tile__value { font-size: var(--font-size-kpi-sm); font-weight: var(--font-weight-semibold); margin: var(--space-1) 0; }
+.financial-tile__note { font-size: 11px; color: var(--text-muted); }
+
+.c360-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr;
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+@media (max-width: 1100px) {
+  .c360-grid { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+.panel h2 { font-size: var(--font-size-section-title); margin-bottom: var(--space-3); }
+.panel__hint { color: var(--text-muted); font-size: var(--font-size-meta); margin-bottom: var(--space-4); line-height: 1.5; }
+.panel__hint code { background: var(--color-neutral-100); padding: 1px 5px; border-radius: var(--radius-sm); }
+
+.form-row {
+  display: flex;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.form-row label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--font-size-meta);
+  color: var(--text-secondary);
+}
+.form-row input {
+  padding: 8px var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  font-size: var(--font-size-body);
+}
+
+button[type='submit'] {
+  padding: 9px var(--space-5);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-button);
+  cursor: pointer;
+}
+button[type='submit']:hover:not(:disabled) { background: var(--color-primary-dark); }
+button[type='submit']:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.outcome {
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-body);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.outcome--success { background: var(--color-success-light); color: var(--color-success-dark); }
+.outcome--pending { background: var(--color-warning-light); color: var(--color-warning-dark); }
+.outcome--danger { background: var(--color-danger-light); color: var(--color-danger-dark); }
+.outcome__note {
+  flex-basis: 100%;
+  font-size: var(--font-size-meta);
+  opacity: 0.85;
+}
+
+.mini-table { width: 100%; font-size: var(--font-size-table); }
+.mini-table th {
+  text-align: left;
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+  padding: var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mini-table th.num, .mini-table td.num { text-align: right; }
+.mini-table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mini-table .mono { font-family: monospace; font-size: 11px; color: var(--text-muted); }
+
+.empty-note { color: var(--text-muted); font-size: var(--font-size-body); }

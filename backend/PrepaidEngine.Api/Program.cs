@@ -27,6 +27,18 @@ builder.Services.AddAuthentication("Basic")
     .AddScheme<BasicAuthenticationSchemeOptions, BasicAuthenticationHandler>("Basic", null);
 builder.Services.AddAuthorization();
 
+// Local-dev-only CORS so the Angular dev server (ng serve, default port 4200) can call this
+// API cross-origin. Never widen this beyond the dev server's own origin, and never enable it
+// outside Development — see docs/assumptions-and-security.md.
+const string AngularDevCorsPolicy = "AngularDev";
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(AngularDevCorsPolicy, policy =>
+        policy.WithOrigins("http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod());
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -41,6 +53,8 @@ if (app.Environment.IsDevelopment())
     var db = scope.ServiceProvider.GetRequiredService<PrepaidEngineDbContext>();
     await db.Database.MigrateAsync();
     await DbSeeder.SeedAsync(db);
+
+    app.UseCors(AngularDevCorsPolicy);
 }
 
 app.UseHttpsRedirection();
