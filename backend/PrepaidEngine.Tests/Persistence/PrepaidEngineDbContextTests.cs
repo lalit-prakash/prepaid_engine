@@ -207,4 +207,59 @@ public class PrepaidEngineDbContextTests : IDisposable
         Assert.Equal(3250m, reloadedFppas.SourceEnergyCharge);
         Assert.Equal(216.125m, reloadedFppas.TotalAmount);
     }
+
+    [Fact]
+    public void CanPersistAndReloadMeterCommand_AndItsLifecycleTransitions()
+    {
+        var meter = new SmartMeter(Guid.NewGuid(), "MTR-500", MeterPhase.SinglePhase);
+        var consumer = new Consumer(Guid.NewGuid(), "ACC-500", "Meter Credit Test Consumer", "5 Test Street", meter, connectedLoadKw: 2m);
+        _context.Consumers.Add(consumer);
+
+        var recharge = new RechargeTransaction(Guid.NewGuid(), consumer.Id, 300m, "RMS-MC-1", DateTime.UtcNow);
+        _context.RechargeTransactions.Add(recharge);
+        _context.SaveChanges();
+
+        var command = new MeterCommand(Guid.NewGuid(), consumer.Id, recharge.Id, 300m, DateTime.UtcNow);
+        command.MarkSent(DateTime.UtcNow);
+        _context.MeterCommands.Add(command);
+        _context.SaveChanges();
+
+        using var freshContext = new PrepaidEngineDbContext(
+            new DbContextOptionsBuilder<PrepaidEngineDbContext>().UseSqlite(_connection).Options);
+
+        var reloaded = freshContext.MeterCommands.Single(m => m.Id == command.Id);
+        Assert.Equal(MeterCommandStatus.Sent, reloaded.Status);
+        Assert.Equal(recharge.Id, reloaded.RechargeTransactionId);
+        Assert.Equal(300m, reloaded.CreditAmount);
+
+        reloaded.MarkAcknowledged(DateTime.UtcNow);
+        freshContext.SaveChanges();
+
+        using var verifyingContext = new PrepaidEngineDbContext(
+            new DbContextOptionsBuilder<PrepaidEngineDbContext>().UseSqlite(_connection).Options);
+        var verified = verifyingContext.MeterCommands.Single(m => m.Id == command.Id);
+        Assert.Equal(MeterCommandStatus.Acknowledged, verified.Status);
+        Assert.NotNull(verified.AcknowledgedAt);
+    }
+
+    [Fact]
+    public void RechargeTransactionId_IsUniqueAcrossMeterCommands()
+    {
+        var meter = new SmartMeter(Guid.NewGuid(), "MTR-600", MeterPhase.SinglePhase);
+        var consumer = new Consumer(Guid.NewGuid(), "ACC-600", "Duplicate Command Test Consumer", "6 Test Street", meter, connectedLoadKw: 2m);
+        _context.Consumers.Add(consumer);
+
+        var recharge = new RechargeTransaction(Guid.NewGuid(), consumer.Id, 300m, "RMS-MC-DUP", DateTime.UtcNow);
+        _context.RechargeTransactions.Add(recharge);
+        _context.SaveChanges();
+
+        _context.MeterCommands.Add(new MeterCommand(Guid.NewGuid(), consumer.Id, recharge.Id, 300m, DateTime.UtcNow));
+        _context.SaveChanges();
+
+        // A second command for the same recharge — should be rejected at the DB level, since a
+        // recharge gets at most one credit command (retries reuse the existing row via Retry()).
+        _context.MeterCommands.Add(new MeterCommand(Guid.NewGuid(), consumer.Id, recharge.Id, 300m, DateTime.UtcNow));
+
+        Assert.Throws<DbUpdateException>(() => _context.SaveChanges());
+    }
 }

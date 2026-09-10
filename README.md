@@ -12,10 +12,13 @@ working ledger for billing/recharge orchestration, not a competing wallet.
 
 **Current status**: backend domain + persistence + a mock RMS integration + a small demo API +
 a minimal hand-built demo console + an Angular enterprise-operations frontend covering the
-real API surface (Overview, Consumers, Consumer 360, recharge), all verified against real data
-(a live PostgreSQL database and MePDCL's own tariff book + reference calculation workbooks).
-The frontend's remaining modules (Billing, Meter Credit, RC/DC, Reports, ...) are routed but
-render an explicit "not yet backed" stub rather than invented data — see
+real API surface (Overview, Consumers/360, Billing, Recharge Operations, Tariffs & Rules,
+Calculation Workbench, and 2 of 14 Reports), all verified against real data (a live PostgreSQL
+database and MePDCL's own tariff book + reference calculation workbooks). A `MeterCommand`
+domain model exists (see [Meter credit domain model](#meter-credit-domain-model) below) but
+isn't wired into the recharge flow or a frontend page yet. The frontend's remaining modules
+(Meter Credit, RC/DC, Conversion, Exceptions, Reconciliation, Automation, Audit, System Health)
+are routed but render an explicit "not yet backed" stub rather than invented data — see
 [docs/frontend-scope.md](docs/frontend-scope.md) for the real-vs-planned boundary.
 
 ## Structure
@@ -25,7 +28,7 @@ render an explicit "not yet backed" stub rather than invented data — see
   - `PrepaidEngine.Application` — use cases / integration ports (currently: `IRmsClient`)
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
-  - `PrepaidEngine.Tests` — xUnit test project (155 tests — see [Testing](#testing))
+  - `PrepaidEngine.Tests` — xUnit test project (175 tests — see [Testing](#testing))
 - `frontend/` — Angular 22 enterprise operations UI (see [Frontend](#frontend) below and
   [docs/frontend-scope.md](docs/frontend-scope.md))
 - `docs/` — sourcing, security, tariff-validation, and frontend-scope documentation (see [Documentation](#documentation))
@@ -46,6 +49,7 @@ render an explicit "not yet backed" stub rather than invented data — see
 | `PrepaidBill` | A generated bill with payment/status tracking (`Generated`/`Paid`/`PartiallyPaid`/`Overdue`/`Cancelled`) |
 | `RechargeTransaction` | A recharge processed through RMS, with its own status lifecycle (`Initiated`/`Success`/`Failed`/`Reversed`) |
 | `FppasCharge` | A notified FPPAS (Fuel and Power Purchase Adjustment Surcharge) rate change, deferred one billing month and prorated across every day of the following month |
+| `MeterCommand` | A meter credit command — the step that actually updates the smart meter's available credit after RMS confirms a recharge. Deliberately a separate entity/lifecycle from `RechargeTransaction` (`Queued`/`Sent`/`Acknowledged`/`Failed`/`TimedOut`) — RMS confirming payment and the meter itself being credited are two different systems succeeding independently, and the domain model refuses to conflate them (see below) |
 
 ### Tariff engine — verified calculation methods
 
@@ -199,6 +203,26 @@ real HTTP-based RMS adapter plugs in):
 In `MockRmsClient`, prefix your `IdempotencyKey` with `FAIL-`, `PENDING-`, or `UNAVAILABLE-` to
 force those outcomes for testing.
 
+### Meter credit domain model
+
+`MeterCommand` models the step after RMS confirms a recharge payment: actually crediting the
+smart meter's available credit. It is **not** wired into the recharge endpoint yet — this is
+domain modeling only, matching this project's established pattern of implementing a domain
+concept first and wiring it into a workflow only on a separate, explicit request (see e.g.
+FPPAS/TMC/CPMC/arrear recovery earlier in this file).
+
+- One `MeterCommand` per `RechargeTransaction` (enforced by a unique index — retries reuse the
+  same row via `Retry()`, they don't create a new one).
+- Lifecycle: `Queued` → `Sent` → `Acknowledged` (the *only* state that means the meter was
+  actually credited) — or `Sent` → `Failed`/`TimedOut`, either of which can `Retry()` back to
+  `Queued` (incrementing `RetryCount`).
+- Deliberately says nothing about the transport (STS token, DLMS/COSEM, a meter vendor's own
+  API) — no such integration exists yet. A real adapter would plug in behind a future
+  `IMeterCommandClient`, mirroring how `RechargeTransaction` relates to `IRmsClient`.
+- Enforces the "no fake success states" rule at the type level: `MarkAcknowledged()` can only be
+  called after `MarkSent()`, and there is no way to reach `Acknowledged` from RMS confirmation
+  alone — the two lifecycles (`RechargeStatus` and `MeterCommandStatus`) are entirely separate.
+
 ### Demo console
 
 A minimal, hand-built single-page UI (`PrepaidEngine.Api/wwwroot/index.html`) is served
@@ -290,25 +314,26 @@ cd backend
 dotnet test PrepaidEngine.sln
 ```
 
-**155 tests, all passing.** Breakdown:
+**175 tests, all passing.** Breakdown:
 
 | Test class | Count | What it covers |
 |---|---|---|
-| `TariffTests` | 12 | Slab energy charge, fixed charge, rebate composition, vend-amount validation |
+| `TariffTests` | 14 | Slab energy charge, fixed charge, rebate composition, vend-amount validation |
 | `TariffGoldenDataTests` | 9 | **Regression against real day-by-day rows from MePDCL's own reference workbook** — energy charge crossing slab boundaries, daily fixed-charge proration, full net-bill composition, including a zero-consumption day |
 | `BplTariffTests` | 6 | BPL/Kutir Jyoti 4-slab tariff (special first-30-kWh rate + normal domestic slabs) |
 | `DhtTariffDiscrepancyTests` | 2 | The documented DHT ₹5.85 (production) vs. ₹5.87 (legacy Excel reference) discrepancy — both kept as explicit, separately named tests, neither silently overriding the other |
-| `ElectricityDutyTests` | 15 | Category-based duty: Domestic/BPL flat rate, "Others" flat rate, Industrial tiered slabs (including cumulative-position vs. raw-delta correctness), negative-input validation |
+| `ElectricityDutyTests` | 14 | Category-based duty: Domestic/BPL flat rate, "Others" flat rate, Industrial tiered slabs (including cumulative-position vs. raw-delta correctness), negative-input validation |
 | `FppasChargeTests` | 10 | **Regression against both worked FPPAS examples in the reference workbook** — negative and positive rate cases, unrounded daily proration matching the workbook's exact precision, the paisa-accurate rounded variant, applicable-billing-month scheduling, input validation |
 | `PrepaidBillTests` | 16 | Full charge-breakdown composition (energy net + fixed + duty + FPPAS + TMC + CPMC + arrears), arrears-first payment allocation (uncapped and capped), multi-installment arrears recovery, validation guards |
-| `TransformerMaintenanceChargeTests` | 4 | TMC by voltage (11/33/132 kV), opt-in/opt-out, exclusive- vs. shared-use billing basis, negative-input validation |
-| `CtPtMaintenanceChargeTests` | 7 | CPMC by voltage/wiring combination, opt-in/opt-out, undefined-132kV-rate handling |
+| `TransformerMaintenanceChargeTests` | 8 | TMC by voltage (11/33/132 kV), opt-in/opt-out, exclusive- vs. shared-use billing basis, negative-input validation |
+| `CtPtMaintenanceChargeTests` | 9 | CPMC by voltage/wiring combination, opt-in/opt-out, undefined-132kV-rate handling |
 | `ArrearRecoveryTests` | 11 | Uncapped arrears-first behavior (tariff book §13.4 default), optional caller-supplied recovery cap, 100%-cap-equivalence, input validation |
 | `PrepaidWalletTests` | 12 | Wallet credit/debit, emergency-credit tracking, consumer connect/disconnect/reconnect rules |
 | `MockRmsClientTests` | 9 | Recharge success/failed/pending/unavailable outcomes, idempotent replay, **20-way concurrent-call race test**, input validation, transaction-status lookup |
-| `PrepaidEngineDbContextTests` | 6 | Real persistence round-trips against SQLite (keys, FKs, owned collections) — including a regression test for a real EF change-tracking bug found while building the recharge endpoint (crediting an already-loaded wallet), a `PrepaidBill`↔`FppasCharge` round-trip, and a `Tariff`↔`TouPeriod` round-trip (classify + charge calculation after reload) |
+| `PrepaidEngineDbContextTests` | 8 | Real persistence round-trips against SQLite (keys, FKs, owned collections) — including a regression test for a real EF change-tracking bug found while building the recharge endpoint (crediting an already-loaded wallet), a `PrepaidBill`↔`FppasCharge` round-trip, a `Tariff`↔`TouPeriod` round-trip (classify + charge calculation after reload), a `MeterCommand` lifecycle round-trip, and a uniqueness constraint test (one command per recharge) |
 | `TouTariffTests` | 14 | Reproduces the exact IHT (5.55/6.66/4.72 kVAh) and IEHT (6.60/7.92/5.61 kVAh) ToD schedules from the tariff book — boundary transitions, midnight wraparound, unknown-label and negative-consumption validation, and the relaxed slabs-OR-ToD-periods constructor rule |
 | `TouPeriodTests` | 15 | `Contains` boundary behavior for wrapping and non-wrapping periods, constructor validation (equal start/end, negative rate, empty label, time ≥ 24h) |
+| `MeterCommandTests` | 18 | Full lifecycle state-machine coverage: `Queued`→`Sent`→`Acknowledged`, `Sent`→`Failed`/`TimedOut`→`Retry()` (incrementing `RetryCount`, resetting error/sent state), every invalid transition guarded and tested (e.g. acknowledging a never-sent command, retrying an already-acknowledged one), non-positive credit amount validation |
 
 Every number in `TariffGoldenDataTests`, `BplTariffTests`, and `DhtTariffDiscrepancyTests` is
 taken verbatim from MePDCL's tariff book or reference workbooks, not invented — a failure there

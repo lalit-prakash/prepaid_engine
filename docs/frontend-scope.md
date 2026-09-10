@@ -36,8 +36,10 @@ Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
   real KPIs (success rate, totals by status) computed from actual `RechargeTransaction` rows.
 - **Recharge Detail** (`/recharge/:id`) — the recharge as a workflow, with RMS payment
   confirmation shown as a distinct step from meter credit (labeled "Not modeled in this
-  environment" rather than implied or faked, since no meter-command domain exists yet) — see
-  the "No fake success states" rule below.
+  environment" rather than implied or faked). A `MeterCommand` domain model now exists in the
+  backend (`Queued`→`Sent`→`Acknowledged`/`Failed`/`TimedOut`, one per `RechargeTransaction`)
+  but is not yet wired into the recharge endpoint or exposed via any API — this page's label
+  will need updating once it is. See the "No fake success states" rule below.
 - **Tariffs & Rules** (`/tariffs`) — the real tariff configuration this engine bills against
   (slabs, ToD periods where configured, prepaid rebate, fixed charge, emergency-credit limit,
   vend limits), sourced straight from `Tariff`/`TariffSlab`/`TouPeriod`.
@@ -103,12 +105,20 @@ than implying a downstream acknowledgement that never happened.
 
 Continuing in the same phase order as the UI/UX specification: Billing + Bill Detail, Recharge
 Operations + Recharge Detail, Tariffs & Rules + Tariff Detail, Calculation Workbench, and
-Reports Center (with 2 of 14 reports real) are done. This phase added no new backend endpoints
-— both real reports are built entirely on `GET /api/v1/bills`, `GET /api/v1/bills/{id}`, and
-`GET /api/v1/consumers/{accountNumber}`, which already existed. Next up: Meter Credit once a
-domain model for meter commands exists (today `RechargeTransaction` stops at "RMS confirmed" —
-there is no meter-command entity to build a real Meter Credit page, or the remaining 12
-reports that depend on RC/DC, Conversion, Reconciliation, Exception, Audit, or Meter Credit
-data, against), then the remaining modules in spec order. Each phase gets its own real backend
-support (or an explicit mock clearly labeled as such) before its UI is built — never the
-reverse.
+Reports Center (with 2 of 14 reports real) are done. This phase (Reports) added no new backend
+endpoints — both real reports are built entirely on `GET /api/v1/bills`,
+`GET /api/v1/bills/{id}`, and `GET /api/v1/consumers/{accountNumber}`, which already existed.
+
+The **`MeterCommand` domain model** (`backend/PrepaidEngine.Domain/Entities/MeterCommand.cs`,
+`Queued`→`Sent`→`Acknowledged`/`Failed`/`TimedOut`, one per `RechargeTransaction`, 18 passing
+tests) now exists, but is domain-only so far: no API endpoint exposes it, it isn't wired into
+the recharge flow (no `MeterCommand` is created when a recharge succeeds), and no mock
+meter-command client exists (mirroring `MockRmsClient`/`IRmsClient`). Building the Meter Credit
+UI page is the next step once that wiring exists — never before it, to avoid a page that shows
+either fabricated data or an empty always-`Queued` state that misrepresents reality.
+
+Next up, in spec order: wire `MeterCommand` into the recharge endpoint + add its read
+endpoint(s) + build the Meter Credit page, then the remaining modules (RC/DC, Conversion,
+Reconciliation, Exception, Audit) once their domain models exist, plus the 12 reports that
+depend on that data. Each phase gets its own real backend support (or an explicit mock clearly
+labeled as such) before its UI is built — never the reverse.
