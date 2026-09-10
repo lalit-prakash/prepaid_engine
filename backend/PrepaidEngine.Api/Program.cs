@@ -558,6 +558,124 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
 .WithName("RechargeConsumer")
 .RequireAuthorization();
 
+// Meter Credit read endpoints — real MeterCommand records across all consumers, each traceable
+// back to the RechargeTransaction that triggered it (see MeterCommand's doc comment for why
+// these are separate entities with separate lifecycles).
+app.MapGet("/api/v1/meter-commands", async (PrepaidEngineDbContext db) =>
+{
+    var commands = await (
+        from m in db.MeterCommands
+        join c in db.Consumers on m.ConsumerId equals c.Id
+        join r in db.RechargeTransactions on m.RechargeTransactionId equals r.Id
+        orderby m.CreatedAt descending
+        select new
+        {
+            m.Id,
+            c.AccountNumber,
+            c.Name,
+            m.CreditAmount,
+            m.Status,
+            m.RetryCount,
+            m.ErrorMessage,
+            m.CreatedAt,
+            m.SentAt,
+            m.AcknowledgedAt,
+            RechargeTransactionId = r.Id,
+            r.RmsReferenceId,
+        })
+        .ToListAsync();
+
+    return Results.Ok(commands);
+})
+.WithName("ListMeterCommands")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/meter-commands/{id:guid}", async (Guid id, PrepaidEngineDbContext db) =>
+{
+    var command = await db.MeterCommands.FirstOrDefaultAsync(m => m.Id == id);
+    if (command is null)
+        return Results.NotFound();
+
+    var consumer = await db.Consumers.FirstOrDefaultAsync(c => c.Id == command.ConsumerId);
+    var recharge = await db.RechargeTransactions.FirstOrDefaultAsync(r => r.Id == command.RechargeTransactionId);
+    if (consumer is null || recharge is null)
+    {
+        return Results.Problem(
+            statusCode: StatusCodes.Status500InternalServerError,
+            title: "Meter command references missing data",
+            detail: $"Meter command {id} references a consumer or recharge that no longer exists.");
+    }
+
+    return Results.Ok(new
+    {
+        command.Id,
+        Consumer = new { consumer.AccountNumber, consumer.Name },
+        command.CreditAmount,
+        command.Status,
+        command.RetryCount,
+        command.ErrorMessage,
+        command.CreatedAt,
+        command.SentAt,
+        command.AcknowledgedAt,
+        Recharge = new { recharge.Id, recharge.RmsReferenceId, recharge.Amount },
+    });
+})
+.WithName("GetMeterCommandById")
+.RequireAuthorization();
+
+// Retries a Failed/TimedOut meter command: resets it to Queued via MeterCommand.Retry()
+// (incrementing RetryCount, clearing the prior error/SentAt), then dispatches it again through
+// IMeterCommandClient exactly like the original attempt — never fabricates a retry result.
+app.MapPost("/api/v1/meter-commands/{id:guid}/retry", async (
+    Guid id,
+    PrepaidEngineDbContext db,
+    IMeterCommandClient meterCommandClient) =>
+{
+    var command = await db.MeterCommands.FirstOrDefaultAsync(m => m.Id == id);
+    if (command is null)
+        return Results.NotFound();
+
+    try
+    {
+        command.Retry();
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+
+    command.MarkSent(DateTime.UtcNow);
+
+    var correlationId = $"retry-{command.RetryCount}-{Guid.NewGuid():N}";
+    var meterResult = await meterCommandClient.SendCreditCommandAsync(
+        new SendCreditCommandRequest(command.ConsumerId, command.CreditAmount, correlationId));
+
+    switch (meterResult.Outcome)
+    {
+        case MeterCommandOutcome.Acknowledged:
+            command.MarkAcknowledged(DateTime.UtcNow);
+            break;
+        case MeterCommandOutcome.Failed:
+            command.MarkFailed(meterResult.Message ?? "Meter rejected the credit command.");
+            break;
+        case MeterCommandOutcome.TimedOut:
+            command.MarkTimedOut();
+            break;
+    }
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new
+    {
+        command.Id,
+        command.Status,
+        command.RetryCount,
+        command.ErrorMessage,
+    });
+})
+.WithName("RetryMeterCommand")
+.RequireAuthorization();
+
 app.Run();
 
 /// <param name="Amount">Recharge amount.</param>

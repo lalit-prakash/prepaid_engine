@@ -13,7 +13,8 @@ verify it, then extend.
 Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
 `GET /api/v1/consumers/{accountNumber}`, `POST .../recharge`, `GET /api/v1/bills`,
 `GET /api/v1/bills/{id}`, `GET /api/v1/recharges`, `GET /api/v1/recharges/{id}`,
-`GET /api/v1/tariffs`, `GET /api/v1/tariffs/{id}`,
+`GET /api/v1/meter-commands`, `GET /api/v1/meter-commands/{id}`,
+`POST /api/v1/meter-commands/{id}/retry`, `GET /api/v1/tariffs`, `GET /api/v1/tariffs/{id}`,
 `POST /api/v1/calculation-workbench/simulate`):
 
 - **Sign-in** (`/login`) — verifies the HTTP Basic credential against a real API call before
@@ -41,6 +42,13 @@ Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
   `Acknowledged`/`Failed`/`TimedOut` result — never a fabricated or inferred success. Consumer
   360's recharge outcome banner shows the same distinction. See the "No fake success states"
   rule below.
+- **Meter Credit** (`/meter-credit`) — every meter command across all consumers, real KPIs
+  (acknowledged/failed/timed-out/pending, retried count, success rate), and search.
+- **Meter Credit Detail** (`/meter-credit/:id`) — the command as a workflow, cross-linked to
+  its originating recharge, with a **genuine** Retry action (`POST .../retry`) for `Failed`/
+  `TimedOut` commands — gated behind an explicit confirmation dialog, calls
+  `MeterCommand.Retry()` server-side and re-dispatches through the same `IMeterCommandClient`
+  the original attempt used. Never a UI-only status flip.
 - **Tariffs & Rules** (`/tariffs`) — the real tariff configuration this engine bills against
   (slabs, ToD periods where configured, prepaid rebate, fixed charge, emergency-credit limit,
   vend limits), sourced straight from `Tariff`/`TariffSlab`/`TouPeriod`.
@@ -76,11 +84,11 @@ Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
 
 ## What's a labeled stub
 
-Every other sidebar module (Meter Credit, RC/DC, Conversion, Exceptions, Reconciliation,
-Automation Center, Audit & Activity, System Health) routes to an honest placeholder page
-stating that no backing domain model or API exists yet — never a fake dashboard with invented
-numbers presented as real. The 12 not-yet-real reports in the Reports Center follow the same
-rule at the card level rather than the page level.
+Every other sidebar module (RC/DC, Conversion, Exceptions, Reconciliation, Automation Center,
+Audit & Activity, System Health) routes to an honest placeholder page stating that no backing
+domain model or API exists yet — never a fake dashboard with invented numbers presented as
+real. The 12 not-yet-real reports in the Reports Center follow the same rule at the card level
+rather than the page level.
 
 ## Design system
 
@@ -99,8 +107,10 @@ always shown as visually distinct, separately labeled tiles on Consumer 360.
 ## No fake success states
 
 The recharge outcome banner distinguishes "RMS Confirmed" from a final "Recharge Completed" —
-it explicitly notes that meter-credit orchestration isn't modeled in this environment, rather
-than implying a downstream acknowledgement that never happened.
+it renders the real, separately-tracked meter-credit outcome (`Acknowledged`/`Failed`/
+`TimedOut`) rather than implying a downstream acknowledgement that never happened. The same
+discipline carries through Meter Credit Detail's workflow and its Retry action, which only ever
+reports whatever `IMeterCommandClient` actually returns.
 
 ## Build order for what comes next
 
@@ -122,15 +132,17 @@ confirmed". `RechargeTransaction` itself always stays `Success` once RMS confirm
 of the meter-command outcome; a failed/timed-out meter command is a separate, real, and now-
 visible operational problem, not something that un-confirms the recharge.
 
-**What's still missing**: a dedicated cross-consumer Meter Credit *page* (a dashboard/detail
-pair like Recharge Operations has, listing meter commands across all consumers with retry/
-failure KPIs) and a UI action to actually call `MeterCommand.Retry()` on a failed/timed-out
-command — today `Retry()` is only exercised by tests. Building that page is straightforward
-now that the data exists (likely `GET /api/v1/meter-commands` + `GET /api/v1/meter-commands/
-{id}`, following the same pattern as Billing/Recharge/Tariffs), and one of the mandatory
-reports (`Meter Credit Failure Report`) becomes buildable once it does.
+**The Meter Credit page is now built too.** `GET /api/v1/meter-commands` and
+`GET /api/v1/meter-commands/{id}` back a dashboard (`/meter-credit`, real KPIs and search across
+every command) and a detail page (`/meter-credit/:id`, the command as a workflow, cross-linked
+to its originating recharge). `POST /api/v1/meter-commands/{id}/retry` is a genuine action —
+gated behind an explicit confirmation dialog on the detail page, it calls
+`MeterCommand.Retry()` server-side (rejecting with `409` if the command isn't `Failed`/
+`TimedOut`) and re-dispatches through the same `IMeterCommandClient` the original attempt used,
+never a fabricated status flip. Verified live: a `TimedOut` command retried through the UI
+correctly flipped to `Acknowledged` with `RetryCount` incremented and fresh timestamps.
 
-Next up, in spec order: the Meter Credit page itself, then the remaining modules (RC/DC,
-Conversion, Reconciliation, Exception, Audit) once their domain models exist, plus the reports
-that depend on that data. Each phase gets its own real backend support (or an explicit mock
-clearly labeled as such) before its UI is built — never the reverse.
+Next up, in spec order: the remaining modules (RC/DC, Conversion, Reconciliation, Exception,
+Audit) once their domain models exist, plus the reports that depend on that data — including
+the now-unblocked `Meter Credit Failure Report`. Each phase gets its own real backend support
+(or an explicit mock clearly labeled as such) before its UI is built — never the reverse.

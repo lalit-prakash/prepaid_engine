@@ -13,16 +13,14 @@ working ledger for billing/recharge orchestration, not a competing wallet.
 **Current status**: backend domain + persistence + a mock RMS integration + a mock meter-command
 integration + a small demo API + a minimal hand-built demo console + an Angular
 enterprise-operations frontend covering the real API surface (Overview, Consumers/360, Billing,
-Recharge Operations, Tariffs & Rules, Calculation Workbench, and 2 of 14 Reports), all verified
-against real data (a live PostgreSQL database and MePDCL's own tariff book + reference
-calculation workbooks). Meter credit is now wired into the recharge flow end to end (see
-[Meter credit domain model](#meter-credit-domain-model) below) — Recharge Detail and Consumer
-360 both show the real, separately-tracked meter-credit outcome. The frontend still has no
-dedicated Meter Credit *page* (a cross-consumer dashboard/detail like Recharge Operations has)
-— that remains a stub, along with RC/DC, Conversion, Exceptions, Reconciliation, Automation,
-Audit, and System Health, all still rendering an explicit "not yet backed" stub rather than
-invented data — see [docs/frontend-scope.md](docs/frontend-scope.md) for the real-vs-planned
-boundary.
+Recharge Operations, Meter Credit, Tariffs & Rules, Calculation Workbench, and 2 of 14 Reports),
+all verified against real data (a live PostgreSQL database and MePDCL's own tariff book +
+reference calculation workbooks). Meter credit is wired into the recharge flow end to end (see
+[Meter credit domain model](#meter-credit-domain-model) below) with its own dashboard/detail
+pages, including a genuine `Retry()` action — not just labels on Recharge Detail anymore. The
+remaining modules (RC/DC, Conversion, Exceptions, Reconciliation, Automation, Audit, System
+Health) still render an explicit "not yet backed" stub rather than invented data — see
+[docs/frontend-scope.md](docs/frontend-scope.md) for the real-vs-planned boundary.
 
 ## Structure
 
@@ -234,9 +232,18 @@ smart meter's available credit — and is now **wired into the recharge endpoint
   `GET /api/v1/recharges/{id}` (full `meterCommand` object: status, retry count, error, 
   timestamps) — both rendered on the frontend's Recharge Detail page and Consumer 360's
   recharge outcome banner.
-- Still missing: a dedicated cross-consumer Meter Credit *page* (a dashboard/detail pair like
-  Recharge Operations has), and any UI action to actually call `Retry()` on a failed/timed-out
-  command.
+- `GET /api/v1/meter-commands` / `GET /api/v1/meter-commands/{id}` expose every command
+  across all consumers — real KPIs and search — backing the **Meter Credit** dashboard
+  (`/meter-credit`) and detail (`/meter-credit/:id`) pages.
+- `POST /api/v1/meter-commands/{id}/retry` is a **genuine** retry action, not a UI-only status
+  flip: it calls `MeterCommand.Retry()` (rejecting with `409` if the command isn't
+  `Failed`/`TimedOut`), re-dispatches through the same `IMeterCommandClient` the original
+  attempt used, and persists whatever real outcome comes back. The Meter Credit Detail page
+  gates it behind an explicit confirmation dialog (per the "critical command confirmation"
+  pattern) and only shows the button for retryable commands.
+- Meter Credit Detail and Recharge Detail cross-link to each other (a command's originating
+  recharge, and a recharge's dispatched command), so an operator investigating either side of
+  the RMS/meter split never loses context.
 
 ### Demo console
 
@@ -303,6 +310,9 @@ dotnet tool run dotnet-ef migrations add <Name> \
 | `GET /api/v1/bills/{id}` | HTTP Basic | Full calculation trace for one bill — backs Bill Detail |
 | `GET /api/v1/recharges` | HTTP Basic | Every recharge attempt across all consumers, with each row's `meterCommandStatus` — backs Recharge Operations |
 | `GET /api/v1/recharges/{id}` | HTTP Basic | Full recharge detail with current RMS wallet balance and the full `meterCommand` object (status, retries, error, timestamps) — backs Recharge Detail |
+| `GET /api/v1/meter-commands` | HTTP Basic | Every meter credit command across all consumers, each traced back to its recharge — backs the Meter Credit dashboard |
+| `GET /api/v1/meter-commands/{id}` | HTTP Basic | Full meter command detail plus its originating recharge — backs Meter Credit Detail |
+| `POST /api/v1/meter-commands/{id}/retry` | HTTP Basic | Genuinely retries a `Failed`/`TimedOut` command (`409` otherwise) by resetting it and re-dispatching through `IMeterCommandClient` |
 | `GET /api/v1/tariffs` | HTTP Basic | Every configured tariff — backs Tariffs & Rules |
 | `GET /api/v1/tariffs/{id}` | HTTP Basic | One tariff's slabs, ToD periods, and vend limits — backs Tariff Detail |
 | `POST /api/v1/calculation-workbench/simulate` | HTTP Basic | SIMULATION-ONLY charge preview for an arbitrary tariff/consumption/load — backs the Calculation Workbench |
@@ -401,6 +411,12 @@ Built:
   confirmation kept as a distinct step from the real meter-credit outcome (`Acknowledged`/
   `Failed`/`TimedOut`, with error detail and retry count) — never conflating "RMS confirmed" with
   "meter credited". Consumer 360's recharge outcome banner shows the same distinction inline.
+- **Meter Credit** (`/meter-credit`) — every meter credit command across all consumers, real
+  KPIs (acknowledged/failed/timed-out/pending counts, success rate, retried count), and search.
+- **Meter Credit Detail** (`/meter-credit/:id`) — the command as a workflow (created → sent →
+  acknowledged/failed/timed-out), cross-linked to its originating recharge, with a **genuine**
+  Retry action for `Failed`/`TimedOut` commands — gated behind an explicit confirmation dialog,
+  re-dispatches through the real `IMeterCommandClient`, never a fabricated status flip.
 - **Tariffs & Rules** (`/tariffs`) — the real tariff configuration this engine bills against.
 - **Tariff Detail** (`/tariffs/:id`) — one tariff's slab table, ToD schedule (when configured),
   and vend limits. Read-only — no create/update endpoint exists, since a real tariff-change

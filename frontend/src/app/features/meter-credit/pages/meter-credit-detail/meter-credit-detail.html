@@ -1,0 +1,136 @@
+<div class="meter-credit-detail">
+  <a routerLink="/meter-credit" class="back-link">← Back to Meter Credit</a>
+
+  @if (loading()) {
+    <div class="skeleton-block"></div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else if (command(); as c) {
+    <header class="detail-header">
+      <div>
+        <h1>Meter Credit for {{ c.consumer.name }}</h1>
+        <div class="detail-header__meta">
+          <span>{{ c.consumer.accountNumber }}</span>
+          <span>·</span>
+          <span class="mono">{{ c.recharge.rmsReferenceId }}</span>
+        </div>
+      </div>
+      @switch (c.status) {
+        @case (MeterCommandStatus.Acknowledged) { <pe-status-badge label="Acknowledged" tone="success" /> }
+        @case (MeterCommandStatus.Failed) { <pe-status-badge label="Failed" tone="danger" /> }
+        @case (MeterCommandStatus.TimedOut) { <pe-status-badge label="Timed Out" tone="danger" /> }
+        @case (MeterCommandStatus.Sent) { <pe-status-badge label="Sent" tone="warning" /> }
+        @default { <pe-status-badge label="Queued" tone="neutral" /> }
+      }
+    </header>
+
+    <div class="detail-grid">
+      <section class="panel">
+        <h2>Workflow</h2>
+        <p class="panel__hint">
+          A meter credit command is never "successful" until acknowledged by the meter itself —
+          see the state below for exactly what happened.
+        </p>
+
+        <ol class="workflow">
+          <li class="workflow--done">
+            <span class="workflow__dot">●</span>
+            <div>
+              <div class="workflow__label">Command Created</div>
+              <div class="workflow__note">{{ c.createdAt | date: 'medium' }} · ₹{{ c.creditAmount | number: '1.2-2' }}</div>
+            </div>
+          </li>
+          @if (c.sentAt) {
+            <li class="workflow--done">
+              <span class="workflow__dot">●</span>
+              <div>
+                <div class="workflow__label">Sent to Meter</div>
+                <div class="workflow__note">{{ c.sentAt | date: 'medium' }}</div>
+              </div>
+            </li>
+          }
+          @switch (c.status) {
+            @case (MeterCommandStatus.Acknowledged) {
+              <li class="workflow--done">
+                <span class="workflow__dot">●</span>
+                <div>
+                  <div class="workflow__label">Acknowledged</div>
+                  <div class="workflow__note">{{ c.acknowledgedAt | date: 'medium' }} — the meter actually received the credit.</div>
+                </div>
+              </li>
+            }
+            @case (MeterCommandStatus.Failed) {
+              <li class="workflow--failed">
+                <span class="workflow__dot">✕</span>
+                <div>
+                  <div class="workflow__label">Failed</div>
+                  <div class="workflow__note">{{ c.errorMessage }}</div>
+                </div>
+              </li>
+            }
+            @case (MeterCommandStatus.TimedOut) {
+              <li class="workflow--failed">
+                <span class="workflow__dot">⏱</span>
+                <div>
+                  <div class="workflow__label">Timed Out</div>
+                  <div class="workflow__note">No acknowledgement arrived from the meter.</div>
+                </div>
+              </li>
+            }
+            @default {
+              <li class="workflow--pending">
+                <span class="workflow__dot">◐</span>
+                <div>
+                  <div class="workflow__label">Awaiting Acknowledgement</div>
+                </div>
+              </li>
+            }
+          }
+        </ol>
+
+        @if (canRetry) {
+          <div class="retry-section">
+            @if (!confirmingRetry()) {
+              <button type="button" class="retry-btn" (click)="requestRetry()" [disabled]="retrying()">
+                {{ retrying() ? 'Retrying…' : 'Retry Meter Credit' }}
+              </button>
+            } @else {
+              <div class="retry-confirm">
+                <p>
+                  This will resend the ₹{{ c.creditAmount | number: '1.2-2' }} credit command to the meter for
+                  {{ c.consumer.accountNumber }} (attempt #{{ c.retryCount + 1 }}). It does not touch RMS or the
+                  wallet — RMS already confirmed this payment.
+                </p>
+                <div class="retry-confirm__actions">
+                  <button type="button" class="retry-btn" (click)="confirmRetry()">Confirm Retry</button>
+                  <button type="button" class="cancel-btn" (click)="cancelRetry()">Cancel</button>
+                </div>
+              </div>
+            }
+            @if (retryError()) {
+              <p class="form-error">{{ retryError() }}</p>
+            }
+          </div>
+        }
+      </section>
+
+      <section class="panel">
+        <h2>Details</h2>
+        <dl class="kv-list">
+          <dt>Credit Amount</dt><dd class="num">₹{{ c.creditAmount | number: '1.2-2' }}</dd>
+          <dt>Retry Count</dt><dd class="num">{{ c.retryCount }}</dd>
+          <dt>Created</dt><dd>{{ c.createdAt | date: 'medium' }}</dd>
+          <dt>Sent</dt><dd>{{ c.sentAt ? (c.sentAt | date: 'medium') : '—' }}</dd>
+          <dt>Acknowledged</dt><dd>{{ c.acknowledgedAt ? (c.acknowledgedAt | date: 'medium') : '—' }}</dd>
+        </dl>
+
+        <h2 class="recharge-heading">Originating Recharge</h2>
+        <dl class="kv-list">
+          <dt>RMS Reference</dt><dd class="mono">{{ c.recharge.rmsReferenceId }}</dd>
+          <dt>Amount</dt><dd class="num">₹{{ c.recharge.amount | number: '1.2-2' }}</dd>
+        </dl>
+        <a [routerLink]="['/recharge', c.recharge.id]" class="view-recharge-link">View recharge →</a>
+      </section>
+    </div>
+  }
+</div>

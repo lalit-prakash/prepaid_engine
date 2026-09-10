@@ -1,0 +1,74 @@
+<div class="meter-credit">
+  <div class="page-header">
+    <h1>Meter Credit</h1>
+    <p class="page-header__subtitle">{{ commands().length }} meter credit command(s) across all consumers</p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2,3,4,5,6]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else {
+    <section class="kpi-row">
+      <pe-kpi-card label="Total Commands" [value]="commands().length" tone="primary" />
+      <pe-kpi-card label="Acknowledged" [value]="acknowledgedCount" tone="success" />
+      <pe-kpi-card label="Failed" [value]="failedCount" tone="danger" />
+      <pe-kpi-card label="Timed Out" [value]="timedOutCount" tone="danger" />
+      <pe-kpi-card label="Pending" [value]="pendingCount" tone="warning" />
+      <pe-kpi-card label="Retried" [value]="retriedCount" tone="neutral" />
+      <pe-kpi-card label="Success Rate" [value]="successRate" tone="info" />
+    </section>
+
+    <div class="toolbar">
+      <input
+        type="search"
+        placeholder="Search account number, name, or RMS reference…"
+        [value]="searchTerm()"
+        (input)="searchTerm.set($any($event.target).value)"
+      />
+    </div>
+
+    @if (filtered.length === 0) {
+      <div class="empty-panel">No meter commands matched your search.</div>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Created</th>
+              <th>Account</th>
+              <th>Consumer</th>
+              <th class="num">Amount</th>
+              <th>RMS Reference</th>
+              <th class="num">Retries</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (c of filtered; track c.id) {
+              <tr (click)="open(c.id)" class="row-clickable">
+                <td>{{ c.createdAt | date: 'medium' }}</td>
+                <td>{{ c.accountNumber }}</td>
+                <td>{{ c.name }}</td>
+                <td class="num">₹{{ c.creditAmount | number: '1.2-2' }}</td>
+                <td class="mono">{{ c.rmsReferenceId }}</td>
+                <td class="num">{{ c.retryCount }}</td>
+                <td>
+                  @switch (c.status) {
+                    @case (MeterCommandStatus.Acknowledged) { <pe-status-badge label="Acknowledged" tone="success" /> }
+                    @case (MeterCommandStatus.Failed) { <pe-status-badge label="Failed" tone="danger" /> }
+                    @case (MeterCommandStatus.TimedOut) { <pe-status-badge label="Timed Out" tone="danger" /> }
+                    @case (MeterCommandStatus.Sent) { <pe-status-badge label="Sent" tone="warning" /> }
+                    @default { <pe-status-badge label="Queued" tone="neutral" /> }
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</div>

@@ -46,7 +46,20 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/recharge/pages/recharge-detail/recharge-detail').then((m) => m.RechargeDetail),
       },
-      ...stubRoute('meter-credit', 'Meter Credit'),
+      {
+        path: 'meter-credit',
+        loadComponent: () =>
+          import('./features/meter-credit/pages/meter-credit-dashboard/meter-credit-dashboard').then(
+            (m) => m.MeterCreditDashboard,
+          ),
+      },
+      {
+        path: 'meter-credit/:id',
+        loadComponent: () =>
+          import('./features/meter-credit/pages/meter-credit-detail/meter-credit-detail').then(
+            (m) => m.MeterCreditDetail,
+          ),
+      },
       ...stubRoute('rc-dc', 'RC / DC'),
       ...stubRoute('conversion', 'Conversion'),
       ...stubRoute('exceptions', 'Exceptions'),

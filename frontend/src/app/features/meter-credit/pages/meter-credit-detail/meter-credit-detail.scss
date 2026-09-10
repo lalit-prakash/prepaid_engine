@@ -102,10 +102,58 @@
 .kv-list dd.mono { font-size: 12px; }
 .kv-list dd.num { font-variant-numeric: tabular-nums; }
 
-.meter-heading { margin-top: var(--space-5); margin-bottom: var(--space-3); font-size: var(--font-size-section-title); }
-.view-meter-command-link {
+.view-recharge-link {
   display: inline-block;
-  margin-top: var(--space-3);
+  margin-top: var(--space-2);
   font-size: var(--font-size-meta);
   color: var(--text-link);
 }
+
+.retry-section {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+.retry-btn {
+  padding: 9px var(--space-5);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-button);
+  cursor: pointer;
+}
+.retry-btn:hover:not(:disabled) { background: var(--color-primary-dark); }
+.retry-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.retry-confirm {
+  background: var(--color-warning-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+.retry-confirm p {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-body);
+  color: var(--color-warning-dark);
+  line-height: 1.5;
+}
+.retry-confirm__actions { display: flex; gap: var(--space-3); }
+.cancel-btn {
+  padding: 9px var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  font-size: var(--font-size-button);
+  cursor: pointer;
+}
+.cancel-btn:hover { border-color: var(--color-primary); }
+
+.form-error {
+  margin-top: var(--space-3);
+  color: var(--color-danger-dark);
+  font-size: var(--font-size-meta);
+}
+
+.recharge-heading { margin-top: var(--space-5); margin-bottom: var(--space-3); font-size: var(--font-size-section-title); }

@@ -154,6 +154,7 @@
             <dt>Sent</dt><dd>{{ mc.sentAt ? (mc.sentAt | date: 'medium') : '—' }}</dd>
             <dt>Acknowledged</dt><dd>{{ mc.acknowledgedAt ? (mc.acknowledgedAt | date: 'medium') : '—' }}</dd>
           </dl>
+          <a [routerLink]="['/meter-credit', mc.id]" class="view-meter-command-link">View meter command →</a>
         }
       </section>
     </div>
