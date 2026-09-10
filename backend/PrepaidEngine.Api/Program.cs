@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Api.Auth;
+using PrepaidEngine.Application.Connectivity;
 using PrepaidEngine.Application.MeterCommands;
 using PrepaidEngine.Application.Rms;
 using PrepaidEngine.Domain;
 using PrepaidEngine.Domain.Entities;
 using PrepaidEngine.Domain.Enums;
+using PrepaidEngine.Infrastructure.Connectivity;
 using PrepaidEngine.Infrastructure.MeterCommands;
 using PrepaidEngine.Infrastructure.Persistence;
 using PrepaidEngine.Infrastructure.Persistence.Seed;
@@ -27,6 +29,10 @@ builder.Services.AddSingleton<IRmsClient, MockRmsClient>();
 // TODO(meter-command integration): swap for a real adapter (STS/DLMS/COSEM/vendor API) once
 // one exists; keep MockMeterCommandClient registered for local dev / tests until then.
 builder.Services.AddSingleton<IMeterCommandClient, MockMeterCommandClient>();
+
+// TODO(connectivity-command integration): swap for a real adapter once one exists; keep
+// MockConnectivityCommandClient registered for local dev / tests until then.
+builder.Services.AddSingleton<IConnectivityCommandClient, MockConnectivityCommandClient>();
 
 // Basic auth for the demo endpoints only — a stop-gap, not a substitute for real
 // authentication before any shared/production exposure (see docs/assumptions-and-security.md).
@@ -144,6 +150,7 @@ app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, Pre
         consumer.ServiceAddress,
         consumer.ConnectionStatus,
         consumer.ConnectedLoadKw,
+        consumer.IsDisconnectEligibleOnCredit,
         Meter = new { consumer.Meter.MeterNumber, consumer.Meter.Phase, consumer.Meter.LastReadingKwh },
         Wallet = new
         {
@@ -156,6 +163,267 @@ app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, Pre
     });
 })
 .WithName("GetConsumerByAccountNumber")
+.RequireAuthorization();
+
+// RC/DC workflow: disconnect and reconnect, orchestrated through IConnectivityCommandClient
+// (MockConnectivityCommandClient for now — see the TODO above). Consumer.ConnectionStatus
+// records local intent (set to *Pending immediately); the ConnectivityCommand's own lifecycle
+// records whether the meter actually acknowledged the change — the same command/acknowledgement
+// split MeterCommand already applies to meter credit. The consumer's status only advances to
+// its final Disconnected/Active value once the dispatched command reaches Acknowledged.
+app.MapPost("/api/v1/consumers/{accountNumber}/disconnect", async (
+    string accountNumber,
+    ConnectivityRequest request,
+    PrepaidEngineDbContext db,
+    IConnectivityCommandClient connectivityClient) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Reason))
+        return Results.BadRequest(new { error = "A reason is required to disconnect a consumer." });
+
+    var consumer = await db.Consumers.Include(c => c.Wallet).FirstOrDefaultAsync(c => c.AccountNumber == accountNumber);
+    if (consumer is null)
+        return Results.NotFound();
+
+    if (consumer.ConnectionStatus != ConnectionStatus.Active)
+    {
+        return Results.Conflict(new { error = $"Cannot disconnect a consumer whose connection status is {consumer.ConnectionStatus}." });
+    }
+
+    consumer.RequestDisconnection();
+
+    var command = new ConnectivityCommand(Guid.NewGuid(), consumer.Id, ConnectivityCommandType.Disconnect, request.Reason, DateTime.UtcNow);
+    db.ConnectivityCommands.Add(command);
+    command.MarkSent(DateTime.UtcNow);
+
+    var correlationId = request.CorrelationId ?? $"disconnect-{Guid.NewGuid():N}";
+    var result = await connectivityClient.SendConnectivityCommandAsync(
+        new SendConnectivityCommandRequest(consumer.Id, ConnectivityCommandType.Disconnect, correlationId));
+
+    switch (result.Outcome)
+    {
+        case ConnectivityCommandOutcome.Acknowledged:
+            command.MarkAcknowledged(DateTime.UtcNow);
+            consumer.Disconnect();
+            break;
+        case ConnectivityCommandOutcome.Failed:
+            command.MarkFailed(result.Message ?? "Meter rejected the disconnect command.");
+            break;
+        case ConnectivityCommandOutcome.TimedOut:
+            command.MarkTimedOut();
+            break;
+    }
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new
+    {
+        ConnectivityCommandId = command.Id,
+        CommandStatus = command.Status.ToString(),
+        ConsumerConnectionStatus = consumer.ConnectionStatus.ToString(),
+    });
+})
+.WithName("DisconnectConsumer")
+.RequireAuthorization();
+
+app.MapPost("/api/v1/consumers/{accountNumber}/reconnect", async (
+    string accountNumber,
+    ConnectivityRequest request,
+    PrepaidEngineDbContext db,
+    IConnectivityCommandClient connectivityClient) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Reason))
+        return Results.BadRequest(new { error = "A reason is required to reconnect a consumer." });
+
+    var consumer = await db.Consumers.Include(c => c.Wallet).FirstOrDefaultAsync(c => c.AccountNumber == accountNumber);
+    if (consumer is null)
+        return Results.NotFound();
+
+    if (consumer.ConnectionStatus != ConnectionStatus.Disconnected)
+    {
+        return Results.Conflict(new { error = $"Cannot reconnect a consumer whose connection status is {consumer.ConnectionStatus}." });
+    }
+
+    // Checked up front rather than after a round trip to the meter: dispatching a reconnect
+    // command that Consumer.Reconnect() would just reject on Acknowledged serves no one — the
+    // real-world precondition (a positive balance) is knowable before involving the meter at all.
+    if (consumer.Wallet.Balance <= 0)
+    {
+        return Results.BadRequest(new { error = "Cannot reconnect a consumer with a zero or negative wallet balance." });
+    }
+
+    consumer.RequestReconnection();
+
+    var command = new ConnectivityCommand(Guid.NewGuid(), consumer.Id, ConnectivityCommandType.Reconnect, request.Reason, DateTime.UtcNow);
+    db.ConnectivityCommands.Add(command);
+    command.MarkSent(DateTime.UtcNow);
+
+    var correlationId = request.CorrelationId ?? $"reconnect-{Guid.NewGuid():N}";
+    var result = await connectivityClient.SendConnectivityCommandAsync(
+        new SendConnectivityCommandRequest(consumer.Id, ConnectivityCommandType.Reconnect, correlationId));
+
+    switch (result.Outcome)
+    {
+        case ConnectivityCommandOutcome.Acknowledged:
+            command.MarkAcknowledged(DateTime.UtcNow);
+            consumer.Reconnect();
+            break;
+        case ConnectivityCommandOutcome.Failed:
+            command.MarkFailed(result.Message ?? "Meter rejected the reconnect command.");
+            break;
+        case ConnectivityCommandOutcome.TimedOut:
+            command.MarkTimedOut();
+            break;
+    }
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new
+    {
+        ConnectivityCommandId = command.Id,
+        CommandStatus = command.Status.ToString(),
+        ConsumerConnectionStatus = consumer.ConnectionStatus.ToString(),
+    });
+})
+.WithName("ReconnectConsumer")
+.RequireAuthorization();
+
+// RC/DC read endpoints — real ConnectivityCommand records across all consumers.
+app.MapGet("/api/v1/connectivity-commands", async (PrepaidEngineDbContext db) =>
+{
+    var commands = await (
+        from c in db.ConnectivityCommands
+        join consumer in db.Consumers on c.ConsumerId equals consumer.Id
+        orderby c.CreatedAt descending
+        select new
+        {
+            c.Id,
+            consumer.AccountNumber,
+            consumer.Name,
+            c.CommandType,
+            c.Reason,
+            c.Status,
+            c.RetryCount,
+            c.ErrorMessage,
+            c.CreatedAt,
+            c.SentAt,
+            c.AcknowledgedAt,
+        })
+        .ToListAsync();
+
+    return Results.Ok(commands);
+})
+.WithName("ListConnectivityCommands")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/connectivity-commands/{id:guid}", async (Guid id, PrepaidEngineDbContext db) =>
+{
+    var command = await db.ConnectivityCommands.FirstOrDefaultAsync(c => c.Id == id);
+    if (command is null)
+        return Results.NotFound();
+
+    var consumer = await db.Consumers.FirstOrDefaultAsync(c => c.Id == command.ConsumerId);
+    if (consumer is null)
+    {
+        return Results.Problem(
+            statusCode: StatusCodes.Status500InternalServerError,
+            title: "Connectivity command references missing data",
+            detail: $"Connectivity command {id} references a consumer that no longer exists.");
+    }
+
+    return Results.Ok(new
+    {
+        command.Id,
+        Consumer = new { consumer.AccountNumber, consumer.Name, consumer.ConnectionStatus },
+        command.CommandType,
+        command.Reason,
+        command.Status,
+        command.RetryCount,
+        command.ErrorMessage,
+        command.CreatedAt,
+        command.SentAt,
+        command.AcknowledgedAt,
+    });
+})
+.WithName("GetConnectivityCommandById")
+.RequireAuthorization();
+
+// Retries a Failed/TimedOut connectivity command: resets it to Queued via
+// ConnectivityCommand.Retry(), then dispatches it again through IConnectivityCommandClient
+// exactly like the original attempt — never fabricates a retry result. On a real acknowledgement
+// this time, advances the consumer's connection status just like the original dispatch would have.
+app.MapPost("/api/v1/connectivity-commands/{id:guid}/retry", async (
+    Guid id,
+    PrepaidEngineDbContext db,
+    IConnectivityCommandClient connectivityClient) =>
+{
+    var command = await db.ConnectivityCommands.FirstOrDefaultAsync(c => c.Id == id);
+    if (command is null)
+        return Results.NotFound();
+
+    var consumer = await db.Consumers.Include(c => c.Wallet).FirstOrDefaultAsync(c => c.Id == command.ConsumerId);
+    if (consumer is null)
+    {
+        return Results.Problem(
+            statusCode: StatusCodes.Status500InternalServerError,
+            title: "Connectivity command references missing data",
+            detail: $"Connectivity command {id} references a consumer that no longer exists.");
+    }
+
+    // Re-checked here, not just at the original dispatch: a reconnect command can sit
+    // Failed/TimedOut for a while before being retried, and the wallet balance that justified
+    // it originally may no longer hold by the time someone clicks Retry (e.g. a new bill
+    // debited it back to zero). Without this, a real acknowledgement below would mark the
+    // command Acknowledged while leaving the consumer stuck in ReconnectionPending forever,
+    // with nothing surfaced to explain why.
+    if (command.CommandType == ConnectivityCommandType.Reconnect && consumer.Wallet.Balance <= 0)
+    {
+        return Results.BadRequest(new { error = "Cannot retry a reconnect for a consumer with a zero or negative wallet balance." });
+    }
+
+    try
+    {
+        command.Retry();
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+
+    command.MarkSent(DateTime.UtcNow);
+
+    var correlationId = $"retry-{command.RetryCount}-{Guid.NewGuid():N}";
+    var result = await connectivityClient.SendConnectivityCommandAsync(
+        new SendConnectivityCommandRequest(command.ConsumerId, command.CommandType, correlationId));
+
+    switch (result.Outcome)
+    {
+        case ConnectivityCommandOutcome.Acknowledged:
+            command.MarkAcknowledged(DateTime.UtcNow);
+            if (command.CommandType == ConnectivityCommandType.Disconnect)
+                consumer.Disconnect();
+            else if (consumer.Wallet.Balance > 0)
+                consumer.Reconnect();
+            break;
+        case ConnectivityCommandOutcome.Failed:
+            command.MarkFailed(result.Message ?? "Meter rejected the command.");
+            break;
+        case ConnectivityCommandOutcome.TimedOut:
+            command.MarkTimedOut();
+            break;
+    }
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new
+    {
+        command.Id,
+        command.Status,
+        command.RetryCount,
+        command.ErrorMessage,
+        ConsumerConnectionStatus = consumer.ConnectionStatus.ToString(),
+    });
+})
+.WithName("RetryConnectivityCommand")
 .RequireAuthorization();
 
 // Billing dashboard read endpoints — real data across all consumers, joined with the tariff
@@ -691,6 +959,14 @@ public record RechargeRequest(decimal Amount, string? IdempotencyKey = null);
 /// <param name="ConsumptionKwh">Hypothetical consumption for this simulation.</param>
 /// <param name="ConnectedLoadOrContractDemand">Hypothetical connected load/contract demand.</param>
 public record SimulateChargeRequest(Guid TariffId, decimal ConsumptionKwh, decimal ConnectedLoadOrContractDemand);
+
+/// <param name="Reason">Required. An auditable justification for the disconnect/reconnect — never optional metadata.</param>
+/// <param name="CorrelationId">
+/// Optional. Propagated to IConnectivityCommandClient for logs/telemetry; also doubles as the
+/// mock client's outcome control (see MockConnectivityCommandClient's CONNFAIL-/CONNTIMEOUT-
+/// markers). Defaults to a fresh id if omitted.
+/// </param>
+public record ConnectivityRequest(string Reason, string? CorrelationId = null);
 
 // Exposed so WebApplicationFactory-based integration tests can bootstrap this Api project.
 public partial class Program { }

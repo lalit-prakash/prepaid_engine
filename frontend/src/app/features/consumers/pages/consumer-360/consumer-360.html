@@ -18,10 +18,11 @@
           <span>{{ c.connectedLoadKw }} kW load</span>
         </div>
       </div>
-      @if (c.connectionStatus === ConnectionStatus.Connected) {
-        <pe-status-badge label="Connected" tone="success" />
-      } @else {
-        <pe-status-badge label="Disconnected" tone="danger" />
+      @switch (c.connectionStatus) {
+        @case (ConnectionStatus.Active) { <pe-status-badge label="Active" tone="success" /> }
+        @case (ConnectionStatus.Disconnected) { <pe-status-badge label="Disconnected" tone="danger" /> }
+        @case (ConnectionStatus.DisconnectionPending) { <pe-status-badge label="Disconnection Pending" tone="warning" /> }
+        @case (ConnectionStatus.ReconnectionPending) { <pe-status-badge label="Reconnection Pending" tone="warning" /> }
       }
     </header>
 
@@ -114,6 +115,64 @@
             @case ('invalid') {
               <div class="outcome outcome--danger">{{ outcome.message }}</div>
             }
+          }
+        }
+      </section>
+
+      <section class="panel">
+        <h2>RC / DC</h2>
+        <p class="panel__hint">
+          Disconnect/reconnect are dispatched through the meter-command layer (mock in this
+          environment) and only take effect once acknowledged. Include <code>CONNFAIL-</code> or
+          <code>CONNTIMEOUT-</code> in the reason to demo those outcomes.
+        </p>
+
+        @if (c.connectionStatus === ConnectionStatus.Active) {
+          @if (!confirmingDisconnect()) {
+            <div class="rcdc-row">
+              <input type="text" placeholder="Reason for disconnect…" [(ngModel)]="disconnectReason" />
+              <button type="button" class="danger-btn" (click)="requestDisconnect()" [disabled]="connectivitySubmitting()">
+                Disconnect
+              </button>
+            </div>
+          } @else {
+            <div class="rcdc-confirm">
+              <p>Disconnect {{ c.accountNumber }}? Reason: "{{ disconnectReason }}"</p>
+              <div class="rcdc-confirm__actions">
+                <button type="button" class="danger-btn" (click)="confirmDisconnect()">Confirm Disconnect</button>
+                <button type="button" class="cancel-btn" (click)="cancelDisconnect()">Cancel</button>
+              </div>
+            </div>
+          }
+        } @else if (c.connectionStatus === ConnectionStatus.Disconnected) {
+          @if (!confirmingReconnect()) {
+            <div class="rcdc-row">
+              <input type="text" placeholder="Reason for reconnect…" [(ngModel)]="reconnectReason" />
+              <button type="button" class="primary-btn" (click)="requestReconnect()" [disabled]="connectivitySubmitting()">
+                Reconnect
+              </button>
+            </div>
+          } @else {
+            <div class="rcdc-confirm">
+              <p>Reconnect {{ c.accountNumber }}? Reason: "{{ reconnectReason }}"</p>
+              <div class="rcdc-confirm__actions">
+                <button type="button" class="primary-btn" (click)="confirmReconnect()">Confirm Reconnect</button>
+                <button type="button" class="cancel-btn" (click)="cancelReconnect()">Cancel</button>
+              </div>
+            </div>
+          }
+        } @else {
+          <p class="empty-note">A {{ c.connectionStatus === ConnectionStatus.DisconnectionPending ? 'disconnect' : 'reconnect' }} command is pending acknowledgement.</p>
+        }
+
+        @if (connectivityOutcome(); as outcome) {
+          @if (outcome.kind === 'success') {
+            <div class="outcome" [class.outcome--success]="outcome.commandStatus === 'Acknowledged'" [class.outcome--danger]="outcome.commandStatus !== 'Acknowledged'">
+              <pe-status-badge [label]="outcome.commandStatus" [tone]="outcome.commandStatus === 'Acknowledged' ? 'success' : 'danger'" />
+              Consumer connection status: {{ outcome.consumerStatus }}.
+            </div>
+          } @else {
+            <div class="outcome outcome--danger">{{ outcome.message }}</div>
           }
         }
       </section>

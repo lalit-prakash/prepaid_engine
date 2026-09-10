@@ -13,6 +13,10 @@ type RechargeOutcome =
   | { kind: 'unavailable'; message: string }
   | { kind: 'invalid'; message: string };
 
+type ConnectivityOutcome =
+  | { kind: 'success'; commandStatus: string; consumerStatus: string }
+  | { kind: 'error'; message: string };
+
 /**
  * Consumer 360 — the primary investigation screen. Financial figures are
  * deliberately kept apart per the RMS-source-of-truth boundary: "RMS Wallet
@@ -39,6 +43,13 @@ export class Consumer360 implements OnInit {
   protected idempotencyKey = '';
   protected readonly rechargeSubmitting = signal(false);
   protected readonly rechargeOutcome = signal<RechargeOutcome | null>(null);
+
+  protected disconnectReason = '';
+  protected reconnectReason = '';
+  protected readonly confirmingDisconnect = signal(false);
+  protected readonly confirmingReconnect = signal(false);
+  protected readonly connectivitySubmitting = signal(false);
+  protected readonly connectivityOutcome = signal<ConnectivityOutcome | null>(null);
 
   constructor(
     private readonly route: ActivatedRoute,
@@ -120,5 +131,65 @@ export class Consumer360 implements OnInit {
           }
         },
       });
+  }
+
+  requestDisconnect(): void {
+    this.confirmingDisconnect.set(true);
+  }
+  cancelDisconnect(): void {
+    this.confirmingDisconnect.set(false);
+  }
+
+  confirmDisconnect(): void {
+    if (!this.disconnectReason.trim()) {
+      this.connectivityOutcome.set({ kind: 'error', message: 'A reason is required to disconnect.' });
+      return;
+    }
+    this.confirmingDisconnect.set(false);
+    this.connectivitySubmitting.set(true);
+    this.connectivityOutcome.set(null);
+
+    this.consumerService.disconnect(this.accountNumber, { reason: this.disconnectReason.trim() }).subscribe({
+      next: (result) => {
+        this.connectivitySubmitting.set(false);
+        this.connectivityOutcome.set({ kind: 'success', commandStatus: result.commandStatus, consumerStatus: result.consumerConnectionStatus });
+        this.disconnectReason = '';
+        this.load();
+      },
+      error: (err) => {
+        this.connectivitySubmitting.set(false);
+        this.connectivityOutcome.set({ kind: 'error', message: err?.error?.error ?? 'Could not disconnect this consumer.' });
+      },
+    });
+  }
+
+  requestReconnect(): void {
+    this.confirmingReconnect.set(true);
+  }
+  cancelReconnect(): void {
+    this.confirmingReconnect.set(false);
+  }
+
+  confirmReconnect(): void {
+    if (!this.reconnectReason.trim()) {
+      this.connectivityOutcome.set({ kind: 'error', message: 'A reason is required to reconnect.' });
+      return;
+    }
+    this.confirmingReconnect.set(false);
+    this.connectivitySubmitting.set(true);
+    this.connectivityOutcome.set(null);
+
+    this.consumerService.reconnect(this.accountNumber, { reason: this.reconnectReason.trim() }).subscribe({
+      next: (result) => {
+        this.connectivitySubmitting.set(false);
+        this.connectivityOutcome.set({ kind: 'success', commandStatus: result.commandStatus, consumerStatus: result.consumerConnectionStatus });
+        this.reconnectReason = '';
+        this.load();
+      },
+      error: (err) => {
+        this.connectivitySubmitting.set(false);
+        this.connectivityOutcome.set({ kind: 'error', message: err?.error?.error ?? 'Could not reconnect this consumer.' });
+      },
+    });
   }
 }

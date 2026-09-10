@@ -146,3 +146,67 @@ button[type='submit']:disabled { opacity: 0.6; cursor: not-allowed; }
 .mini-table tr.row-clickable:hover td { background: var(--color-primary-lighter); }
 
 .empty-note { color: var(--text-muted); font-size: var(--font-size-body); }
+
+.rcdc-row {
+  display: flex;
+  gap: var(--space-3);
+}
+.rcdc-row input {
+  flex: 1;
+  padding: 8px var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  font-size: var(--font-size-body);
+}
+
+.rcdc-confirm {
+  background: var(--color-warning-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+.rcdc-confirm p {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-body);
+  color: var(--color-warning-dark);
+  line-height: 1.5;
+}
+.rcdc-confirm__actions { display: flex; gap: var(--space-3); }
+
+.danger-btn {
+  padding: 9px var(--space-5);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-danger);
+  color: var(--text-inverse);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-button);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.danger-btn:hover:not(:disabled) { background: var(--color-danger-dark); }
+.danger-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.primary-btn {
+  padding: 9px var(--space-5);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-button);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.primary-btn:hover:not(:disabled) { background: var(--color-primary-dark); }
+.primary-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.cancel-btn {
+  padding: 9px var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  font-size: var(--font-size-button);
+  cursor: pointer;
+}
+.cancel-btn:hover { border-color: var(--color-primary); }

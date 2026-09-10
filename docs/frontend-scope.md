@@ -11,10 +11,12 @@ verify it, then extend.
 ## What's real today
 
 Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
-`GET /api/v1/consumers/{accountNumber}`, `POST .../recharge`, `GET /api/v1/bills`,
-`GET /api/v1/bills/{id}`, `GET /api/v1/recharges`, `GET /api/v1/recharges/{id}`,
-`GET /api/v1/meter-commands`, `GET /api/v1/meter-commands/{id}`,
-`POST /api/v1/meter-commands/{id}/retry`, `GET /api/v1/tariffs`, `GET /api/v1/tariffs/{id}`,
+`GET /api/v1/consumers/{accountNumber}`, `POST .../recharge`, `POST .../disconnect`,
+`POST .../reconnect`, `GET /api/v1/bills`, `GET /api/v1/bills/{id}`, `GET /api/v1/recharges`,
+`GET /api/v1/recharges/{id}`, `GET /api/v1/meter-commands`, `GET /api/v1/meter-commands/{id}`,
+`POST /api/v1/meter-commands/{id}/retry`, `GET /api/v1/connectivity-commands`,
+`GET /api/v1/connectivity-commands/{id}`, `POST /api/v1/connectivity-commands/{id}/retry`,
+`GET /api/v1/tariffs`, `GET /api/v1/tariffs/{id}`,
 `POST /api/v1/calculation-workbench/simulate`):
 
 - **Sign-in** (`/login`) — verifies the HTTP Basic credential against a real API call before
@@ -23,9 +25,15 @@ Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
   wallet/emergency-credit data; every other KPI is explicitly labeled "Illustrative".
 - **Consumers** (`/consumers`) — the real consumer list with live RMS wallet balances.
 - **Consumer 360** (`/consumers/:accountNumber`) — full real bill breakdown (energy, rebate,
-  fixed, duty, FPPAS, TMC, CPMC, arrears), real wallet ledger, and the **real recharge flow**
+  fixed, duty, FPPAS, TMC, CPMC, arrears), real wallet ledger, the **real recharge flow**
   end to end, handling every actual API response: 200 success, 200 replayed, 202 pending,
-  402 declined, 503 unavailable, 400 invalid.
+  402 declined, 503 unavailable, 400 invalid — and a **real RC/DC panel**: Disconnect/Reconnect
+  buttons (only one shown at a time, based on the consumer's actual current
+  `ConnectionStatus`), gated behind an explicit confirmation dialog, a live outcome banner
+  showing the real command status, and a header badge reflecting all four real states
+  (`Active`/`Disconnected`/`DisconnectionPending`/`ReconnectionPending`) — the last two render
+  a "command pending acknowledgement" message rather than a Disconnect/Reconnect button, since
+  neither action is valid mid-flight.
 - **Billing** (`/billing`) — every bill ever generated across all consumers, joined with
   tariff/category, with real KPIs (bills generated, paid/pending/overdue counts, total
   charges) derived from the same data — nothing illustrative on this page.
@@ -68,8 +76,10 @@ Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
   an explicit error rather than silently returning a zero energy charge.
 - **Reports Center** (`/reports`) — lists all 14 reports from the original UI/UX request's
   mandatory-reports section; only the 2 with a real data source are clickable, the rest render
-  disabled with a specific, honest reason (e.g. "No RC/DC domain model exists yet") rather than
-  being silently omitted or built as fake pages.
+  disabled with a specific, honest reason (e.g. the RC/DC reports now say "ConnectivityCommand
+  data exists but no daily-aggregation report endpoint is built yet", reflecting that the
+  domain model is real even though the report itself isn't) rather than being silently omitted
+  or built as fake pages.
   - **Daily Billing Report** (`/reports/daily-billing`) — every real bill, filterable by date
     range/status/search, with a real summary (total consumers, billed/overdue counts, total
     charges) and CSV export. Deliberately omits a "total energy" KPI since `BillSummary` (the
@@ -142,21 +152,37 @@ gated behind an explicit confirmation dialog on the detail page, it calls
 never a fabricated status flip. Verified live: a `TimedOut` command retried through the UI
 correctly flipped to `Acknowledged` with `RetryCount` incremented and fresh timestamps.
 
-**A `ConnectivityCommand` domain model for RC/DC now exists** (`backend/PrepaidEngine.Domain/
-Entities/ConnectivityCommand.cs`, `Queued`→`Sent`→`Acknowledged`/`Failed`/`TimedOut`, mandatory
-`Reason`, explicit `CommandType` of `Disconnect`/`Reconnect`, 21 passing tests), mirroring
-`MeterCommand`'s design exactly — but is domain-only so far, following the exact same sequence
-`MeterCommand` did before it was wired in: no API endpoint exposes it, nothing calls it from
-`Consumer.Disconnect()`/`Reconnect()`/`RequestDisconnection()`/`RequestReconnection()`, and no
-mock connectivity-command client exists yet (a future `IConnectivityCommandClient` would mirror
-`IMeterCommandClient`). Building the RC/DC UI is the next step once that wiring exists — never
-before it, for the same reason argued for Meter Credit: a page built against an always-`Queued`,
-never-dispatched command list would misrepresent reality rather than show anything real.
+**RC/DC is now wired end to end.** `IConnectivityCommandClient`/`MockConnectivityCommandClient`
+(`backend/PrepaidEngine.Application/Connectivity/`, `backend/PrepaidEngine.Infrastructure/
+Connectivity/`, mirroring `IMeterCommandClient`/`MockMeterCommandClient` exactly, 9 tests) backs
+two real operator actions: `POST /api/v1/consumers/{accountNumber}/disconnect` and `.../reconnect`.
+Both require a non-empty `Reason`, both reject on the wrong starting `ConnectionStatus` (`409`),
+and reconnect additionally rejects a non-positive wallet balance (`400`) *before* ever dispatching
+to the meter — the same "don't dispatch a command reality would reject anyway" reasoning Meter
+Credit already established. `GET /api/v1/connectivity-commands` and `.../{id}` expose the command
+list/detail, and `POST /api/v1/connectivity-commands/{id}/retry` re-dispatches a `Failed`/
+`TimedOut` command through `ConnectivityCommand.Retry()`. Consumer 360 got a real **RC/DC panel**
+(Disconnect/Reconnect, one shown at a time based on actual `ConnectionStatus`, gated behind an
+inline confirmation step, with a live outcome banner) — this is the wiring phase's UI, same as
+Meter Credit's recharge-panel integration was for that phase; a dedicated RC/DC dashboard/detail
+page (mirroring `/meter-credit`) has not been built yet.
 
-Next up, in spec order: wire `ConnectivityCommand` into a disconnect/reconnect workflow (likely
-triggered from `IsDisconnectEligibleOnCredit` for disconnects, and from a successful recharge
-for reconnects) + add its read/action endpoints + build the RC/DC dashboard/detail pages, then
+**A real bug was found and fixed during this phase's code review**, the same way the
+apiBaseUrl/auth-interceptor bug was found during an earlier phase: the retry endpoint checked the
+reconnect-eligibility balance rule only implicitly, by gating `consumer.Reconnect()` on
+`Wallet.Balance > 0` right before calling it — but it called `command.MarkAcknowledged()`
+unconditionally first. A reconnect command that had gone `Failed`/`TimedOut` while the balance was
+still positive, then got retried after a later bill drained the wallet to zero, would come back
+`Acknowledged` from the meter yet silently fail to reconnect the consumer — `ConnectivityCommand`
+says success, `Consumer.ConnectionStatus` stays stuck in `ReconnectionPending`, and nothing
+explains why. Fixed by re-checking the balance precondition explicitly before calling
+`command.Retry()`, returning `400` instead, mirroring the precondition already enforced at the
+original `/reconnect` dispatch. This is exactly the kind of gap the intent-vs-acknowledgement
+split exists to catch — and also exactly why time-sensitive preconditions need re-checking at
+every dispatch point, not just the first one.
+
+Next up, in spec order: build the RC/DC dashboard/detail pages (mirroring Meter Credit's), then
 Conversion, Reconciliation, Exception, and Audit once their domain models exist, plus the
-reports that depend on all of that data — including the now-unblocked
-`Meter Credit Failure Report`. Each phase gets its own real backend support (or an explicit
+reports that depend on all of that data — including the now-unblocked `Day-wise RC/DC Report`s
+and `Meter Credit Failure Report`. Each phase gets its own real backend support (or an explicit
 mock clearly labeled as such) before its UI is built — never the reverse.

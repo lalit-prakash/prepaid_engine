@@ -2,7 +2,14 @@ import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { ConsumerDetail, ConsumerSummary, RechargeRequest, RechargeResult } from '../models/consumer.model';
+import {
+  ConnectivityRequest,
+  ConnectivityResult,
+  ConsumerDetail,
+  ConsumerSummary,
+  RechargeRequest,
+  RechargeResult,
+} from '../models/consumer.model';
 
 /**
  * Talks to the real Prepaid Engine API (GET /api/v1/consumers,
@@ -36,6 +43,23 @@ export class ConsumerService {
       `${this.baseUrl}/${encodeURIComponent(accountNumber)}/recharge`,
       request,
       { observe: 'response' },
+    );
+  }
+
+  /** Real disconnect — requires a reason, dispatches a ConnectivityCommand through the meter-
+   * command layer, and only advances the consumer's status on an actual acknowledgement. */
+  disconnect(accountNumber: string, request: ConnectivityRequest): Observable<ConnectivityResult> {
+    return this.http.post<ConnectivityResult>(
+      `${this.baseUrl}/${encodeURIComponent(accountNumber)}/disconnect`,
+      request,
+    );
+  }
+
+  /** Real reconnect — same real dispatch/acknowledgement discipline as disconnect(). */
+  reconnect(accountNumber: string, request: ConnectivityRequest): Observable<ConnectivityResult> {
+    return this.http.post<ConnectivityResult>(
+      `${this.baseUrl}/${encodeURIComponent(accountNumber)}/reconnect`,
+      request,
     );
   }
 }

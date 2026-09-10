@@ -3,9 +3,15 @@
 // is marked "Illustrative" at the point it's used, never modeled here as if
 // it were real — see docs/frontend-scope.md for the real-vs-mock boundary.
 
+/** Mirrors ConnectionStatus (backend/PrepaidEngine.Domain/Enums/ConnectionStatus.cs). The
+ * *Pending values record local intent only — see the "no fake success states" rule: a consumer
+ * only reaches a final Active/Disconnected once a dispatched ConnectivityCommand is actually
+ * Acknowledged, not merely sent. */
 export enum ConnectionStatus {
-  Connected = 0,
+  Active = 0,
   Disconnected = 1,
+  ReconnectionPending = 2,
+  DisconnectionPending = 3,
 }
 
 export enum MeterPhase {
@@ -86,6 +92,7 @@ export interface ConsumerDetail {
   serviceAddress: string;
   connectionStatus: ConnectionStatus;
   connectedLoadKw: number;
+  isDisconnectEligibleOnCredit: boolean;
   meter: Meter;
   wallet: Wallet;
   bills: Bill[];
@@ -104,4 +111,15 @@ export interface RechargeResult {
    * when no meter command was dispatched (a replayed request, or RMS did not report Success). */
   meterCommandStatus?: string | null;
   replayed?: boolean;
+}
+
+export interface ConnectivityRequest {
+  reason: string;
+  correlationId?: string;
+}
+
+export interface ConnectivityResult {
+  connectivityCommandId: string;
+  commandStatus: string;
+  consumerConnectionStatus: string;
 }

@@ -41,10 +41,11 @@
               <td>{{ c.name }}</td>
               <td>{{ c.meterNumber }}</td>
               <td>
-                @if (c.connectionStatus === ConnectionStatus.Connected) {
-                  <pe-status-badge label="Connected" tone="success" />
-                } @else {
-                  <pe-status-badge label="Disconnected" tone="danger" />
+                @switch (c.connectionStatus) {
+                  @case (ConnectionStatus.Active) { <pe-status-badge label="Active" tone="success" /> }
+                  @case (ConnectionStatus.Disconnected) { <pe-status-badge label="Disconnected" tone="danger" /> }
+                  @case (ConnectionStatus.DisconnectionPending) { <pe-status-badge label="Disconnection Pending" tone="warning" /> }
+                  @case (ConnectionStatus.ReconnectionPending) { <pe-status-badge label="Reconnection Pending" tone="warning" /> }
                 }
               </td>
               <td class="num">₹{{ c.walletBalance | number: '1.2-2' }}</td>

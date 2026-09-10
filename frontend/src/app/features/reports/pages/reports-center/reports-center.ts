@@ -127,7 +127,7 @@ export class ReportsCenter {
     switch (report.id) {
       case 'day-wise-rc':
       case 'day-wise-dc':
-        return 'No RC/DC domain model exists yet';
+        return 'ConnectivityCommand data exists (see RC/DC on Consumer 360) but no daily-aggregation report endpoint is built yet';
       case 'postpaid-to-prepaid':
       case 'prepaid-to-postpaid':
         return 'No conversion workflow domain model exists yet';

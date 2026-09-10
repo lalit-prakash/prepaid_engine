@@ -10,17 +10,18 @@ communication platform. RMS is the authoritative system of record for the consum
 financial wallet; the Prepaid Engine's own `PrepaidWallets`/`WalletTransactions` tables are a
 working ledger for billing/recharge orchestration, not a competing wallet.
 
-**Current status**: backend domain + persistence + a mock RMS integration + a mock meter-command
-integration + a small demo API + a minimal hand-built demo console + an Angular
-enterprise-operations frontend covering the real API surface (Overview, Consumers/360, Billing,
-Recharge Operations, Meter Credit, Tariffs & Rules, Calculation Workbench, and 2 of 14 Reports),
-all verified against real data (a live PostgreSQL database and MePDCL's own tariff book +
-reference calculation workbooks). Meter credit is wired into the recharge flow end to end (see
-[Meter credit domain model](#meter-credit-domain-model) below) with its own dashboard/detail
-pages, including a genuine `Retry()` action — not just labels on Recharge Detail anymore. A
-`ConnectivityCommand` domain model for RC/DC now exists too (see
-[RC/DC domain model](#rcdc-domain-model) below) but, like `MeterCommand` before it was wired in,
-isn't hooked into any workflow or exposed via the API yet. The remaining modules (RC/DC,
+**Current status**: backend domain + persistence + a mock RMS integration + mock meter-command
+and connectivity-command integrations + a small demo API + a minimal hand-built demo console +
+an Angular enterprise-operations frontend covering the real API surface (Overview, Consumers/360
+with a real RC/DC panel, Billing, Recharge Operations, Meter Credit, Tariffs & Rules,
+Calculation Workbench, and 2 of 14 Reports), all verified against real data (a live PostgreSQL
+database and MePDCL's own tariff book + reference calculation workbooks). Meter credit is wired
+into the recharge flow end to end (see [Meter credit domain model](#meter-credit-domain-model)
+below) with its own dashboard/detail pages, including a genuine `Retry()` action. RC/DC is now
+wired into a real disconnect/reconnect workflow too (see
+[RC/DC domain model](#rcdc-domain-model--wired-into-a-disconnectreconnect-workflow) below),
+though — unlike Meter Credit — it doesn't have a dedicated cross-consumer dashboard/detail page
+yet, only the real panel on Consumer 360. The remaining modules (a standalone RC/DC page,
 Conversion, Exceptions, Reconciliation, Automation, Audit, System Health) still render an
 explicit "not yet backed" stub rather than invented data — see
 [docs/frontend-scope.md](docs/frontend-scope.md) for the real-vs-planned boundary.
@@ -32,7 +33,7 @@ explicit "not yet backed" stub rather than invented data — see
   - `PrepaidEngine.Application` — use cases / integration ports (`IRmsClient`, `IMeterCommandClient`)
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
-  - `PrepaidEngine.Tests` — xUnit test project (207 tests — see [Testing](#testing))
+  - `PrepaidEngine.Tests` — xUnit test project (215 tests — see [Testing](#testing))
 - `frontend/` — Angular 22 enterprise operations UI (see [Frontend](#frontend) below and
   [docs/frontend-scope.md](docs/frontend-scope.md))
 - `docs/` — sourcing, security, tariff-validation, and frontend-scope documentation (see [Documentation](#documentation))
@@ -54,7 +55,7 @@ explicit "not yet backed" stub rather than invented data — see
 | `RechargeTransaction` | A recharge processed through RMS, with its own status lifecycle (`Initiated`/`Success`/`Failed`/`Reversed`) |
 | `FppasCharge` | A notified FPPAS (Fuel and Power Purchase Adjustment Surcharge) rate change, deferred one billing month and prorated across every day of the following month |
 | `MeterCommand` | A meter credit command — the step that actually updates the smart meter's available credit after RMS confirms a recharge, wired into the recharge endpoint. Deliberately a separate entity/lifecycle from `RechargeTransaction` (`Queued`/`Sent`/`Acknowledged`/`Failed`/`TimedOut`) — RMS confirming payment and the meter itself being credited are two different systems succeeding independently, and the domain model refuses to conflate them (see below) |
-| `ConnectivityCommand` | A remote disconnect/reconnect command dispatched to a consumer's meter (`Disconnect`/`Reconnect`, with a mandatory `Reason`), not yet wired into any workflow. Deliberately a separate entity/lifecycle from `Consumer.ConnectionStatus` (`Queued`/`Sent`/`Acknowledged`/`Failed`/`TimedOut`) — the consumer's status records local *intent*, this entity tracks whether the physical meter actually acted on it, the same command/acknowledgement split used for `MeterCommand` (see [RC/DC domain model](#rcdc-domain-model) below) |
+| `ConnectivityCommand` | A remote disconnect/reconnect command dispatched to a consumer's meter (`Disconnect`/`Reconnect`, with a mandatory `Reason`), wired into real disconnect/reconnect endpoints. Deliberately a separate entity/lifecycle from `Consumer.ConnectionStatus` (`Queued`/`Sent`/`Acknowledged`/`Failed`/`TimedOut`) — the consumer's status records local *intent*, this entity tracks whether the physical meter actually acted on it, the same command/acknowledgement split used for `MeterCommand` (see [RC/DC domain model](#rcdc-domain-model--wired-into-a-disconnectreconnect-workflow) below) |
 
 ### Tariff engine — verified calculation methods
 
@@ -249,38 +250,52 @@ smart meter's available credit — and is now **wired into the recharge endpoint
   recharge, and a recharge's dispatched command), so an operator investigating either side of
   the RMS/meter split never loses context.
 
-### RC/DC domain model
+### RC/DC domain model — wired into a disconnect/reconnect workflow
 
 `ConnectivityCommand` models a remote disconnect or reconnect command dispatched to a
-consumer's meter. This is **domain modeling only** — matching this project's established
-pattern of implementing a domain concept first and wiring it into a workflow only on a
-separate, explicit request (the same sequence FPPAS, TMC/CPMC, arrear recovery, and meter
-credit itself all followed). No API endpoint exists yet, and nothing calls this from
-`Consumer.Disconnect()`/`Reconnect()`/`RequestDisconnection()`/`RequestReconnection()`.
+consumer's meter, and is now wired into two real endpoints:
 
 - Deliberately a separate entity/lifecycle from `Consumer.ConnectionStatus` — the consumer's
   own status (including its `DisconnectionPending`/`ReconnectionPending` values) records local
-  *intent*, while `ConnectivityCommand` tracks whether the physical meter actually acted on
-  that intent. Identical split to `MeterCommand`/`RechargeTransaction`.
+  *intent* (set immediately on request), while `ConnectivityCommand` tracks whether the
+  physical meter actually acted on that intent. Identical split to `MeterCommand`/
+  `RechargeTransaction`. The consumer's status only advances to its final `Disconnected`/
+  `Active` value once the dispatched command reaches `Acknowledged` — never inferred from the
+  command merely being sent.
 - `CommandType` (`Disconnect`/`Reconnect`) is an explicit, stored fact — never inferred from
   context — matching the UI/UX request's concern that direction (e.g. Postpaid→Prepaid vs.
   Prepaid→Postpaid, or Reconnect vs. Disconnect) is exactly the kind of thing that gets
   silently reversed by accident if it's derived rather than recorded.
-- `Reason` is mandatory, not optional metadata: disconnect/reconnect are destructive operator
-  actions that must always carry an auditable justification (the "critical command
-  confirmation" rule from the original UI/UX request).
+- `Reason` is mandatory, not optional metadata: `POST /api/v1/consumers/{accountNumber}/
+  disconnect` and `.../reconnect` both reject a missing/blank reason with `400`.
 - Lifecycle: `Queued` → `Sent` → `Acknowledged` (the *only* state that means the meter's
   physical connection actually changed) — or `Sent` → `Failed`/`TimedOut`, either of which can
-  `Retry()` back to `Queued` (incrementing `RetryCount`). Uses its own
-  `ConnectivityCommandStatus` enum rather than reusing `MeterCommandStatus`, even though the
-  shape is identical — this project's convention (see `RechargeStatus` vs. `MeterCommandStatus`)
-  is to never let two unrelated lifecycles share one enum just because their states look alike.
+  `Retry()` back to `Queued` (incrementing `RetryCount`) via `POST /api/v1/connectivity-commands/
+  {id}/retry`. Uses its own `ConnectivityCommandStatus` enum rather than reusing
+  `MeterCommandStatus`, even though the shape is identical — matching `RechargeStatus` vs.
+  `MeterCommandStatus`'s precedent of never sharing an enum across unrelated lifecycles.
+- Both endpoints validate the consumer's current state before dispatching anything: disconnect
+  requires `Active` (else `409`), reconnect requires `Disconnected` **and** a positive wallet
+  balance (else `409`/`400`, checked before ever involving the meter — dispatching a command
+  `Consumer.Reconnect()` would just reject on acknowledgement serves no one). The retry endpoint
+  re-checks that same balance precondition for a `Reconnect` command, since a command can sit
+  `Failed`/`TimedOut` for a while and the balance that justified it originally may no longer
+  hold — this was a real bug caught by code review and fixed before merging (see the commit).
+- In `MockConnectivityCommandClient`, include `CONNFAIL-` or `CONNTIMEOUT-` anywhere in the
+  disconnect/reconnect `Reason` (or an optional `CorrelationId`) to force the meter to reject or
+  never acknowledge the command.
+- Exposed via `GET /api/v1/connectivity-commands` and `GET /api/v1/connectivity-commands/{id}`
+  (real data across all consumers — no dedicated RC/DC dashboard/detail page exists yet, unlike
+  Meter Credit). Consumer 360 has a real RC/DC panel: Disconnect/Reconnect buttons (gated behind
+  an explicit confirmation dialog per the "critical command confirmation" rule), a live outcome
+  banner, and the header's connection-status badge reflecting all four real states (`Active`/
+  `Disconnected`/`DisconnectionPending`/`ReconnectionPending`).
 - Unlike `MeterCommand` (at most one per recharge), a consumer can be disconnected and later
   reconnected any number of times over its lifetime — no uniqueness constraint on `ConsumerId`,
   only an index for lookup.
 - Says nothing about the transport (STS/DLMS/COSEM/vendor API) — no such integration exists
-  yet; a future `IConnectivityCommandClient` would plug in the same way `IMeterCommandClient`
-  does for meter credit.
+  yet; a future real `IConnectivityCommandClient` adapter would plug in the same way a real
+  `IMeterCommandClient` adapter would for meter credit.
 
 ### Demo console
 
@@ -350,6 +365,11 @@ dotnet tool run dotnet-ef migrations add <Name> \
 | `GET /api/v1/meter-commands` | HTTP Basic | Every meter credit command across all consumers, each traced back to its recharge — backs the Meter Credit dashboard |
 | `GET /api/v1/meter-commands/{id}` | HTTP Basic | Full meter command detail plus its originating recharge — backs Meter Credit Detail |
 | `POST /api/v1/meter-commands/{id}/retry` | HTTP Basic | Genuinely retries a `Failed`/`TimedOut` command (`409` otherwise) by resetting it and re-dispatching through `IMeterCommandClient` |
+| `POST /api/v1/consumers/{accountNumber}/disconnect` | HTTP Basic | Real RC/DC disconnect: requires a `Reason`, `409` unless currently `Active`, dispatches a `ConnectivityCommand` and only sets `Disconnected` on real acknowledgement |
+| `POST /api/v1/consumers/{accountNumber}/reconnect` | HTTP Basic | Real RC/DC reconnect: requires a `Reason`, `409` unless currently `Disconnected`, `400` if wallet balance isn't positive, otherwise same dispatch/acknowledgement discipline as disconnect |
+| `GET /api/v1/connectivity-commands` | HTTP Basic | Every disconnect/reconnect command across all consumers |
+| `GET /api/v1/connectivity-commands/{id}` | HTTP Basic | Full connectivity command detail plus the consumer's current connection status |
+| `POST /api/v1/connectivity-commands/{id}/retry` | HTTP Basic | Genuinely retries a `Failed`/`TimedOut` command (`409` otherwise, `400` if a `Reconnect` retry's balance precondition no longer holds) |
 | `GET /api/v1/tariffs` | HTTP Basic | Every configured tariff — backs Tariffs & Rules |
 | `GET /api/v1/tariffs/{id}` | HTTP Basic | One tariff's slabs, ToD periods, and vend limits — backs Tariff Detail |
 | `POST /api/v1/calculation-workbench/simulate` | HTTP Basic | SIMULATION-ONLY charge preview for an arbitrary tariff/consumption/load — backs the Calculation Workbench |
@@ -376,7 +396,7 @@ cd backend
 dotnet test PrepaidEngine.sln
 ```
 
-**207 tests, all passing.** Breakdown:
+**215 tests, all passing.** Breakdown:
 
 | Test class | Count | What it covers |
 |---|---|---|
@@ -398,6 +418,7 @@ dotnet test PrepaidEngine.sln
 | `MeterCommandTests` | 18 | Full lifecycle state-machine coverage: `Queued`→`Sent`→`Acknowledged`, `Sent`→`Failed`/`TimedOut`→`Retry()` (incrementing `RetryCount`, resetting error/sent state), every invalid transition guarded and tested (e.g. acknowledging a never-sent command, retrying an already-acknowledged one), non-positive credit amount validation |
 | `MockMeterCommandClientTests` | 9 | `METERFAIL-`/`METERTIMEOUT-` correlation-id markers (case-insensitive, anywhere in the string) producing `Failed`/`TimedOut`, default success path, non-positive credit amount / null-request / cancellation validation |
 | `ConnectivityCommandTests` | 21 | Full lifecycle state-machine coverage mirroring `MeterCommandTests`: `Queued`→`Sent`→`Acknowledged`, `Sent`→`Failed`/`TimedOut`→`Retry()`, every invalid transition guarded and tested, plus `Disconnect`/`Reconnect` type recording and mandatory-`Reason` validation (null/empty/whitespace) |
+| `MockConnectivityCommandClientTests` | 9 | `CONNFAIL-`/`CONNTIMEOUT-` correlation-id/reason markers (case-insensitive, anywhere in the string) producing `Failed`/`TimedOut`, default success path, null-request / cancellation validation |
 
 Every number in `TariffGoldenDataTests`, `BplTariffTests`, and `DhtTariffDiscrepancyTests` is
 taken verbatim from MePDCL's tariff book or reference workbooks, not invented — a failure there
@@ -437,8 +458,10 @@ Built:
   visually and semantically distinct from engine-calculated charges/arrears/emergency credit
   (RMS remains the source of truth for the real wallet — see Scope above), full real bill
   breakdown, wallet ledger, and the complete recharge flow wired to every actual API response
-  (200 success, 200 replayed, 202 pending, 402 declined, 503 unavailable, 400 invalid) —
-  verified live in-browser against the real Postgres-backed API.
+  (200 success, 200 replayed, 202 pending, 402 declined, 503 unavailable, 400 invalid) — plus a
+  real RC/DC panel (Disconnect/Reconnect, gated behind an explicit confirmation dialog, a live
+  outcome banner, and a header badge reflecting all four real connection states) — verified
+  live in-browser against the real Postgres-backed API.
 - **Billing** (`/billing`) — every bill across all consumers with real KPIs (generated/paid/
   pending/overdue counts, total charges) and search.
 - **Bill Detail** (`/billing/:id`) — the full calculation trace for one bill, reachable from
