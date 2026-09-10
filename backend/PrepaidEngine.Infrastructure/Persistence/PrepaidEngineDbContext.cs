@@ -29,6 +29,7 @@ public class PrepaidEngineDbContext : DbContext
     public DbSet<RechargeTransaction> RechargeTransactions => Set<RechargeTransaction>();
     public DbSet<FppasCharge> FppasCharges => Set<FppasCharge>();
     public DbSet<MeterCommand> MeterCommands => Set<MeterCommand>();
+    public DbSet<ConnectivityCommand> ConnectivityCommands => Set<ConnectivityCommand>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

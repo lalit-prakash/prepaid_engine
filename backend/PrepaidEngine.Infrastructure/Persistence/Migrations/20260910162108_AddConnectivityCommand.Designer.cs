@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PrepaidEngine.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using PrepaidEngine.Infrastructure.Persistence;
 namespace PrepaidEngine.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PrepaidEngineDbContext))]
-    partial class PrepaidEngineDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260910162108_AddConnectivityCommand")]
+    partial class AddConnectivityCommand
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

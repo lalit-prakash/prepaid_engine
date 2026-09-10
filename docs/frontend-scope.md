@@ -142,7 +142,21 @@ gated behind an explicit confirmation dialog on the detail page, it calls
 never a fabricated status flip. Verified live: a `TimedOut` command retried through the UI
 correctly flipped to `Acknowledged` with `RetryCount` incremented and fresh timestamps.
 
-Next up, in spec order: the remaining modules (RC/DC, Conversion, Reconciliation, Exception,
-Audit) once their domain models exist, plus the reports that depend on that data — including
-the now-unblocked `Meter Credit Failure Report`. Each phase gets its own real backend support
-(or an explicit mock clearly labeled as such) before its UI is built — never the reverse.
+**A `ConnectivityCommand` domain model for RC/DC now exists** (`backend/PrepaidEngine.Domain/
+Entities/ConnectivityCommand.cs`, `Queued`→`Sent`→`Acknowledged`/`Failed`/`TimedOut`, mandatory
+`Reason`, explicit `CommandType` of `Disconnect`/`Reconnect`, 21 passing tests), mirroring
+`MeterCommand`'s design exactly — but is domain-only so far, following the exact same sequence
+`MeterCommand` did before it was wired in: no API endpoint exposes it, nothing calls it from
+`Consumer.Disconnect()`/`Reconnect()`/`RequestDisconnection()`/`RequestReconnection()`, and no
+mock connectivity-command client exists yet (a future `IConnectivityCommandClient` would mirror
+`IMeterCommandClient`). Building the RC/DC UI is the next step once that wiring exists — never
+before it, for the same reason argued for Meter Credit: a page built against an always-`Queued`,
+never-dispatched command list would misrepresent reality rather than show anything real.
+
+Next up, in spec order: wire `ConnectivityCommand` into a disconnect/reconnect workflow (likely
+triggered from `IsDisconnectEligibleOnCredit` for disconnects, and from a successful recharge
+for reconnects) + add its read/action endpoints + build the RC/DC dashboard/detail pages, then
+Conversion, Reconciliation, Exception, and Audit once their domain models exist, plus the
+reports that depend on all of that data — including the now-unblocked
+`Meter Credit Failure Report`. Each phase gets its own real backend support (or an explicit
+mock clearly labeled as such) before its UI is built — never the reverse.

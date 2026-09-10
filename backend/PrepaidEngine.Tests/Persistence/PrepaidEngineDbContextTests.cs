@@ -262,4 +262,55 @@ public class PrepaidEngineDbContextTests : IDisposable
 
         Assert.Throws<DbUpdateException>(() => _context.SaveChanges());
     }
+
+    [Fact]
+    public void CanPersistAndReloadConnectivityCommand_AndItsLifecycleTransitions()
+    {
+        var meter = new SmartMeter(Guid.NewGuid(), "MTR-700", MeterPhase.SinglePhase);
+        var consumer = new Consumer(Guid.NewGuid(), "ACC-700", "RC/DC Test Consumer", "7 Test Street", meter, connectedLoadKw: 2m);
+        _context.Consumers.Add(consumer);
+        _context.SaveChanges();
+
+        var command = new ConnectivityCommand(Guid.NewGuid(), consumer.Id, ConnectivityCommandType.Disconnect, "Negative credit", DateTime.UtcNow);
+        command.MarkSent(DateTime.UtcNow);
+        _context.ConnectivityCommands.Add(command);
+        _context.SaveChanges();
+
+        using var freshContext = new PrepaidEngineDbContext(
+            new DbContextOptionsBuilder<PrepaidEngineDbContext>().UseSqlite(_connection).Options);
+
+        var reloaded = freshContext.ConnectivityCommands.Single(c => c.Id == command.Id);
+        Assert.Equal(ConnectivityCommandStatus.Sent, reloaded.Status);
+        Assert.Equal(ConnectivityCommandType.Disconnect, reloaded.CommandType);
+        Assert.Equal("Negative credit", reloaded.Reason);
+
+        reloaded.MarkAcknowledged(DateTime.UtcNow);
+        freshContext.SaveChanges();
+
+        using var verifyingContext = new PrepaidEngineDbContext(
+            new DbContextOptionsBuilder<PrepaidEngineDbContext>().UseSqlite(_connection).Options);
+        var verified = verifyingContext.ConnectivityCommands.Single(c => c.Id == command.Id);
+        Assert.Equal(ConnectivityCommandStatus.Acknowledged, verified.Status);
+        Assert.NotNull(verified.AcknowledgedAt);
+    }
+
+    [Fact]
+    public void CanPersistMultipleConnectivityCommandsForTheSameConsumer()
+    {
+        // Unlike MeterCommand (at most one per recharge), a consumer can be disconnected and
+        // later reconnected any number of times — no uniqueness constraint should apply here.
+        var meter = new SmartMeter(Guid.NewGuid(), "MTR-800", MeterPhase.SinglePhase);
+        var consumer = new Consumer(Guid.NewGuid(), "ACC-800", "Repeat RC/DC Test Consumer", "8 Test Street", meter, connectedLoadKw: 2m);
+        _context.Consumers.Add(consumer);
+        _context.SaveChanges();
+
+        _context.ConnectivityCommands.Add(
+            new ConnectivityCommand(Guid.NewGuid(), consumer.Id, ConnectivityCommandType.Disconnect, "Negative credit", DateTime.UtcNow));
+        _context.ConnectivityCommands.Add(
+            new ConnectivityCommand(Guid.NewGuid(), consumer.Id, ConnectivityCommandType.Reconnect, "Recharge received", DateTime.UtcNow));
+        _context.SaveChanges();
+
+        var count = _context.ConnectivityCommands.Count(c => c.ConsumerId == consumer.Id);
+        Assert.Equal(2, count);
+    }
 }

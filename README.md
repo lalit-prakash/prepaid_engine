@@ -17,9 +17,12 @@ Recharge Operations, Meter Credit, Tariffs & Rules, Calculation Workbench, and 2
 all verified against real data (a live PostgreSQL database and MePDCL's own tariff book +
 reference calculation workbooks). Meter credit is wired into the recharge flow end to end (see
 [Meter credit domain model](#meter-credit-domain-model) below) with its own dashboard/detail
-pages, including a genuine `Retry()` action — not just labels on Recharge Detail anymore. The
-remaining modules (RC/DC, Conversion, Exceptions, Reconciliation, Automation, Audit, System
-Health) still render an explicit "not yet backed" stub rather than invented data — see
+pages, including a genuine `Retry()` action — not just labels on Recharge Detail anymore. A
+`ConnectivityCommand` domain model for RC/DC now exists too (see
+[RC/DC domain model](#rcdc-domain-model) below) but, like `MeterCommand` before it was wired in,
+isn't hooked into any workflow or exposed via the API yet. The remaining modules (RC/DC,
+Conversion, Exceptions, Reconciliation, Automation, Audit, System Health) still render an
+explicit "not yet backed" stub rather than invented data — see
 [docs/frontend-scope.md](docs/frontend-scope.md) for the real-vs-planned boundary.
 
 ## Structure
@@ -29,7 +32,7 @@ Health) still render an explicit "not yet backed" stub rather than invented data
   - `PrepaidEngine.Application` — use cases / integration ports (`IRmsClient`, `IMeterCommandClient`)
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
-  - `PrepaidEngine.Tests` — xUnit test project (184 tests — see [Testing](#testing))
+  - `PrepaidEngine.Tests` — xUnit test project (207 tests — see [Testing](#testing))
 - `frontend/` — Angular 22 enterprise operations UI (see [Frontend](#frontend) below and
   [docs/frontend-scope.md](docs/frontend-scope.md))
 - `docs/` — sourcing, security, tariff-validation, and frontend-scope documentation (see [Documentation](#documentation))
@@ -51,6 +54,7 @@ Health) still render an explicit "not yet backed" stub rather than invented data
 | `RechargeTransaction` | A recharge processed through RMS, with its own status lifecycle (`Initiated`/`Success`/`Failed`/`Reversed`) |
 | `FppasCharge` | A notified FPPAS (Fuel and Power Purchase Adjustment Surcharge) rate change, deferred one billing month and prorated across every day of the following month |
 | `MeterCommand` | A meter credit command — the step that actually updates the smart meter's available credit after RMS confirms a recharge, wired into the recharge endpoint. Deliberately a separate entity/lifecycle from `RechargeTransaction` (`Queued`/`Sent`/`Acknowledged`/`Failed`/`TimedOut`) — RMS confirming payment and the meter itself being credited are two different systems succeeding independently, and the domain model refuses to conflate them (see below) |
+| `ConnectivityCommand` | A remote disconnect/reconnect command dispatched to a consumer's meter (`Disconnect`/`Reconnect`, with a mandatory `Reason`), not yet wired into any workflow. Deliberately a separate entity/lifecycle from `Consumer.ConnectionStatus` (`Queued`/`Sent`/`Acknowledged`/`Failed`/`TimedOut`) — the consumer's status records local *intent*, this entity tracks whether the physical meter actually acted on it, the same command/acknowledgement split used for `MeterCommand` (see [RC/DC domain model](#rcdc-domain-model) below) |
 
 ### Tariff engine — verified calculation methods
 
@@ -245,6 +249,39 @@ smart meter's available credit — and is now **wired into the recharge endpoint
   recharge, and a recharge's dispatched command), so an operator investigating either side of
   the RMS/meter split never loses context.
 
+### RC/DC domain model
+
+`ConnectivityCommand` models a remote disconnect or reconnect command dispatched to a
+consumer's meter. This is **domain modeling only** — matching this project's established
+pattern of implementing a domain concept first and wiring it into a workflow only on a
+separate, explicit request (the same sequence FPPAS, TMC/CPMC, arrear recovery, and meter
+credit itself all followed). No API endpoint exists yet, and nothing calls this from
+`Consumer.Disconnect()`/`Reconnect()`/`RequestDisconnection()`/`RequestReconnection()`.
+
+- Deliberately a separate entity/lifecycle from `Consumer.ConnectionStatus` — the consumer's
+  own status (including its `DisconnectionPending`/`ReconnectionPending` values) records local
+  *intent*, while `ConnectivityCommand` tracks whether the physical meter actually acted on
+  that intent. Identical split to `MeterCommand`/`RechargeTransaction`.
+- `CommandType` (`Disconnect`/`Reconnect`) is an explicit, stored fact — never inferred from
+  context — matching the UI/UX request's concern that direction (e.g. Postpaid→Prepaid vs.
+  Prepaid→Postpaid, or Reconnect vs. Disconnect) is exactly the kind of thing that gets
+  silently reversed by accident if it's derived rather than recorded.
+- `Reason` is mandatory, not optional metadata: disconnect/reconnect are destructive operator
+  actions that must always carry an auditable justification (the "critical command
+  confirmation" rule from the original UI/UX request).
+- Lifecycle: `Queued` → `Sent` → `Acknowledged` (the *only* state that means the meter's
+  physical connection actually changed) — or `Sent` → `Failed`/`TimedOut`, either of which can
+  `Retry()` back to `Queued` (incrementing `RetryCount`). Uses its own
+  `ConnectivityCommandStatus` enum rather than reusing `MeterCommandStatus`, even though the
+  shape is identical — this project's convention (see `RechargeStatus` vs. `MeterCommandStatus`)
+  is to never let two unrelated lifecycles share one enum just because their states look alike.
+- Unlike `MeterCommand` (at most one per recharge), a consumer can be disconnected and later
+  reconnected any number of times over its lifetime — no uniqueness constraint on `ConsumerId`,
+  only an index for lookup.
+- Says nothing about the transport (STS/DLMS/COSEM/vendor API) — no such integration exists
+  yet; a future `IConnectivityCommandClient` would plug in the same way `IMeterCommandClient`
+  does for meter credit.
+
 ### Demo console
 
 A minimal, hand-built single-page UI (`PrepaidEngine.Api/wwwroot/index.html`) is served
@@ -339,7 +376,7 @@ cd backend
 dotnet test PrepaidEngine.sln
 ```
 
-**184 tests, all passing.** Breakdown:
+**207 tests, all passing.** Breakdown:
 
 | Test class | Count | What it covers |
 |---|---|---|
@@ -355,11 +392,12 @@ dotnet test PrepaidEngine.sln
 | `ArrearRecoveryTests` | 11 | Uncapped arrears-first behavior (tariff book §13.4 default), optional caller-supplied recovery cap, 100%-cap-equivalence, input validation |
 | `PrepaidWalletTests` | 12 | Wallet credit/debit, emergency-credit tracking, consumer connect/disconnect/reconnect rules |
 | `MockRmsClientTests` | 9 | Recharge success/failed/pending/unavailable outcomes, idempotent replay, **20-way concurrent-call race test**, input validation, transaction-status lookup |
-| `PrepaidEngineDbContextTests` | 8 | Real persistence round-trips against SQLite (keys, FKs, owned collections) — including a regression test for a real EF change-tracking bug found while building the recharge endpoint (crediting an already-loaded wallet), a `PrepaidBill`↔`FppasCharge` round-trip, a `Tariff`↔`TouPeriod` round-trip (classify + charge calculation after reload), a `MeterCommand` lifecycle round-trip, and a uniqueness constraint test (one command per recharge) |
+| `PrepaidEngineDbContextTests` | 10 | Real persistence round-trips against SQLite (keys, FKs, owned collections) — including a regression test for a real EF change-tracking bug found while building the recharge endpoint (crediting an already-loaded wallet), a `PrepaidBill`↔`FppasCharge` round-trip, a `Tariff`↔`TouPeriod` round-trip (classify + charge calculation after reload), a `MeterCommand` lifecycle round-trip with a uniqueness constraint test (one command per recharge), and a `ConnectivityCommand` lifecycle round-trip confirming multiple commands *are* allowed per consumer |
 | `TouTariffTests` | 14 | Reproduces the exact IHT (5.55/6.66/4.72 kVAh) and IEHT (6.60/7.92/5.61 kVAh) ToD schedules from the tariff book — boundary transitions, midnight wraparound, unknown-label and negative-consumption validation, and the relaxed slabs-OR-ToD-periods constructor rule |
 | `TouPeriodTests` | 15 | `Contains` boundary behavior for wrapping and non-wrapping periods, constructor validation (equal start/end, negative rate, empty label, time ≥ 24h) |
 | `MeterCommandTests` | 18 | Full lifecycle state-machine coverage: `Queued`→`Sent`→`Acknowledged`, `Sent`→`Failed`/`TimedOut`→`Retry()` (incrementing `RetryCount`, resetting error/sent state), every invalid transition guarded and tested (e.g. acknowledging a never-sent command, retrying an already-acknowledged one), non-positive credit amount validation |
 | `MockMeterCommandClientTests` | 9 | `METERFAIL-`/`METERTIMEOUT-` correlation-id markers (case-insensitive, anywhere in the string) producing `Failed`/`TimedOut`, default success path, non-positive credit amount / null-request / cancellation validation |
+| `ConnectivityCommandTests` | 21 | Full lifecycle state-machine coverage mirroring `MeterCommandTests`: `Queued`→`Sent`→`Acknowledged`, `Sent`→`Failed`/`TimedOut`→`Retry()`, every invalid transition guarded and tested, plus `Disconnect`/`Reconnect` type recording and mandatory-`Reason` validation (null/empty/whitespace) |
 
 Every number in `TariffGoldenDataTests`, `BplTariffTests`, and `DhtTariffDiscrepancyTests` is
 taken verbatim from MePDCL's tariff book or reference workbooks, not invented — a failure there
