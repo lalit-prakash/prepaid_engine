@@ -60,7 +60,16 @@ export const routes: Routes = [
             (m) => m.MeterCreditDetail,
           ),
       },
-      ...stubRoute('rc-dc', 'RC / DC'),
+      {
+        path: 'rc-dc',
+        loadComponent: () =>
+          import('./features/rc-dc/pages/rc-dc-dashboard/rc-dc-dashboard').then((m) => m.RcDcDashboard),
+      },
+      {
+        path: 'rc-dc/:id',
+        loadComponent: () =>
+          import('./features/rc-dc/pages/rc-dc-detail/rc-dc-detail').then((m) => m.RcDcDetail),
+      },
       ...stubRoute('conversion', 'Conversion'),
       ...stubRoute('exceptions', 'Exceptions'),
       ...stubRoute('reconciliation', 'Reconciliation'),
