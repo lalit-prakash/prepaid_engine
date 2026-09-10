@@ -122,6 +122,11 @@ button[type='submit']:disabled { opacity: 0.6; cursor: not-allowed; }
   font-size: var(--font-size-meta);
   opacity: 0.85;
 }
+.outcome__note--warn {
+  color: var(--color-warning-dark);
+  opacity: 1;
+  font-weight: var(--font-weight-medium);
+}
 
 .mini-table { width: 100%; font-size: var(--font-size-table); }
 .mini-table th {

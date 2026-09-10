@@ -7,7 +7,7 @@ import { BillStatus, ConnectionStatus, ConsumerDetail, WalletTransactionType } f
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 
 type RechargeOutcome =
-  | { kind: 'success'; replayed: boolean; balance: number }
+  | { kind: 'success'; replayed: boolean; balance: number; meterCommandStatus: string | null }
   | { kind: 'pending'; message: string }
   | { kind: 'declined'; message: string }
   | { kind: 'unavailable'; message: string }
@@ -96,7 +96,12 @@ export class Consumer360 implements OnInit {
           if (response.status === 202) {
             this.rechargeOutcome.set({ kind: 'pending', message: (body as any).message ?? 'RMS is still processing this recharge.' });
           } else {
-            this.rechargeOutcome.set({ kind: 'success', replayed: !!body.replayed, balance: body.walletBalance });
+            this.rechargeOutcome.set({
+              kind: 'success',
+              replayed: !!body.replayed,
+              balance: body.walletBalance,
+              meterCommandStatus: body.meterCommandStatus ?? null,
+            });
             this.idempotencyKey = this.freshKey();
             this.load(); // re-fetch so the ledger/bill table reflect the real, post-recharge state
           }

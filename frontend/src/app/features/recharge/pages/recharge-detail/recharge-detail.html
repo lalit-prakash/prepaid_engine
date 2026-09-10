@@ -48,13 +48,54 @@
                 <div class="workflow__note">{{ r.completedAt | date: 'medium' }} · ₹{{ r.amount | number: '1.2-2' }}</div>
               </div>
             </li>
-            <li class="workflow--not-modeled">
-              <span class="workflow__dot">○</span>
-              <div>
-                <div class="workflow__label">Meter Credit Command</div>
-                <div class="workflow__note">Not modeled in this environment — no meter-command domain exists yet.</div>
-              </div>
-            </li>
+            @if (r.meterCommand; as mc) {
+              @switch (mc.status) {
+                @case (MeterCommandStatus.Acknowledged) {
+                  <li class="workflow--done">
+                    <span class="workflow__dot">●</span>
+                    <div>
+                      <div class="workflow__label">Meter Credit Acknowledged</div>
+                      <div class="workflow__note">{{ mc.acknowledgedAt | date: 'medium' }} — the meter actually received the credit.</div>
+                    </div>
+                  </li>
+                }
+                @case (MeterCommandStatus.Failed) {
+                  <li class="workflow--failed">
+                    <span class="workflow__dot">✕</span>
+                    <div>
+                      <div class="workflow__label">Meter Credit Command Failed</div>
+                      <div class="workflow__note">{{ mc.errorMessage }}</div>
+                    </div>
+                  </li>
+                }
+                @case (MeterCommandStatus.TimedOut) {
+                  <li class="workflow--failed">
+                    <span class="workflow__dot">⏱</span>
+                    <div>
+                      <div class="workflow__label">Meter Credit Command Timed Out</div>
+                      <div class="workflow__note">No acknowledgement arrived from the meter — retry required (not yet wired to a UI action).</div>
+                    </div>
+                  </li>
+                }
+                @default {
+                  <li class="workflow--pending">
+                    <span class="workflow__dot">◐</span>
+                    <div>
+                      <div class="workflow__label">Meter Credit Command Sent</div>
+                      <div class="workflow__note">Awaiting acknowledgement from the meter.</div>
+                    </div>
+                  </li>
+                }
+              }
+            } @else {
+              <li class="workflow--not-modeled">
+                <span class="workflow__dot">○</span>
+                <div>
+                  <div class="workflow__label">Meter Credit Command</div>
+                  <div class="workflow__note">No command was dispatched for this recharge.</div>
+                </div>
+              </li>
+            }
           } @else if (r.status === RechargeStatus.Failed) {
             <li class="workflow--failed">
               <span class="workflow__dot">✕</span>
@@ -92,6 +133,28 @@
           <dt>Completed</dt><dd>{{ r.completedAt ? (r.completedAt | date: 'medium') : '—' }}</dd>
           <dt>Current RMS Wallet Balance</dt><dd class="num">₹{{ r.walletBalance | number: '1.2-2' }}</dd>
         </dl>
+
+        @if (r.meterCommand; as mc) {
+          <h2 class="meter-heading">Meter Credit</h2>
+          <dl class="kv-list">
+            <dt>Status</dt>
+            <dd>
+              @switch (mc.status) {
+                @case (MeterCommandStatus.Acknowledged) { <pe-status-badge label="Acknowledged" tone="success" /> }
+                @case (MeterCommandStatus.Failed) { <pe-status-badge label="Failed" tone="danger" /> }
+                @case (MeterCommandStatus.TimedOut) { <pe-status-badge label="Timed Out" tone="danger" /> }
+                @case (MeterCommandStatus.Sent) { <pe-status-badge label="Sent" tone="warning" /> }
+                @default { <pe-status-badge label="Queued" tone="neutral" /> }
+              }
+            </dd>
+            <dt>Retry Count</dt><dd class="num">{{ mc.retryCount }}</dd>
+            @if (mc.errorMessage) {
+              <dt>Error</dt><dd>{{ mc.errorMessage }}</dd>
+            }
+            <dt>Sent</dt><dd>{{ mc.sentAt ? (mc.sentAt | date: 'medium') : '—' }}</dd>
+            <dt>Acknowledged</dt><dd>{{ mc.acknowledgedAt ? (mc.acknowledgedAt | date: 'medium') : '—' }}</dd>
+          </dl>
+        }
       </section>
     </div>
   }

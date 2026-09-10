@@ -101,3 +101,5 @@
 .kv-list dd { margin: 0; font-size: var(--font-size-body); text-align: right; }
 .kv-list dd.mono { font-size: 12px; }
 .kv-list dd.num { font-variant-numeric: tabular-nums; }
+
+.meter-heading { margin-top: var(--space-5); margin-bottom: var(--space-3); font-size: var(--font-size-section-title); }

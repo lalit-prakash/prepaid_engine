@@ -100,5 +100,8 @@ export interface RechargeResult {
   rmsReferenceId: string;
   status: string;
   walletBalance: number;
+  /** MeterCommandStatus name (e.g. "Acknowledged", "Failed", "TimedOut"), or null/undefined
+   * when no meter command was dispatched (a replayed request, or RMS did not report Success). */
+  meterCommandStatus?: string | null;
   replayed?: boolean;
 }

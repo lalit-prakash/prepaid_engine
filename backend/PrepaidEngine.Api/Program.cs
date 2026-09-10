@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Api.Auth;
+using PrepaidEngine.Application.MeterCommands;
 using PrepaidEngine.Application.Rms;
 using PrepaidEngine.Domain;
 using PrepaidEngine.Domain.Entities;
 using PrepaidEngine.Domain.Enums;
+using PrepaidEngine.Infrastructure.MeterCommands;
 using PrepaidEngine.Infrastructure.Persistence;
 using PrepaidEngine.Infrastructure.Persistence.Seed;
 using PrepaidEngine.Infrastructure.Rms;
@@ -21,6 +23,10 @@ builder.Services.AddDbContext<PrepaidEngineDbContext>(options =>
 // TODO(RMS integration): swap for a real HTTP-based IRmsClient adapter once RMS's API
 // contract is available; keep MockRmsClient registered for local dev / tests until then.
 builder.Services.AddSingleton<IRmsClient, MockRmsClient>();
+
+// TODO(meter-command integration): swap for a real adapter (STS/DLMS/COSEM/vendor API) once
+// one exists; keep MockMeterCommandClient registered for local dev / tests until then.
+builder.Services.AddSingleton<IMeterCommandClient, MockMeterCommandClient>();
 
 // Basic auth for the demo endpoints only — a stop-gap, not a substitute for real
 // authentication before any shared/production exposure (see docs/assumptions-and-security.md).
@@ -354,19 +360,26 @@ app.MapPost("/api/v1/calculation-workbench/simulate", async (SimulateChargeReque
 // hasn't told us Success or Failed yet), so "Initiated" here doubles as "Pending" in the UI.
 app.MapGet("/api/v1/recharges", async (PrepaidEngineDbContext db) =>
 {
-    var recharges = await db.RechargeTransactions
-        .Join(db.Consumers, r => r.ConsumerId, c => c.Id, (r, c) => new { Recharge = r, Consumer = c })
-        .OrderByDescending(x => x.Recharge.InitiatedAt)
-        .Select(x => new
+    // Left join to MeterCommands: a recharge that never reached RMS Success (or hasn't been
+    // dispatched to the meter yet) legitimately has no command row — that must render as "no
+    // meter command exists", not be dropped from the list or crash the query.
+    var recharges = await (
+        from r in db.RechargeTransactions
+        join c in db.Consumers on r.ConsumerId equals c.Id
+        join mcOuter in db.MeterCommands on r.Id equals mcOuter.RechargeTransactionId into mcGroup
+        from mc in mcGroup.DefaultIfEmpty()
+        orderby r.InitiatedAt descending
+        select new
         {
-            x.Recharge.Id,
-            x.Consumer.AccountNumber,
-            x.Consumer.Name,
-            x.Recharge.Amount,
-            x.Recharge.RmsReferenceId,
-            x.Recharge.Status,
-            x.Recharge.InitiatedAt,
-            x.Recharge.CompletedAt,
+            r.Id,
+            c.AccountNumber,
+            c.Name,
+            r.Amount,
+            r.RmsReferenceId,
+            r.Status,
+            r.InitiatedAt,
+            r.CompletedAt,
+            MeterCommandStatus = mc == null ? (MeterCommandStatus?)null : mc.Status,
         })
         .ToListAsync();
 
@@ -390,6 +403,8 @@ app.MapGet("/api/v1/recharges/{id:guid}", async (Guid id, PrepaidEngineDbContext
             detail: $"Recharge {id} references a consumer that no longer exists.");
     }
 
+    var meterCommand = await db.MeterCommands.FirstOrDefaultAsync(m => m.RechargeTransactionId == id);
+
     return Results.Ok(new
     {
         recharge.Id,
@@ -400,6 +415,16 @@ app.MapGet("/api/v1/recharges/{id:guid}", async (Guid id, PrepaidEngineDbContext
         recharge.InitiatedAt,
         recharge.CompletedAt,
         WalletBalance = consumer.Wallet.Balance,
+        MeterCommand = meterCommand is null ? null : new
+        {
+            meterCommand.Id,
+            meterCommand.Status,
+            meterCommand.RetryCount,
+            meterCommand.ErrorMessage,
+            meterCommand.CreatedAt,
+            meterCommand.SentAt,
+            meterCommand.AcknowledgedAt,
+        },
     });
 })
 .WithName("GetRechargeById")
@@ -408,11 +433,15 @@ app.MapGet("/api/v1/recharges/{id:guid}", async (Guid id, PrepaidEngineDbContext
 // Recharge flow, orchestrated through IRmsClient (MockRmsClient for now — see the TODO
 // above). RMS remains authoritative: this endpoint only credits the wallet once RMS reports
 // Success, and never re-credits for a repeated idempotency key or a duplicated RMS reference.
+// On RMS Success, also dispatches a MeterCommand through IMeterCommandClient — a separate
+// lifecycle from the RechargeTransaction itself (see MeterCommand's doc comment): the response
+// always distinguishes "RMS confirmed" from "meter acknowledged", never conflating the two.
 app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
     string accountNumber,
     RechargeRequest request,
     PrepaidEngineDbContext db,
-    IRmsClient rmsClient) =>
+    IRmsClient rmsClient,
+    IMeterCommandClient meterCommandClient) =>
 {
     if (request.Amount <= 0)
         return Results.BadRequest(new { error = "Amount must be positive." });
@@ -450,11 +479,13 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
         .FirstOrDefaultAsync(r => r.RmsReferenceId == rmsResult.RmsReferenceId);
     if (existing is not null)
     {
+        var existingCommand = await db.MeterCommands.FirstOrDefaultAsync(m => m.RechargeTransactionId == existing.Id);
         return Results.Ok(new
         {
             existing.RmsReferenceId,
             Status = existing.Status.ToString(),
             WalletBalance = consumer.Wallet.Balance,
+            MeterCommandStatus = existingCommand?.Status.ToString(),
             Replayed = true
         });
     }
@@ -473,8 +504,38 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
             // Modified and emit a bogus UPDATE for a row that doesn't exist yet.
             var walletTransaction = consumer.Wallet.Credit(request.Amount, WalletTransactionType.Recharge, rmsResult.RmsReferenceId);
             db.WalletTransactions.Add(walletTransaction);
+
+            // Dispatch the meter credit command. RMS confirming payment does not by itself mean
+            // the meter was credited — that only becomes true if/when MarkAcknowledged() below
+            // actually runs, per MeterCommand's own state machine.
+            var meterCommand = new MeterCommand(Guid.NewGuid(), consumer.Id, recharge.Id, request.Amount, DateTime.UtcNow);
+            db.MeterCommands.Add(meterCommand);
+            meterCommand.MarkSent(DateTime.UtcNow);
+
+            var meterResult = await meterCommandClient.SendCreditCommandAsync(
+                new SendCreditCommandRequest(consumer.Id, request.Amount, request.IdempotencyKey));
+
+            switch (meterResult.Outcome)
+            {
+                case MeterCommandOutcome.Acknowledged:
+                    meterCommand.MarkAcknowledged(DateTime.UtcNow);
+                    break;
+                case MeterCommandOutcome.Failed:
+                    meterCommand.MarkFailed(meterResult.Message ?? "Meter rejected the credit command.");
+                    break;
+                case MeterCommandOutcome.TimedOut:
+                    meterCommand.MarkTimedOut();
+                    break;
+            }
+
             await db.SaveChangesAsync();
-            return Results.Ok(new { recharge.RmsReferenceId, Status = recharge.Status.ToString(), WalletBalance = consumer.Wallet.Balance });
+            return Results.Ok(new
+            {
+                recharge.RmsReferenceId,
+                Status = recharge.Status.ToString(),
+                WalletBalance = consumer.Wallet.Balance,
+                MeterCommandStatus = meterCommand.Status.ToString(),
+            });
 
         case RmsRechargeStatus.Failed:
             recharge.MarkFailed(DateTime.UtcNow);

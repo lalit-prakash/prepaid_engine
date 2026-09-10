@@ -57,7 +57,9 @@
         <h2>Recharge</h2>
         <p class="panel__hint">
           Orchestrated through RMS (mock in this environment). Prefix the idempotency key with
-          <code>FAIL-</code>, <code>PENDING-</code>, or <code>UNAVAILABLE-</code> to demo those outcomes.
+          <code>FAIL-</code>, <code>PENDING-</code>, or <code>UNAVAILABLE-</code> to demo those RMS
+          outcomes, or include <code>METERFAIL-</code>/<code>METERTIMEOUT-</code> anywhere in the key
+          to demo the meter rejecting or not acknowledging the credit after RMS still confirms payment.
         </p>
         <form (ngSubmit)="submitRecharge()">
           <div class="form-row">
@@ -83,8 +85,15 @@
                 New RMS wallet balance: ₹{{ outcome.balance | number: '1.2-2' }}.
                 @if (outcome.replayed) {
                   <div class="outcome__note">This idempotency key was already processed — no duplicate credit applied.</div>
+                } @else if (outcome.meterCommandStatus === 'Acknowledged') {
+                  <div class="outcome__note">Meter credit acknowledged — the meter actually received the credit.</div>
+                } @else if (outcome.meterCommandStatus === 'Failed') {
+                  <div class="outcome__note outcome__note--warn">RMS confirmed payment, but the meter credit command failed — see Recharge Operations for detail.</div>
+                } @else if (outcome.meterCommandStatus === 'TimedOut') {
+                  <div class="outcome__note outcome__note--warn">RMS confirmed payment, but no acknowledgement arrived from the meter — see Recharge Operations for detail.</div>
+                } @else if (outcome.meterCommandStatus) {
+                  <div class="outcome__note">Meter credit command: {{ outcome.meterCommandStatus }}.</div>
                 }
-                <div class="outcome__note">Meter credit orchestration is not modeled in this environment yet.</div>
               </div>
             }
             @case ('pending') {

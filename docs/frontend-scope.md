@@ -35,11 +35,12 @@ Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
 - **Recharge Operations** (`/recharge`) — every recharge attempt across all consumers with
   real KPIs (success rate, totals by status) computed from actual `RechargeTransaction` rows.
 - **Recharge Detail** (`/recharge/:id`) — the recharge as a workflow, with RMS payment
-  confirmation shown as a distinct step from meter credit (labeled "Not modeled in this
-  environment" rather than implied or faked). A `MeterCommand` domain model now exists in the
-  backend (`Queued`→`Sent`→`Acknowledged`/`Failed`/`TimedOut`, one per `RechargeTransaction`)
-  but is not yet wired into the recharge endpoint or exposed via any API — this page's label
-  will need updating once it is. See the "No fake success states" rule below.
+  confirmation shown as a distinct step from the real meter-credit outcome. `MeterCommand` is
+  now wired into the recharge endpoint: on RMS Success, the endpoint dispatches a command
+  through `IMeterCommandClient` (`MockMeterCommandClient`) and the response/UI report the real
+  `Acknowledged`/`Failed`/`TimedOut` result — never a fabricated or inferred success. Consumer
+  360's recharge outcome banner shows the same distinction. See the "No fake success states"
+  rule below.
 - **Tariffs & Rules** (`/tariffs`) — the real tariff configuration this engine bills against
   (slabs, ToD periods where configured, prepaid rebate, fixed charge, emergency-credit limit,
   vend limits), sourced straight from `Tariff`/`TariffSlab`/`TouPeriod`.
@@ -109,16 +110,27 @@ Reports Center (with 2 of 14 reports real) are done. This phase (Reports) added 
 endpoints — both real reports are built entirely on `GET /api/v1/bills`,
 `GET /api/v1/bills/{id}`, and `GET /api/v1/consumers/{accountNumber}`, which already existed.
 
-The **`MeterCommand` domain model** (`backend/PrepaidEngine.Domain/Entities/MeterCommand.cs`,
-`Queued`→`Sent`→`Acknowledged`/`Failed`/`TimedOut`, one per `RechargeTransaction`, 18 passing
-tests) now exists, but is domain-only so far: no API endpoint exposes it, it isn't wired into
-the recharge flow (no `MeterCommand` is created when a recharge succeeds), and no mock
-meter-command client exists (mirroring `MockRmsClient`/`IRmsClient`). Building the Meter Credit
-UI page is the next step once that wiring exists — never before it, to avoid a page that shows
-either fabricated data or an empty always-`Queued` state that misrepresents reality.
+**Meter credit is now wired end to end.** `IMeterCommandClient`/`MockMeterCommandClient`
+(`backend/PrepaidEngine.Application/MeterCommands/`, `backend/PrepaidEngine.Infrastructure/
+MeterCommands/`, mirroring `IRmsClient`/`MockRmsClient`) was added, and the recharge endpoint
+now creates + dispatches a `MeterCommand` on every RMS `Success`, updating it to `Acknowledged`/
+`Failed`/`TimedOut` based on the (mocked) response — all in the same request. Both recharge read
+endpoints (`GET /api/v1/recharges`, `GET /api/v1/recharges/{id}`) now expose the real meter-
+command status, and both frontend surfaces that show a recharge outcome (Recharge Detail,
+Consumer 360's recharge banner) render it — never inferring "meter credited" from "RMS
+confirmed". `RechargeTransaction` itself always stays `Success` once RMS confirms, regardless
+of the meter-command outcome; a failed/timed-out meter command is a separate, real, and now-
+visible operational problem, not something that un-confirms the recharge.
 
-Next up, in spec order: wire `MeterCommand` into the recharge endpoint + add its read
-endpoint(s) + build the Meter Credit page, then the remaining modules (RC/DC, Conversion,
-Reconciliation, Exception, Audit) once their domain models exist, plus the 12 reports that
-depend on that data. Each phase gets its own real backend support (or an explicit mock clearly
-labeled as such) before its UI is built — never the reverse.
+**What's still missing**: a dedicated cross-consumer Meter Credit *page* (a dashboard/detail
+pair like Recharge Operations has, listing meter commands across all consumers with retry/
+failure KPIs) and a UI action to actually call `MeterCommand.Retry()` on a failed/timed-out
+command — today `Retry()` is only exercised by tests. Building that page is straightforward
+now that the data exists (likely `GET /api/v1/meter-commands` + `GET /api/v1/meter-commands/
+{id}`, following the same pattern as Billing/Recharge/Tariffs), and one of the mandatory
+reports (`Meter Credit Failure Report`) becomes buildable once it does.
+
+Next up, in spec order: the Meter Credit page itself, then the remaining modules (RC/DC,
+Conversion, Reconciliation, Exception, Audit) once their domain models exist, plus the reports
+that depend on that data. Each phase gets its own real backend support (or an explicit mock
+clearly labeled as such) before its UI is built — never the reverse.

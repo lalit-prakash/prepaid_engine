@@ -10,25 +10,28 @@ communication platform. RMS is the authoritative system of record for the consum
 financial wallet; the Prepaid Engine's own `PrepaidWallets`/`WalletTransactions` tables are a
 working ledger for billing/recharge orchestration, not a competing wallet.
 
-**Current status**: backend domain + persistence + a mock RMS integration + a small demo API +
-a minimal hand-built demo console + an Angular enterprise-operations frontend covering the
-real API surface (Overview, Consumers/360, Billing, Recharge Operations, Tariffs & Rules,
-Calculation Workbench, and 2 of 14 Reports), all verified against real data (a live PostgreSQL
-database and MePDCL's own tariff book + reference calculation workbooks). A `MeterCommand`
-domain model exists (see [Meter credit domain model](#meter-credit-domain-model) below) but
-isn't wired into the recharge flow or a frontend page yet. The frontend's remaining modules
-(Meter Credit, RC/DC, Conversion, Exceptions, Reconciliation, Automation, Audit, System Health)
-are routed but render an explicit "not yet backed" stub rather than invented data — see
-[docs/frontend-scope.md](docs/frontend-scope.md) for the real-vs-planned boundary.
+**Current status**: backend domain + persistence + a mock RMS integration + a mock meter-command
+integration + a small demo API + a minimal hand-built demo console + an Angular
+enterprise-operations frontend covering the real API surface (Overview, Consumers/360, Billing,
+Recharge Operations, Tariffs & Rules, Calculation Workbench, and 2 of 14 Reports), all verified
+against real data (a live PostgreSQL database and MePDCL's own tariff book + reference
+calculation workbooks). Meter credit is now wired into the recharge flow end to end (see
+[Meter credit domain model](#meter-credit-domain-model) below) — Recharge Detail and Consumer
+360 both show the real, separately-tracked meter-credit outcome. The frontend still has no
+dedicated Meter Credit *page* (a cross-consumer dashboard/detail like Recharge Operations has)
+— that remains a stub, along with RC/DC, Conversion, Exceptions, Reconciliation, Automation,
+Audit, and System Health, all still rendering an explicit "not yet backed" stub rather than
+invented data — see [docs/frontend-scope.md](docs/frontend-scope.md) for the real-vs-planned
+boundary.
 
 ## Structure
 
 - `backend/` — .NET 8 solution (`PrepaidEngine.sln`)
   - `PrepaidEngine.Api` — ASP.NET Core Web API (entry point, demo endpoints, Basic auth, seeding)
-  - `PrepaidEngine.Application` — use cases / integration ports (currently: `IRmsClient`)
+  - `PrepaidEngine.Application` — use cases / integration ports (`IRmsClient`, `IMeterCommandClient`)
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
-  - `PrepaidEngine.Tests` — xUnit test project (175 tests — see [Testing](#testing))
+  - `PrepaidEngine.Tests` — xUnit test project (184 tests — see [Testing](#testing))
 - `frontend/` — Angular 22 enterprise operations UI (see [Frontend](#frontend) below and
   [docs/frontend-scope.md](docs/frontend-scope.md))
 - `docs/` — sourcing, security, tariff-validation, and frontend-scope documentation (see [Documentation](#documentation))
@@ -49,7 +52,7 @@ are routed but render an explicit "not yet backed" stub rather than invented dat
 | `PrepaidBill` | A generated bill with payment/status tracking (`Generated`/`Paid`/`PartiallyPaid`/`Overdue`/`Cancelled`) |
 | `RechargeTransaction` | A recharge processed through RMS, with its own status lifecycle (`Initiated`/`Success`/`Failed`/`Reversed`) |
 | `FppasCharge` | A notified FPPAS (Fuel and Power Purchase Adjustment Surcharge) rate change, deferred one billing month and prorated across every day of the following month |
-| `MeterCommand` | A meter credit command — the step that actually updates the smart meter's available credit after RMS confirms a recharge. Deliberately a separate entity/lifecycle from `RechargeTransaction` (`Queued`/`Sent`/`Acknowledged`/`Failed`/`TimedOut`) — RMS confirming payment and the meter itself being credited are two different systems succeeding independently, and the domain model refuses to conflate them (see below) |
+| `MeterCommand` | A meter credit command — the step that actually updates the smart meter's available credit after RMS confirms a recharge, wired into the recharge endpoint. Deliberately a separate entity/lifecycle from `RechargeTransaction` (`Queued`/`Sent`/`Acknowledged`/`Failed`/`TimedOut`) — RMS confirming payment and the meter itself being credited are two different systems succeeding independently, and the domain model refuses to conflate them (see below) |
 
 ### Tariff engine — verified calculation methods
 
@@ -206,22 +209,34 @@ force those outcomes for testing.
 ### Meter credit domain model
 
 `MeterCommand` models the step after RMS confirms a recharge payment: actually crediting the
-smart meter's available credit. It is **not** wired into the recharge endpoint yet — this is
-domain modeling only, matching this project's established pattern of implementing a domain
-concept first and wiring it into a workflow only on a separate, explicit request (see e.g.
-FPPAS/TMC/CPMC/arrear recovery earlier in this file).
+smart meter's available credit — and is now **wired into the recharge endpoint**:
 
+- On RMS `Success`, the endpoint creates a `MeterCommand`, marks it `Sent`, and dispatches it
+  through `IMeterCommandClient` (`MockMeterCommandClient` for now — a real STS/DLMS/COSEM/vendor
+  adapter would plug in behind the same interface, mirroring `IRmsClient`/`MockRmsClient`).
+  The command transitions to `Acknowledged`, `Failed`, or `TimedOut` based on the (mocked)
+  response, all within the same request/`SaveChangesAsync()`.
 - One `MeterCommand` per `RechargeTransaction` (enforced by a unique index — retries reuse the
   same row via `Retry()`, they don't create a new one).
 - Lifecycle: `Queued` → `Sent` → `Acknowledged` (the *only* state that means the meter was
   actually credited) — or `Sent` → `Failed`/`TimedOut`, either of which can `Retry()` back to
-  `Queued` (incrementing `RetryCount`).
-- Deliberately says nothing about the transport (STS token, DLMS/COSEM, a meter vendor's own
-  API) — no such integration exists yet. A real adapter would plug in behind a future
-  `IMeterCommandClient`, mirroring how `RechargeTransaction` relates to `IRmsClient`.
+  `Queued` (incrementing `RetryCount`). **`RechargeTransaction` remains `Success` regardless of
+  the meter-command outcome** — RMS already confirmed the payment; a rejected or unacknowledged
+  meter command is a separate operational problem, not a reason to un-confirm the recharge.
 - Enforces the "no fake success states" rule at the type level: `MarkAcknowledged()` can only be
   called after `MarkSent()`, and there is no way to reach `Acknowledged` from RMS confirmation
-  alone — the two lifecycles (`RechargeStatus` and `MeterCommandStatus`) are entirely separate.
+  alone — the two lifecycles (`RechargeStatus` and `MeterCommandStatus`) are entirely separate,
+  and the recharge response/UI always report both.
+- In `MockMeterCommandClient`, include `METERFAIL-` or `METERTIMEOUT-` anywhere in your
+  recharge's `IdempotencyKey` to force the meter to reject or never acknowledge the credit
+  (while RMS still confirms payment normally) — e.g. `METERFAIL-demo-001`.
+- Exposed via `GET /api/v1/recharges` (list-level `meterCommandStatus`) and
+  `GET /api/v1/recharges/{id}` (full `meterCommand` object: status, retry count, error, 
+  timestamps) — both rendered on the frontend's Recharge Detail page and Consumer 360's
+  recharge outcome banner.
+- Still missing: a dedicated cross-consumer Meter Credit *page* (a dashboard/detail pair like
+  Recharge Operations has), and any UI action to actually call `Retry()` on a failed/timed-out
+  command.
 
 ### Demo console
 
@@ -286,8 +301,8 @@ dotnet tool run dotnet-ef migrations add <Name> \
 | `POST /api/v1/consumers/{accountNumber}/recharge` | HTTP Basic | Recharge flow (see above) |
 | `GET /api/v1/bills` | HTTP Basic | Every bill across all consumers, joined with tariff/category — backs the Billing dashboard |
 | `GET /api/v1/bills/{id}` | HTTP Basic | Full calculation trace for one bill — backs Bill Detail |
-| `GET /api/v1/recharges` | HTTP Basic | Every recharge attempt across all consumers — backs Recharge Operations |
-| `GET /api/v1/recharges/{id}` | HTTP Basic | Full recharge detail with current RMS wallet balance — backs Recharge Detail |
+| `GET /api/v1/recharges` | HTTP Basic | Every recharge attempt across all consumers, with each row's `meterCommandStatus` — backs Recharge Operations |
+| `GET /api/v1/recharges/{id}` | HTTP Basic | Full recharge detail with current RMS wallet balance and the full `meterCommand` object (status, retries, error, timestamps) — backs Recharge Detail |
 | `GET /api/v1/tariffs` | HTTP Basic | Every configured tariff — backs Tariffs & Rules |
 | `GET /api/v1/tariffs/{id}` | HTTP Basic | One tariff's slabs, ToD periods, and vend limits — backs Tariff Detail |
 | `POST /api/v1/calculation-workbench/simulate` | HTTP Basic | SIMULATION-ONLY charge preview for an arbitrary tariff/consumption/load — backs the Calculation Workbench |
@@ -314,7 +329,7 @@ cd backend
 dotnet test PrepaidEngine.sln
 ```
 
-**175 tests, all passing.** Breakdown:
+**184 tests, all passing.** Breakdown:
 
 | Test class | Count | What it covers |
 |---|---|---|
@@ -334,6 +349,7 @@ dotnet test PrepaidEngine.sln
 | `TouTariffTests` | 14 | Reproduces the exact IHT (5.55/6.66/4.72 kVAh) and IEHT (6.60/7.92/5.61 kVAh) ToD schedules from the tariff book — boundary transitions, midnight wraparound, unknown-label and negative-consumption validation, and the relaxed slabs-OR-ToD-periods constructor rule |
 | `TouPeriodTests` | 15 | `Contains` boundary behavior for wrapping and non-wrapping periods, constructor validation (equal start/end, negative rate, empty label, time ≥ 24h) |
 | `MeterCommandTests` | 18 | Full lifecycle state-machine coverage: `Queued`→`Sent`→`Acknowledged`, `Sent`→`Failed`/`TimedOut`→`Retry()` (incrementing `RetryCount`, resetting error/sent state), every invalid transition guarded and tested (e.g. acknowledging a never-sent command, retrying an already-acknowledged one), non-positive credit amount validation |
+| `MockMeterCommandClientTests` | 9 | `METERFAIL-`/`METERTIMEOUT-` correlation-id markers (case-insensitive, anywhere in the string) producing `Failed`/`TimedOut`, default success path, non-positive credit amount / null-request / cancellation validation |
 
 Every number in `TariffGoldenDataTests`, `BplTariffTests`, and `DhtTariffDiscrepancyTests` is
 taken verbatim from MePDCL's tariff book or reference workbooks, not invented — a failure there
@@ -382,8 +398,9 @@ Built:
 - **Recharge Operations** (`/recharge`) — every recharge attempt across all consumers with
   real KPIs (success rate, per-status totals) and search.
 - **Recharge Detail** (`/recharge/:id`) — the recharge shown as a workflow, with RMS payment
-  confirmation kept distinct from meter credit ("Not modeled in this environment" rather than
-  an implied or fabricated success — no meter-command domain exists yet).
+  confirmation kept as a distinct step from the real meter-credit outcome (`Acknowledged`/
+  `Failed`/`TimedOut`, with error detail and retry count) — never conflating "RMS confirmed" with
+  "meter credited". Consumer 360's recharge outcome banner shows the same distinction inline.
 - **Tariffs & Rules** (`/tariffs`) — the real tariff configuration this engine bills against.
 - **Tariff Detail** (`/tariffs/:id`) — one tariff's slab table, ToD schedule (when configured),
   and vend limits. Read-only — no create/update endpoint exists, since a real tariff-change
