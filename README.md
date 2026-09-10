@@ -262,6 +262,8 @@ dotnet tool run dotnet-ef migrations add <Name> \
 | `POST /api/v1/consumers/{accountNumber}/recharge` | HTTP Basic | Recharge flow (see above) |
 | `GET /api/v1/bills` | HTTP Basic | Every bill across all consumers, joined with tariff/category — backs the Billing dashboard |
 | `GET /api/v1/bills/{id}` | HTTP Basic | Full calculation trace for one bill — backs Bill Detail |
+| `GET /api/v1/recharges` | HTTP Basic | Every recharge attempt across all consumers — backs Recharge Operations |
+| `GET /api/v1/recharges/{id}` | HTTP Basic | Full recharge detail with current RMS wallet balance — backs Recharge Detail |
 | `GET /swagger` | none (Development only) | Interactive API docs |
 
 Set Basic-auth demo credentials before running (`appsettings.json` only holds `CHANGE_ME`
@@ -349,6 +351,11 @@ Built:
   pending/overdue counts, total charges) and search.
 - **Bill Detail** (`/billing/:id`) — the full calculation trace for one bill, reachable from
   both the Billing table and Consumer 360's bill table.
+- **Recharge Operations** (`/recharge`) — every recharge attempt across all consumers with
+  real KPIs (success rate, per-status totals) and search.
+- **Recharge Detail** (`/recharge/:id`) — the recharge shown as a workflow, with RMS payment
+  confirmation kept distinct from meter credit ("Not modeled in this environment" rather than
+  an implied or fabricated success — no meter-command domain exists yet).
 - Every other sidebar module routes to an honest "not yet backed" stub, never a fake dashboard.
 
 ## Documentation

@@ -28,7 +28,7 @@ export class Shell {
     { label: 'Overview', path: '/overview', icon: '◱' },
     { label: 'Consumers', path: '/consumers', icon: '☰' },
     { label: 'Billing', path: '/billing', icon: '▦' },
-    { label: 'Recharge Operations', path: '/recharge', icon: '⇄', stub: true },
+    { label: 'Recharge Operations', path: '/recharge', icon: '⇄' },
     { label: 'Meter Credit', path: '/meter-credit', icon: '◈', stub: true },
     { label: 'RC / DC', path: '/rc-dc', icon: '⏻', stub: true },
     { label: 'Conversion', path: '/conversion', icon: '⇌', stub: true },

@@ -12,7 +12,7 @@ verify it, then extend.
 
 Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
 `GET /api/v1/consumers/{accountNumber}`, `POST .../recharge`, `GET /api/v1/bills`,
-`GET /api/v1/bills/{id}`):
+`GET /api/v1/bills/{id}`, `GET /api/v1/recharges`, `GET /api/v1/recharges/{id}`):
 
 - **Sign-in** (`/login`) — verifies the HTTP Basic credential against a real API call before
   caching it (same approach as the static demo console at `backend/PrepaidEngine.Api/wwwroot/index.html`).
@@ -30,13 +30,19 @@ Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
   tariff → gross energy → rebate → net energy → fixed → duty → FPPAS → TMC → CPMC → arrears →
   total), plus payment status, all from the real API. Reachable from both the Billing table
   and Consumer 360's bill table.
+- **Recharge Operations** (`/recharge`) — every recharge attempt across all consumers with
+  real KPIs (success rate, totals by status) computed from actual `RechargeTransaction` rows.
+- **Recharge Detail** (`/recharge/:id`) — the recharge as a workflow, with RMS payment
+  confirmation shown as a distinct step from meter credit (labeled "Not modeled in this
+  environment" rather than implied or faked, since no meter-command domain exists yet) — see
+  the "No fake success states" rule below.
 
 ## What's a labeled stub
 
-Every other sidebar module (Recharge Operations, Meter Credit, RC/DC, Conversion, Exceptions,
-Reconciliation, Tariffs & Rules, Calculation Workbench, Reports, Automation Center,
-Audit & Activity, System Health) routes to an honest placeholder page stating that no backing
-domain model or API exists yet — never a fake dashboard with invented numbers presented as real.
+Every other sidebar module (Meter Credit, RC/DC, Conversion, Exceptions, Reconciliation,
+Tariffs & Rules, Calculation Workbench, Reports, Automation Center, Audit & Activity,
+System Health) routes to an honest placeholder page stating that no backing domain model or
+API exists yet — never a fake dashboard with invented numbers presented as real.
 
 ## Design system
 
@@ -60,9 +66,11 @@ than implying a downstream acknowledgement that never happened.
 
 ## Build order for what comes next
 
-Continuing in the same phase order as the UI/UX specification: Billing + Bill Detail are done
-(this phase added `GET /api/v1/bills` and `GET /api/v1/bills/{id}` to the backend specifically
-to back them with real, joined data rather than reusing only the per-consumer bill list).
-Next up: Recharge Operations/Meter Credit once/if a domain model for meter commands exists,
-then the remaining modules in spec order. Each phase gets its own real backend support (or an
-explicit mock clearly labeled as such) before its UI is built — never the reverse.
+Continuing in the same phase order as the UI/UX specification: Billing + Bill Detail and
+Recharge Operations + Recharge Detail are done (this phase added `GET /api/v1/bills`,
+`GET /api/v1/bills/{id}`, `GET /api/v1/recharges`, and `GET /api/v1/recharges/{id}` to the
+backend specifically to back them with real, joined data). Next up: Meter Credit once a domain
+model for meter commands exists (today `RechargeTransaction` stops at "RMS confirmed" — there
+is no meter-command entity to build a real Meter Credit page against), then the remaining
+modules in spec order. Each phase gets its own real backend support (or an explicit mock
+clearly labeled as such) before its UI is built — never the reverse.

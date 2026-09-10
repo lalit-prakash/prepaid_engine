@@ -1,0 +1,71 @@
+<div class="recharge">
+  <div class="page-header">
+    <h1>Recharge Operations</h1>
+    <p class="page-header__subtitle">{{ recharges().length }} recharge attempt(s) across all consumers</p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2,3,4,5]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else {
+    <section class="kpi-row">
+      <pe-kpi-card label="Total Attempts" [value]="recharges().length" tone="primary" />
+      <pe-kpi-card label="Successful" [value]="successCount" tone="success" />
+      <pe-kpi-card label="Failed" [value]="failedCount" tone="danger" />
+      <pe-kpi-card label="Pending" [value]="pendingCount" tone="warning" />
+      <pe-kpi-card label="Reversed" [value]="reversedCount" tone="neutral" />
+      <pe-kpi-card label="Success Rate" [value]="successRate" tone="info" />
+      <pe-kpi-card label="Total Recharged (Successful)" [value]="'₹' + (totalAmount | number: '1.2-2')" tone="success" />
+    </section>
+
+    <div class="toolbar">
+      <input
+        type="search"
+        placeholder="Search account number, name, or RMS reference…"
+        [value]="searchTerm()"
+        (input)="searchTerm.set($any($event.target).value)"
+      />
+    </div>
+
+    @if (filtered.length === 0) {
+      <div class="empty-panel">No recharge transactions matched your search.</div>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Initiated</th>
+              <th>Account</th>
+              <th>Consumer</th>
+              <th class="num">Amount</th>
+              <th>RMS Reference</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of filtered; track r.id) {
+              <tr (click)="open(r.id)" class="row-clickable">
+                <td>{{ r.initiatedAt | date: 'medium' }}</td>
+                <td>{{ r.accountNumber }}</td>
+                <td>{{ r.name }}</td>
+                <td class="num">₹{{ r.amount | number: '1.2-2' }}</td>
+                <td class="mono">{{ r.rmsReferenceId }}</td>
+                <td>
+                  @switch (r.status) {
+                    @case (RechargeStatus.Success) { <pe-status-badge label="RMS Confirmed" tone="success" /> }
+                    @case (RechargeStatus.Failed) { <pe-status-badge label="Failed" tone="danger" /> }
+                    @case (RechargeStatus.Reversed) { <pe-status-badge label="Reversed" tone="neutral" /> }
+                    @default { <pe-status-badge label="Pending" tone="warning" /> }
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</div>

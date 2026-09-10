@@ -36,7 +36,16 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/billing/pages/bill-detail/bill-detail').then((m) => m.BillDetail),
       },
-      ...stubRoute('recharge', 'Recharge Operations'),
+      {
+        path: 'recharge',
+        loadComponent: () =>
+          import('./features/recharge/pages/recharge-dashboard/recharge-dashboard').then((m) => m.RechargeDashboard),
+      },
+      {
+        path: 'recharge/:id',
+        loadComponent: () =>
+          import('./features/recharge/pages/recharge-detail/recharge-detail').then((m) => m.RechargeDetail),
+      },
       ...stubRoute('meter-credit', 'Meter Credit'),
       ...stubRoute('rc-dc', 'RC / DC'),
       ...stubRoute('conversion', 'Conversion'),

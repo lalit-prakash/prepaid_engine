@@ -234,6 +234,63 @@ app.MapGet("/api/v1/bills/{id:guid}", async (Guid id, PrepaidEngineDbContext db)
 .WithName("GetBillById")
 .RequireAuthorization();
 
+// Recharge Operations read endpoints — real RechargeTransaction records across all consumers.
+// Note: RechargeStatus has no explicit "Pending" value — the RMS-Pending branch of the POST
+// endpoint below deliberately leaves a transaction in its initial "Initiated" state (RMS
+// hasn't told us Success or Failed yet), so "Initiated" here doubles as "Pending" in the UI.
+app.MapGet("/api/v1/recharges", async (PrepaidEngineDbContext db) =>
+{
+    var recharges = await db.RechargeTransactions
+        .Join(db.Consumers, r => r.ConsumerId, c => c.Id, (r, c) => new { Recharge = r, Consumer = c })
+        .OrderByDescending(x => x.Recharge.InitiatedAt)
+        .Select(x => new
+        {
+            x.Recharge.Id,
+            x.Consumer.AccountNumber,
+            x.Consumer.Name,
+            x.Recharge.Amount,
+            x.Recharge.RmsReferenceId,
+            x.Recharge.Status,
+            x.Recharge.InitiatedAt,
+            x.Recharge.CompletedAt,
+        })
+        .ToListAsync();
+
+    return Results.Ok(recharges);
+})
+.WithName("ListRecharges")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/recharges/{id:guid}", async (Guid id, PrepaidEngineDbContext db) =>
+{
+    var recharge = await db.RechargeTransactions.FirstOrDefaultAsync(r => r.Id == id);
+    if (recharge is null)
+        return Results.NotFound();
+
+    var consumer = await db.Consumers.Include(c => c.Wallet).FirstOrDefaultAsync(c => c.Id == recharge.ConsumerId);
+    if (consumer is null)
+    {
+        return Results.Problem(
+            statusCode: StatusCodes.Status500InternalServerError,
+            title: "Recharge references missing data",
+            detail: $"Recharge {id} references a consumer that no longer exists.");
+    }
+
+    return Results.Ok(new
+    {
+        recharge.Id,
+        Consumer = new { consumer.AccountNumber, consumer.Name },
+        recharge.Amount,
+        recharge.RmsReferenceId,
+        recharge.Status,
+        recharge.InitiatedAt,
+        recharge.CompletedAt,
+        WalletBalance = consumer.Wallet.Balance,
+    });
+})
+.WithName("GetRechargeById")
+.RequireAuthorization();
+
 // Recharge flow, orchestrated through IRmsClient (MockRmsClient for now — see the TODO
 // above). RMS remains authoritative: this endpoint only credits the wallet once RMS reports
 // Success, and never re-credits for a repeated idempotency key or a duplicated RMS reference.

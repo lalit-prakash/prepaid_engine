@@ -1,0 +1,98 @@
+<div class="recharge-detail">
+  <a routerLink="/recharge" class="back-link">← Back to Recharge Operations</a>
+
+  @if (loading()) {
+    <div class="skeleton-block"></div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else if (recharge(); as r) {
+    <header class="detail-header">
+      <div>
+        <h1>Recharge for {{ r.consumer.name }}</h1>
+        <div class="detail-header__meta">
+          <span>{{ r.consumer.accountNumber }}</span>
+          <span>·</span>
+          <span class="mono">{{ r.rmsReferenceId }}</span>
+        </div>
+      </div>
+      @switch (r.status) {
+        @case (RechargeStatus.Success) { <pe-status-badge label="RMS Confirmed" tone="success" /> }
+        @case (RechargeStatus.Failed) { <pe-status-badge label="Failed" tone="danger" /> }
+        @case (RechargeStatus.Reversed) { <pe-status-badge label="Reversed" tone="neutral" /> }
+        @default { <pe-status-badge label="Pending" tone="warning" /> }
+      }
+    </header>
+
+    <div class="detail-grid">
+      <section class="panel">
+        <h2>Workflow</h2>
+        <p class="panel__hint">
+          Recharge success and meter credit are tracked separately — RMS confirming a payment
+          never implies the meter itself was credited (see below).
+        </p>
+
+        <ol class="workflow">
+          <li class="workflow--done">
+            <span class="workflow__dot">●</span>
+            <div>
+              <div class="workflow__label">Recharge Initiated</div>
+              <div class="workflow__note">{{ r.initiatedAt | date: 'medium' }}</div>
+            </div>
+          </li>
+
+          @if (r.status === RechargeStatus.Success) {
+            <li class="workflow--done">
+              <span class="workflow__dot">●</span>
+              <div>
+                <div class="workflow__label">RMS Payment Confirmed</div>
+                <div class="workflow__note">{{ r.completedAt | date: 'medium' }} · ₹{{ r.amount | number: '1.2-2' }}</div>
+              </div>
+            </li>
+            <li class="workflow--not-modeled">
+              <span class="workflow__dot">○</span>
+              <div>
+                <div class="workflow__label">Meter Credit Command</div>
+                <div class="workflow__note">Not modeled in this environment — no meter-command domain exists yet.</div>
+              </div>
+            </li>
+          } @else if (r.status === RechargeStatus.Failed) {
+            <li class="workflow--failed">
+              <span class="workflow__dot">✕</span>
+              <div>
+                <div class="workflow__label">RMS Declined the Payment</div>
+                <div class="workflow__note">{{ r.completedAt | date: 'medium' }}</div>
+              </div>
+            </li>
+          } @else if (r.status === RechargeStatus.Reversed) {
+            <li class="workflow--failed">
+              <span class="workflow__dot">↺</span>
+              <div>
+                <div class="workflow__label">Reversed</div>
+                <div class="workflow__note">{{ r.completedAt | date: 'medium' }}</div>
+              </div>
+            </li>
+          } @else {
+            <li class="workflow--pending">
+              <span class="workflow__dot">◐</span>
+              <div>
+                <div class="workflow__label">Awaiting RMS Confirmation</div>
+                <div class="workflow__note">RMS has not yet reported a final status for this recharge.</div>
+              </div>
+            </li>
+          }
+        </ol>
+      </section>
+
+      <section class="panel">
+        <h2>Details</h2>
+        <dl class="kv-list">
+          <dt>Amount</dt><dd class="num">₹{{ r.amount | number: '1.2-2' }}</dd>
+          <dt>RMS Reference</dt><dd class="mono">{{ r.rmsReferenceId }}</dd>
+          <dt>Initiated</dt><dd>{{ r.initiatedAt | date: 'medium' }}</dd>
+          <dt>Completed</dt><dd>{{ r.completedAt ? (r.completedAt | date: 'medium') : '—' }}</dd>
+          <dt>Current RMS Wallet Balance</dt><dd class="num">₹{{ r.walletBalance | number: '1.2-2' }}</dd>
+        </dl>
+      </section>
+    </div>
+  }
+</div>
