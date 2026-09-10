@@ -45,6 +45,13 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Minimal hand-built demo console (wwwroot/index.html) that drives the recharge flow against
+// this same API — static files only, no build step, no framework. It is not the Angular
+// frontend (still paused, see README) and calls the API endpoints below directly, using the
+// same Basic auth the API itself enforces (entered by the demo user, never hard-coded here).
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseAuthentication();
 app.UseAuthorization();
 

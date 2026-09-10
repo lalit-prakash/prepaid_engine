@@ -10,10 +10,10 @@ communication platform. RMS is the authoritative system of record for the consum
 financial wallet; the Prepaid Engine's own `PrepaidWallets`/`WalletTransactions` tables are a
 working ledger for billing/recharge orchestration, not a competing wallet.
 
-**Current status**: backend domain + persistence + a mock RMS integration + a small demo API,
-all verified against real data (a live PostgreSQL database and MePDCL's own tariff book +
-reference calculation workbooks). Frontend is intentionally paused — see
-[Frontend](#frontend) below.
+**Current status**: backend domain + persistence + a mock RMS integration + a small demo API +
+a minimal hand-built demo console, all verified against real data (a live PostgreSQL database
+and MePDCL's own tariff book + reference calculation workbooks). The Angular frontend is
+intentionally paused — see [Frontend](#frontend) below.
 
 ## Structure
 
@@ -195,6 +195,17 @@ real HTTP-based RMS adapter plugs in):
 In `MockRmsClient`, prefix your `IdempotencyKey` with `FAIL-`, `PENDING-`, or `UNAVAILABLE-` to
 force those outcomes for testing.
 
+### Demo console
+
+A minimal, hand-built single-page UI (`PrepaidEngine.Api/wwwroot/index.html`) is served
+statically by the API itself at `http://localhost:<port>/` — plain HTML/CSS/JS, no build step,
+no framework, and **not** the paused Angular frontend. It signs in with the same HTTP Basic
+credentials the API enforces (entered by the user, cached only in `sessionStorage` for that
+tab), looks up a consumer, and drives the recharge flow: amount + idempotency key in, live
+wallet balance / transaction ledger / bill breakdown out, with inline success/pending/declined/
+replayed states matching the API's actual response codes. Useful for demoing the recharge flow
+without Swagger's non-scriptable native Basic-auth prompt getting in the way.
+
 ## Getting Started
 
 ### Backend
@@ -222,7 +233,7 @@ Data access uses EF Core with **PostgreSQL** (Npgsql) as the configured provider
      --project backend/PrepaidEngine.Infrastructure/PrepaidEngine.Infrastructure.csproj \
      --startup-project backend/PrepaidEngine.Api/PrepaidEngine.Api.csproj
    ```
-4. Verify: `dotnet run --project backend/PrepaidEngine.Api`, then `curl http://localhost:5299/health` → `{"status":"Healthy"}`, and Swagger UI at `http://localhost:5299/swagger`.
+4. Verify: `dotnet run --project backend/PrepaidEngine.Api`, then `curl http://localhost:5299/health` → `{"status":"Healthy"}`, Swagger UI at `http://localhost:5299/swagger`, and the [demo console](#demo-console) at `http://localhost:5299/`.
 
 In Development, the app auto-applies any pending migrations and seeds one demo consumer
 (`DEMO-0001`) end-to-end through tariff/consumption/billing/recharge on startup (see
