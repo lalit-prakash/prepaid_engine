@@ -266,6 +266,7 @@ dotnet tool run dotnet-ef migrations add <Name> \
 | `GET /api/v1/recharges/{id}` | HTTP Basic | Full recharge detail with current RMS wallet balance — backs Recharge Detail |
 | `GET /api/v1/tariffs` | HTTP Basic | Every configured tariff — backs Tariffs & Rules |
 | `GET /api/v1/tariffs/{id}` | HTTP Basic | One tariff's slabs, ToD periods, and vend limits — backs Tariff Detail |
+| `POST /api/v1/calculation-workbench/simulate` | HTTP Basic | SIMULATION-ONLY charge preview for an arbitrary tariff/consumption/load — backs the Calculation Workbench |
 | `GET /swagger` | none (Development only) | Interactive API docs |
 
 Set Basic-auth demo credentials before running (`appsettings.json` only holds `CHANGE_ME`
@@ -362,6 +363,9 @@ Built:
 - **Tariff Detail** (`/tariffs/:id`) — one tariff's slab table, ToD schedule (when configured),
   and vend limits. Read-only — no create/update endpoint exists, since a real tariff-change
   workflow needs versioning/effective-dating/approval this project hasn't built yet.
+- **Calculation Workbench** (`/calculation-workbench`) — a SIMULATION-ONLY charge preview for
+  an arbitrary tariff/consumption/load combination. The frontend never computes the numbers
+  itself: the backend delegates to the exact same domain methods production billing uses.
 - Every other sidebar module routes to an honest "not yet backed" stub, never a fake dashboard.
 
 ## Documentation

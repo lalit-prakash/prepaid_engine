@@ -13,7 +13,8 @@ verify it, then extend.
 Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
 `GET /api/v1/consumers/{accountNumber}`, `POST .../recharge`, `GET /api/v1/bills`,
 `GET /api/v1/bills/{id}`, `GET /api/v1/recharges`, `GET /api/v1/recharges/{id}`,
-`GET /api/v1/tariffs`, `GET /api/v1/tariffs/{id}`):
+`GET /api/v1/tariffs`, `GET /api/v1/tariffs/{id}`,
+`POST /api/v1/calculation-workbench/simulate`):
 
 - **Sign-in** (`/login`) — verifies the HTTP Basic credential against a real API call before
   caching it (same approach as the static demo console at `backend/PrepaidEngine.Api/wwwroot/index.html`).
@@ -46,13 +47,21 @@ Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
   dating, and approval that this project hasn't built — see "never silently overwrite an
   active tariff" in the original UI/UX request. Exposing a naive PUT would violate that rule,
   so nothing was built rather than something that violates it.
+- **Calculation Workbench** (`/calculation-workbench`) — a SIMULATION-ONLY charge preview for
+  an arbitrary tariff/consumption/load combination. Never touches a real consumer, bill, or
+  wallet, and the frontend never computes the numbers itself: `POST
+  /api/v1/calculation-workbench/simulate` delegates to the exact same domain methods
+  (`Tariff.CalculateEnergyCharge`/`CalculateFixedCharge`/`CalculateDailyFixedCharge`,
+  `ElectricityDuty.Calculate`) that production billing uses, enforcing the "frontend must not
+  duplicate production billing logic" rule for real. Rejects ToD-only tariffs (IHT/IEHT) with
+  an explicit error rather than silently returning a zero energy charge.
 
 ## What's a labeled stub
 
 Every other sidebar module (Meter Credit, RC/DC, Conversion, Exceptions, Reconciliation,
-Calculation Workbench, Reports, Automation Center, Audit & Activity, System Health) routes to
-an honest placeholder page stating that no backing domain model or API exists yet — never a
-fake dashboard with invented numbers presented as real.
+Reports, Automation Center, Audit & Activity, System Health) routes to an honest placeholder
+page stating that no backing domain model or API exists yet — never a fake dashboard with
+invented numbers presented as real.
 
 ## Design system
 
@@ -77,11 +86,12 @@ than implying a downstream acknowledgement that never happened.
 ## Build order for what comes next
 
 Continuing in the same phase order as the UI/UX specification: Billing + Bill Detail, Recharge
-Operations + Recharge Detail, and Tariffs & Rules + Tariff Detail are done (this phase added
-`GET /api/v1/bills`, `GET /api/v1/bills/{id}`, `GET /api/v1/recharges`,
-`GET /api/v1/recharges/{id}`, `GET /api/v1/tariffs`, and `GET /api/v1/tariffs/{id}` to the
-backend specifically to back them with real, joined data). Next up: Meter Credit once a domain
-model for meter commands exists (today `RechargeTransaction` stops at "RMS confirmed" — there
-is no meter-command entity to build a real Meter Credit page against), then the remaining
-modules in spec order. Each phase gets its own real backend support (or an explicit mock
-clearly labeled as such) before its UI is built — never the reverse.
+Operations + Recharge Detail, Tariffs & Rules + Tariff Detail, and Calculation Workbench are
+done (this phase added `GET /api/v1/bills`, `GET /api/v1/bills/{id}`, `GET /api/v1/recharges`,
+`GET /api/v1/recharges/{id}`, `GET /api/v1/tariffs`, `GET /api/v1/tariffs/{id}`, and
+`POST /api/v1/calculation-workbench/simulate` to the backend specifically to back them with
+real data/calculation). Next up: Meter Credit once a domain model for meter commands exists
+(today `RechargeTransaction` stops at "RMS confirmed" — there is no meter-command entity to
+build a real Meter Credit page against), then the remaining modules in spec order. Each phase
+gets its own real backend support (or an explicit mock clearly labeled as such) before its UI
+is built — never the reverse.

@@ -1,0 +1,101 @@
+<div class="workbench">
+  <div class="page-header">
+    <h1>Calculation Workbench</h1>
+    <p class="page-header__subtitle">
+      <span class="simulation-flag">SIMULATION ONLY</span>
+      — never affects a real consumer, bill, or wallet. Every figure is computed by the real
+      backend domain methods, not re-derived here.
+    </p>
+  </div>
+
+  @if (loadingTariffs()) {
+    <div class="skeleton-block"></div>
+  } @else if (tariffLoadError()) {
+    <div class="error-panel">{{ tariffLoadError() }}</div>
+  } @else if (tariffs().length === 0) {
+    <div class="empty-panel">No tariffs are configured to simulate against.</div>
+  } @else {
+    <div class="workbench-grid">
+      <section class="panel">
+        <h2>Inputs</h2>
+        <form (ngSubmit)="runSimulation()">
+          <label>
+            Tariff
+            <select name="tariff" [(ngModel)]="selectedTariffId">
+              @for (t of tariffs(); track t.id) {
+                <option [value]="t.id">{{ t.name }} ({{ categoryLabel(t.category) }})</option>
+              }
+            </select>
+          </label>
+          <label>
+            Consumption (kWh)
+            <input type="number" min="0" step="1" name="consumption" [(ngModel)]="consumptionKwh" />
+          </label>
+          <label>
+            Connected Load / Contract Demand
+            <input type="number" min="0" step="0.5" name="load" [(ngModel)]="connectedLoadOrContractDemand" />
+          </label>
+
+          <div class="actions">
+            <button type="submit" [disabled]="simulating()">
+              {{ simulating() ? 'Calculating…' : 'Run Simulation' }}
+            </button>
+            <button type="button" class="secondary" (click)="reset()">Reset</button>
+          </div>
+
+          @if (simulationError()) {
+            <p class="form-error">{{ simulationError() }}</p>
+          }
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Result</h2>
+        @if (!result()) {
+          <p class="empty-note">Run a simulation to see the calculated charge breakdown.</p>
+        } @else {
+          @let r = result()!;
+          <ol class="trace">
+            <li>
+              <div class="trace__label">Tariff</div>
+              <div class="trace__value">{{ r.tariff.name }}</div>
+            </li>
+            <li>
+              <div class="trace__label">Consumption</div>
+              <div class="trace__value num">{{ r.inputs.consumptionKwh | number: '1.0-2' }} kWh</div>
+            </li>
+            <li>
+              <div class="trace__label">Gross Energy Charge</div>
+              <div class="trace__value num">₹{{ r.grossEnergyCharge | number: '1.2-2' }}</div>
+            </li>
+            <li>
+              <div class="trace__label">Prepaid Rebate ({{ r.prepaidRebatePercent }}%)</div>
+              <div class="trace__value num trace__value--negative">-₹{{ r.rebateAmount | number: '1.2-2' }}</div>
+            </li>
+            <li class="trace--subtotal">
+              <div class="trace__label">Net Energy Charge</div>
+              <div class="trace__value num">₹{{ r.netEnergyCharge | number: '1.2-2' }}</div>
+            </li>
+            <li>
+              <div class="trace__label">Fixed Charge (Monthly)</div>
+              <div class="trace__value num">₹{{ r.fixedChargeMonthly | number: '1.2-2' }}</div>
+              <div class="trace__note">Daily-prorated: ₹{{ r.fixedChargeDaily | number: '1.4-4' }}</div>
+            </li>
+            <li>
+              <div class="trace__label">Electricity Duty</div>
+              <div class="trace__value num">₹{{ r.electricityDuty | number: '1.2-2' }}</div>
+            </li>
+            <li class="trace--total">
+              <div class="trace__label">Total Monthly Charge</div>
+              <div class="trace__value num">₹{{ r.totalMonthlyCharge | number: '1.2-2' }}</div>
+            </li>
+          </ol>
+          <p class="scope-note">
+            Excludes FPPAS, TMC, CPMC, and arrears — those require a real bill/consumer context
+            this simulator does not model.
+          </p>
+        }
+      </section>
+    </div>
+  }
+</div>

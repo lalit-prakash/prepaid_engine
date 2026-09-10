@@ -61,7 +61,11 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/tariffs/pages/tariff-detail/tariff-detail').then((m) => m.TariffDetail),
       },
-      ...stubRoute('calculation-workbench', 'Calculation Workbench'),
+      {
+        path: 'calculation-workbench',
+        loadComponent: () =>
+          import('./features/calculation-workbench/pages/workbench/workbench').then((m) => m.Workbench),
+      },
       ...stubRoute('reports', 'Reports'),
       ...stubRoute('automation', 'Automation Center'),
       ...stubRoute('audit', 'Audit & Activity'),

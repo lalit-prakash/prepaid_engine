@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Api.Auth;
 using PrepaidEngine.Application.Rms;
+using PrepaidEngine.Domain;
 using PrepaidEngine.Domain.Entities;
 using PrepaidEngine.Domain.Enums;
 using PrepaidEngine.Infrastructure.Persistence;
@@ -293,6 +294,60 @@ app.MapGet("/api/v1/tariffs/{id:guid}", async (Guid id, PrepaidEngineDbContext d
 .WithName("GetTariffById")
 .RequireAuthorization();
 
+// Calculation Workbench — a SIMULATION-ONLY preview of a charge calculation for an arbitrary
+// (tariff, consumption, load) combination, not tied to any real consumer/bill. Delegates every
+// figure to the same domain methods (Tariff.CalculateEnergyCharge/CalculateFixedCharge/
+// CalculateDailyFixedCharge, ElectricityDuty.Calculate) that production billing uses — the
+// frontend must not duplicate this arithmetic itself (see docs/frontend-scope.md's frontend
+// calculation rule), it only renders whatever this endpoint returns.
+app.MapPost("/api/v1/calculation-workbench/simulate", async (SimulateChargeRequest request, PrepaidEngineDbContext db) =>
+{
+    if (request.ConsumptionKwh < 0)
+        return Results.BadRequest(new { error = "Consumption cannot be negative." });
+    if (request.ConnectedLoadOrContractDemand < 0)
+        return Results.BadRequest(new { error = "Connected load / contract demand cannot be negative." });
+
+    var tariff = await db.Tariffs.Include(t => t.Slabs).FirstOrDefaultAsync(t => t.Id == request.TariffId);
+    if (tariff is null)
+        return Results.NotFound(new { error = $"No tariff found with id '{request.TariffId}'." });
+
+    if (tariff.Slabs.Count == 0)
+    {
+        // Pure-ToD tariffs (IHT/IEHT) have no ordinary kWh slabs — CalculateEnergyCharge would
+        // silently return 0 for them, which would misrepresent a real charge as zero rather
+        // than reporting that this simulator doesn't support ToD-only tariffs yet.
+        return Results.BadRequest(new
+        {
+            error = $"Tariff '{tariff.Name}' has no ordinary energy slabs (it is ToD-only) — this simulator does not yet support ToD-based simulation.",
+        });
+    }
+
+    var grossEnergyCharge = tariff.CalculateEnergyCharge(request.ConsumptionKwh);
+    var rebateAmount = grossEnergyCharge * (tariff.PrepaidEnergyRebatePercent / 100m);
+    var netEnergyCharge = grossEnergyCharge - rebateAmount;
+    var fixedChargeMonthly = tariff.CalculateFixedCharge(request.ConnectedLoadOrContractDemand);
+    var fixedChargeDaily = tariff.CalculateDailyFixedCharge(request.ConnectedLoadOrContractDemand);
+    var electricityDuty = ElectricityDuty.Calculate(tariff.Category, request.ConsumptionKwh);
+    var totalMonthlyCharge = netEnergyCharge + fixedChargeMonthly + electricityDuty;
+
+    return Results.Ok(new
+    {
+        Simulation = true,
+        Tariff = new { tariff.Id, tariff.Name, tariff.Category },
+        Inputs = new { request.ConsumptionKwh, request.ConnectedLoadOrContractDemand },
+        GrossEnergyCharge = grossEnergyCharge,
+        PrepaidRebatePercent = tariff.PrepaidEnergyRebatePercent,
+        RebateAmount = rebateAmount,
+        NetEnergyCharge = netEnergyCharge,
+        FixedChargeMonthly = fixedChargeMonthly,
+        FixedChargeDaily = fixedChargeDaily,
+        ElectricityDuty = electricityDuty,
+        TotalMonthlyCharge = totalMonthlyCharge,
+    });
+})
+.WithName("SimulateCharge")
+.RequireAuthorization();
+
 // Recharge Operations read endpoints — real RechargeTransaction records across all consumers.
 // Note: RechargeStatus has no explicit "Pending" value — the RMS-Pending branch of the POST
 // endpoint below deliberately leaves a transaction in its initial "Initiated" state (RMS
@@ -452,6 +507,11 @@ app.Run();
 /// In the mock RMS, prefix this with "FAIL-", "PENDING-", or "UNAVAILABLE-" to demo those outcomes.
 /// </param>
 public record RechargeRequest(decimal Amount, string? IdempotencyKey = null);
+
+/// <param name="TariffId">The tariff to simulate against — must have at least one ordinary energy slab.</param>
+/// <param name="ConsumptionKwh">Hypothetical consumption for this simulation.</param>
+/// <param name="ConnectedLoadOrContractDemand">Hypothetical connected load/contract demand.</param>
+public record SimulateChargeRequest(Guid TariffId, decimal ConsumptionKwh, decimal ConnectedLoadOrContractDemand);
 
 // Exposed so WebApplicationFactory-based integration tests can bootstrap this Api project.
 public partial class Program { }
