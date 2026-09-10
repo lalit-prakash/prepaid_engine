@@ -1,0 +1,159 @@
+.back-link {
+  display: inline-block;
+  margin-bottom: var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--font-size-meta);
+}
+.back-link:hover { color: var(--color-primary-dark); }
+
+.skeleton-block {
+  height: 300px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(90deg, var(--color-neutral-100) 25%, var(--color-neutral-200) 37%, var(--color-neutral-100) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+.error-panel {
+  background: var(--color-danger-light);
+  color: var(--color-danger-dark);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+}
+.detail-header h1 { font-size: var(--font-size-page-title); }
+.detail-header__meta {
+  display: flex;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-meta);
+  margin-top: 4px;
+}
+.mono { font-family: monospace; }
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: var(--space-5);
+}
+@media (max-width: 1000px) {
+  .detail-grid { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+.panel h2 { font-size: var(--font-size-section-title); margin-bottom: var(--space-2); }
+.panel__hint { color: var(--text-muted); font-size: var(--font-size-meta); margin-bottom: var(--space-4); line-height: 1.5; }
+
+.workflow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.workflow li {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-left: 2px solid var(--border-subtle);
+  padding-left: var(--space-4);
+  margin-left: 6px;
+  position: relative;
+}
+.workflow__dot {
+  position: absolute;
+  left: -13px;
+  top: 14px;
+  font-size: 14px;
+  line-height: 1;
+  background: var(--surface-card);
+}
+.workflow--done .workflow__dot { color: var(--color-success); }
+.workflow--failed .workflow__dot { color: var(--color-danger); }
+.workflow--pending .workflow__dot { color: var(--color-warning); }
+.workflow--not-modeled .workflow__dot { color: var(--color-neutral-400); }
+.workflow__label { font-weight: var(--font-weight-medium); font-size: var(--font-size-body); }
+.workflow--not-modeled .workflow__label { color: var(--text-muted); }
+.workflow__note { font-size: var(--font-size-meta); color: var(--text-muted); margin-top: 2px; }
+
+.kv-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-3) var(--space-4);
+  margin: 0;
+}
+.kv-list dt { color: var(--text-secondary); font-size: var(--font-size-meta); }
+.kv-list dd { margin: 0; font-size: var(--font-size-body); text-align: right; }
+.kv-list dd.mono { font-size: 12px; }
+.kv-list dd.num { font-variant-numeric: tabular-nums; }
+
+.view-consumer-link {
+  display: inline-block;
+  margin-top: var(--space-2);
+  font-size: var(--font-size-meta);
+  color: var(--text-link);
+}
+
+.retry-section {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+.retry-btn {
+  padding: 9px var(--space-5);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-button);
+  cursor: pointer;
+}
+.retry-btn:hover:not(:disabled) { background: var(--color-primary-dark); }
+.retry-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.retry-confirm {
+  background: var(--color-warning-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+.retry-confirm p {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-body);
+  color: var(--color-warning-dark);
+  line-height: 1.5;
+}
+.retry-confirm__actions { display: flex; gap: var(--space-3); }
+.cancel-btn {
+  padding: 9px var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  font-size: var(--font-size-button);
+  cursor: pointer;
+}
+.cancel-btn:hover { border-color: var(--color-primary); }
+
+.form-error {
+  margin-top: var(--space-3);
+  color: var(--color-danger-dark);
+  font-size: var(--font-size-meta);
+}
+
+.consumer-heading { margin-top: var(--space-5); margin-bottom: var(--space-3); font-size: var(--font-size-section-title); }

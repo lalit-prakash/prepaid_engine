@@ -1,0 +1,80 @@
+<div class="rc-dc">
+  <div class="page-header">
+    <h1>RC / DC</h1>
+    <p class="page-header__subtitle">{{ commands().length }} disconnect/reconnect command(s) across all consumers</p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2,3,4,5,6]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else {
+    <section class="kpi-row">
+      <pe-kpi-card label="Total Commands" [value]="commands().length" tone="primary" />
+      <pe-kpi-card label="Disconnects" [value]="disconnectCount" tone="danger" />
+      <pe-kpi-card label="Reconnects" [value]="reconnectCount" tone="success" />
+      <pe-kpi-card label="Acknowledged" [value]="acknowledgedCount" tone="success" />
+      <pe-kpi-card label="Failed / Timed Out" [value]="failedCount + timedOutCount" tone="danger" />
+      <pe-kpi-card label="Pending" [value]="pendingCount" tone="warning" />
+      <pe-kpi-card label="Success Rate" [value]="successRate" tone="info" />
+    </section>
+
+    <div class="toolbar">
+      <input
+        type="search"
+        placeholder="Search account number or name…"
+        [value]="searchTerm()"
+        (input)="searchTerm.set($any($event.target).value)"
+      />
+    </div>
+
+    @if (filtered.length === 0) {
+      <div class="empty-panel">No connectivity commands matched your search.</div>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Created</th>
+              <th>Account</th>
+              <th>Consumer</th>
+              <th>Command</th>
+              <th>Reason</th>
+              <th class="num">Retries</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (c of filtered; track c.id) {
+              <tr (click)="open(c.id)" class="row-clickable">
+                <td>{{ c.createdAt | date: 'medium' }}</td>
+                <td>{{ c.accountNumber }}</td>
+                <td>{{ c.name }}</td>
+                <td>
+                  @if (c.commandType === ConnectivityCommandType.Disconnect) {
+                    <pe-status-badge label="Disconnect" tone="danger" />
+                  } @else {
+                    <pe-status-badge label="Reconnect" tone="success" />
+                  }
+                </td>
+                <td class="reason">{{ c.reason }}</td>
+                <td class="num">{{ c.retryCount }}</td>
+                <td>
+                  @switch (c.status) {
+                    @case (ConnectivityCommandStatus.Acknowledged) { <pe-status-badge label="Acknowledged" tone="success" /> }
+                    @case (ConnectivityCommandStatus.Failed) { <pe-status-badge label="Failed" tone="danger" /> }
+                    @case (ConnectivityCommandStatus.TimedOut) { <pe-status-badge label="Timed Out" tone="danger" /> }
+                    @case (ConnectivityCommandStatus.Sent) { <pe-status-badge label="Sent" tone="warning" /> }
+                    @default { <pe-status-badge label="Queued" tone="neutral" /> }
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</div>

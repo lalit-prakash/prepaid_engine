@@ -61,6 +61,11 @@ td {
   border-bottom: 1px solid var(--border-subtle);
   white-space: nowrap;
 }
+td.reason {
+  white-space: normal;
+  max-width: 260px;
+  overflow-wrap: break-word;
+}
 tr.row-clickable { cursor: pointer; }
 tr.row-clickable:hover td { background: var(--color-primary-lighter); }
 

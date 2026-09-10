@@ -28,7 +28,9 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
       border-radius: var(--radius-lg);
       padding: var(--space-4) var(--space-5);
       box-shadow: var(--shadow-sm);
-      min-width: 160px;
+      box-sizing: border-box;
+      min-width: 0;
+      max-width: 100%;
       border-top: 3px solid var(--color-neutral-300);
     }
     .kpi--clickable { cursor: pointer; transition: box-shadow var(--transition-fast); }
@@ -45,12 +47,15 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
       color: var(--text-secondary);
       font-weight: var(--font-weight-medium);
       margin-bottom: var(--space-2);
+      overflow-wrap: break-word;
     }
     .kpi__value {
       font-size: var(--font-size-kpi);
       font-weight: var(--font-weight-semibold);
       color: var(--text-primary);
       line-height: 1.15;
+      overflow-wrap: break-word;
+      word-break: break-word;
     }
     .kpi__sublabel {
       margin-top: var(--space-1);

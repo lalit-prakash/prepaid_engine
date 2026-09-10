@@ -30,7 +30,7 @@ export class Shell {
     { label: 'Billing', path: '/billing', icon: '▦' },
     { label: 'Recharge Operations', path: '/recharge', icon: '⇄' },
     { label: 'Meter Credit', path: '/meter-credit', icon: '◈' },
-    { label: 'RC / DC', path: '/rc-dc', icon: '⏻', stub: true },
+    { label: 'RC / DC', path: '/rc-dc', icon: '⏻' },
     { label: 'Conversion', path: '/conversion', icon: '⇌', stub: true },
     { label: 'Exceptions', path: '/exceptions', icon: '!', stub: true },
     { label: 'Reconciliation', path: '/reconciliation', icon: '≈', stub: true },
