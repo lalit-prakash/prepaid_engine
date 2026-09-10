@@ -1,0 +1,94 @@
+<div class="report">
+  <a routerLink="/reports" class="back-link">← Back to Reports</a>
+
+  <div class="report-header">
+    <div>
+      <h1>Individual Charge Calculation Report</h1>
+      <p class="report-header__subtitle">Full calculation trace for every bill belonging to one consumer.</p>
+    </div>
+    @if (bills().length > 0) {
+      <button type="button" class="export-btn" (click)="export()">Export CSV</button>
+    }
+  </div>
+
+  @if (loadingConsumers()) {
+    <div class="skeleton-block"></div>
+  } @else if (consumerLoadError()) {
+    <div class="error-panel">{{ consumerLoadError() }}</div>
+  } @else {
+    <section class="filters">
+      <label class="filters__consumer">
+        Consumer
+        <select [(ngModel)]="selectedAccountNumber">
+          @for (c of consumers(); track c.accountNumber) {
+            <option [value]="c.accountNumber">{{ c.accountNumber }} — {{ c.name }}</option>
+          }
+        </select>
+      </label>
+      <button type="button" class="run-btn" (click)="runReport()" [disabled]="loadingBills()">
+        {{ loadingBills() ? 'Loading…' : 'Run Report' }}
+      </button>
+    </section>
+
+    @if (billLoadError()) {
+      <div class="error-panel">{{ billLoadError() }}</div>
+    } @else if (loadingBills()) {
+      <div class="skeleton-block"></div>
+    } @else if (hasRun() && bills().length === 0) {
+      <div class="empty-panel">This consumer has no bills generated yet.</div>
+    } @else if (hasRun()) {
+      @for (b of bills(); track b.id) {
+        <section class="panel">
+          <header class="panel__header">
+            <div>
+              <h2>Bill generated {{ b.generatedAt | date: 'mediumDate' }}</h2>
+              <div class="panel__meta">{{ b.consumer.accountNumber }} · {{ b.tariff.name }} ({{ categoryLabel(b.tariff.category) }})</div>
+            </div>
+            @switch (b.status) {
+              @case (1) { <pe-status-badge label="Paid" tone="success" /> }
+              @case (2) { <pe-status-badge label="Partially Paid" tone="warning" /> }
+              @case (3) { <pe-status-badge label="Overdue" tone="danger" /> }
+              @case (4) { <pe-status-badge label="Cancelled" tone="neutral" /> }
+              @default { <pe-status-badge label="Generated" tone="info" /> }
+            }
+          </header>
+
+          <div class="mini-table-wrap">
+            <table class="mini-table">
+              <thead>
+                <tr>
+                  <th>Consumption</th>
+                  <th class="num">Gross Energy</th>
+                  <th class="num">Rebate</th>
+                  <th class="num">Net Energy</th>
+                  <th class="num">Fixed</th>
+                  <th class="num">Duty</th>
+                  <th class="num">FPPAS</th>
+                  <th class="num">TMC</th>
+                  <th class="num">CPMC</th>
+                  <th class="num">Arrears</th>
+                  <th class="num">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>{{ b.reading.consumptionKwh | number: '1.2-2' }} kWh</td>
+                  <td class="num">₹{{ b.energyChargeGross | number: '1.2-2' }}</td>
+                  <td class="num">-₹{{ b.prepaidRebateAmount | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.energyChargeNet | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.fixedCharge | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.electricityDutyAmount | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.fppasAmount | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.tmcAmount | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.cpmcAmount | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.arrearsAmount | number: '1.2-2' }}</td>
+                  <td class="num"><strong>₹{{ b.amount | number: '1.2-2' }}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
+    }
+  }
+</div>

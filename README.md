@@ -366,6 +366,13 @@ Built:
 - **Calculation Workbench** (`/calculation-workbench`) — a SIMULATION-ONLY charge preview for
   an arbitrary tariff/consumption/load combination. The frontend never computes the numbers
   itself: the backend delegates to the exact same domain methods production billing uses.
+- **Reports** (`/reports`) — lists all 14 mandatory reports from the UI/UX spec; only 2 are
+  real and clickable (the rest are disabled with a specific reason, e.g. "No RC/DC domain
+  model exists yet"):
+  - **Daily Billing Report** (`/reports/daily-billing`) — real bills filterable by date/status/
+    search, with a real summary and CSV export.
+  - **Individual Charge Calculation Report** (`/reports/charge-calculation`) — every real bill
+    for one consumer with its full calculation trace, plus CSV export.
 - Every other sidebar module routes to an honest "not yet backed" stub, never a fake dashboard.
 
 ## Documentation

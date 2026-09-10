@@ -66,7 +66,25 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/calculation-workbench/pages/workbench/workbench').then((m) => m.Workbench),
       },
-      ...stubRoute('reports', 'Reports'),
+      {
+        path: 'reports',
+        loadComponent: () =>
+          import('./features/reports/pages/reports-center/reports-center').then((m) => m.ReportsCenter),
+      },
+      {
+        path: 'reports/daily-billing',
+        loadComponent: () =>
+          import('./features/reports/pages/daily-billing-report/daily-billing-report').then(
+            (m) => m.DailyBillingReport,
+          ),
+      },
+      {
+        path: 'reports/charge-calculation',
+        loadComponent: () =>
+          import('./features/reports/pages/charge-calculation-report/charge-calculation-report').then(
+            (m) => m.ChargeCalculationReport,
+          ),
+      },
       ...stubRoute('automation', 'Automation Center'),
       ...stubRoute('audit', 'Audit & Activity'),
       ...stubRoute('system-health', 'System Health'),

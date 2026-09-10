@@ -55,13 +55,29 @@ Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
   `ElectricityDuty.Calculate`) that production billing uses, enforcing the "frontend must not
   duplicate production billing logic" rule for real. Rejects ToD-only tariffs (IHT/IEHT) with
   an explicit error rather than silently returning a zero energy charge.
+- **Reports Center** (`/reports`) — lists all 14 reports from the original UI/UX request's
+  mandatory-reports section; only the 2 with a real data source are clickable, the rest render
+  disabled with a specific, honest reason (e.g. "No RC/DC domain model exists yet") rather than
+  being silently omitted or built as fake pages.
+  - **Daily Billing Report** (`/reports/daily-billing`) — every real bill, filterable by date
+    range/status/search, with a real summary (total consumers, billed/overdue counts, total
+    charges) and CSV export. Deliberately omits a "total energy" KPI since `BillSummary` (the
+    list endpoint) doesn't carry consumption — only Bill Detail does — and showing a wrong
+    number would be worse than showing none.
+  - **Individual Charge Calculation Report** (`/reports/charge-calculation`) — every real bill
+    for one selected consumer, each with its full calculation trace (fetched via
+    `GET /api/v1/bills/{id}` per bill, since the consumer-scoped bill list alone lacks
+    consumption/reading data), plus CSV export.
+  - CSV export (`shared/utils/csv-export.ts`) is genuinely functional — it serializes exactly
+    the rows already on screen via a Blob download, not a placeholder button.
 
 ## What's a labeled stub
 
 Every other sidebar module (Meter Credit, RC/DC, Conversion, Exceptions, Reconciliation,
-Reports, Automation Center, Audit & Activity, System Health) routes to an honest placeholder
-page stating that no backing domain model or API exists yet — never a fake dashboard with
-invented numbers presented as real.
+Automation Center, Audit & Activity, System Health) routes to an honest placeholder page
+stating that no backing domain model or API exists yet — never a fake dashboard with invented
+numbers presented as real. The 12 not-yet-real reports in the Reports Center follow the same
+rule at the card level rather than the page level.
 
 ## Design system
 
@@ -86,12 +102,13 @@ than implying a downstream acknowledgement that never happened.
 ## Build order for what comes next
 
 Continuing in the same phase order as the UI/UX specification: Billing + Bill Detail, Recharge
-Operations + Recharge Detail, Tariffs & Rules + Tariff Detail, and Calculation Workbench are
-done (this phase added `GET /api/v1/bills`, `GET /api/v1/bills/{id}`, `GET /api/v1/recharges`,
-`GET /api/v1/recharges/{id}`, `GET /api/v1/tariffs`, `GET /api/v1/tariffs/{id}`, and
-`POST /api/v1/calculation-workbench/simulate` to the backend specifically to back them with
-real data/calculation). Next up: Meter Credit once a domain model for meter commands exists
-(today `RechargeTransaction` stops at "RMS confirmed" — there is no meter-command entity to
-build a real Meter Credit page against), then the remaining modules in spec order. Each phase
-gets its own real backend support (or an explicit mock clearly labeled as such) before its UI
-is built — never the reverse.
+Operations + Recharge Detail, Tariffs & Rules + Tariff Detail, Calculation Workbench, and
+Reports Center (with 2 of 14 reports real) are done. This phase added no new backend endpoints
+— both real reports are built entirely on `GET /api/v1/bills`, `GET /api/v1/bills/{id}`, and
+`GET /api/v1/consumers/{accountNumber}`, which already existed. Next up: Meter Credit once a
+domain model for meter commands exists (today `RechargeTransaction` stops at "RMS confirmed" —
+there is no meter-command entity to build a real Meter Credit page, or the remaining 12
+reports that depend on RC/DC, Conversion, Reconciliation, Exception, Audit, or Meter Credit
+data, against), then the remaining modules in spec order. Each phase gets its own real backend
+support (or an explicit mock clearly labeled as such) before its UI is built — never the
+reverse.

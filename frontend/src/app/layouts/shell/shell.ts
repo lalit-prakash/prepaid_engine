@@ -36,7 +36,7 @@ export class Shell {
     { label: 'Reconciliation', path: '/reconciliation', icon: '≈', stub: true },
     { label: 'Tariffs & Rules', path: '/tariffs', icon: '§' },
     { label: 'Calculation Workbench', path: '/calculation-workbench', icon: 'ƒ' },
-    { label: 'Reports', path: '/reports', icon: '▤', stub: true },
+    { label: 'Reports', path: '/reports', icon: '▤' },
     { label: 'Automation Center', path: '/automation', icon: '⚙', stub: true },
     { label: 'Audit & Activity', path: '/audit', icon: '⏱', stub: true },
     { label: 'System Health', path: '/system-health', icon: '♥', stub: true },
