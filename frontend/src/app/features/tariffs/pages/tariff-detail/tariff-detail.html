@@ -1,0 +1,87 @@
+<div class="tariff-detail">
+  <a routerLink="/tariffs" class="back-link">← Back to Tariffs & Rules</a>
+
+  @if (loading()) {
+    <div class="skeleton-block"></div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else if (tariff(); as t) {
+    <header class="detail-header">
+      <div>
+        <h1>{{ t.name }}</h1>
+        <div class="detail-header__meta">
+          <span>{{ categoryLabel(t.category) }}</span>
+        </div>
+      </div>
+    </header>
+
+    <section class="summary-strip">
+      <div class="summary-tile">
+        <div class="summary-tile__label">Fixed Charge</div>
+        <div class="summary-tile__value num">₹{{ t.fixedChargePerUnitPerMonth | number: '1.2-2' }}</div>
+        <div class="summary-tile__note">per unit (kW/kVA) per month</div>
+      </div>
+      <div class="summary-tile">
+        <div class="summary-tile__label">Prepaid Rebate</div>
+        <div class="summary-tile__value num">{{ t.prepaidEnergyRebatePercent }}%</div>
+        <div class="summary-tile__note">on energy charge</div>
+      </div>
+      <div class="summary-tile">
+        <div class="summary-tile__label">Emergency Credit Limit</div>
+        <div class="summary-tile__value num">₹{{ t.emergencyCreditLimit | number: '1.2-2' }}</div>
+      </div>
+    </section>
+
+    <div class="detail-grid">
+      @if (t.slabs.length > 0) {
+        <section class="panel">
+          <h2>Energy Slabs</h2>
+          <table class="mini-table">
+            <thead>
+              <tr><th>From (kWh)</th><th>To (kWh)</th><th class="num">Rate</th></tr>
+            </thead>
+            <tbody>
+              @for (s of t.slabs; track s.id) {
+                <tr>
+                  <td>{{ s.fromKwh }}</td>
+                  <td>{{ s.upToKwh ?? 'Unbounded' }}</td>
+                  <td class="num">₹{{ s.ratePerKwh | number: '1.2-4' }} / kWh</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </section>
+      }
+
+      @if (t.touPeriods.length > 0) {
+        <section class="panel">
+          <h2>Time-of-Day Periods</h2>
+          <table class="mini-table">
+            <thead>
+              <tr><th>Label</th><th>Window</th><th class="num">Rate</th></tr>
+            </thead>
+            <tbody>
+              @for (p of t.touPeriods; track p.id) {
+                <tr>
+                  <td>{{ p.label }}</td>
+                  <td>{{ formatTime(p.startTime) }} – {{ formatTime(p.endTime) }}</td>
+                  <td class="num">₹{{ p.ratePerKvah | number: '1.2-2' }} / kVAh</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </section>
+      }
+
+      <section class="panel">
+        <h2>Vend (Recharge) Limits</h2>
+        <dl class="kv-list">
+          <dt>Single-Phase Min</dt><dd class="num">{{ t.minVendAmountSinglePhase ? '₹' + (t.minVendAmountSinglePhase | number: '1.2-2') : 'Unconstrained' }}</dd>
+          <dt>Single-Phase Max</dt><dd class="num">{{ t.maxVendAmountSinglePhase ? '₹' + (t.maxVendAmountSinglePhase | number: '1.2-2') : 'Unconstrained' }}</dd>
+          <dt>Three-Phase Min</dt><dd class="num">{{ t.minVendAmountThreePhase ? '₹' + (t.minVendAmountThreePhase | number: '1.2-2') : 'Unconstrained' }}</dd>
+          <dt>Three-Phase Max</dt><dd class="num">{{ t.maxVendAmountThreePhase ? '₹' + (t.maxVendAmountThreePhase | number: '1.2-2') : 'Unconstrained' }}</dd>
+        </dl>
+      </section>
+    </div>
+  }
+</div>

@@ -1,0 +1,48 @@
+<div class="tariffs">
+  <div class="page-header">
+    <h1>Tariffs & Rules</h1>
+    <p class="page-header__subtitle">
+      {{ tariffs().length }} tariff(s) configured — read-only (no change workflow built yet, see
+      docs/frontend-scope.md)
+    </p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else if (tariffs().length === 0) {
+    <div class="empty-panel">No tariffs are configured.</div>
+  } @else {
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Category</th>
+            <th class="num">Fixed Charge</th>
+            <th class="num">Prepaid Rebate</th>
+            <th class="num">Emergency Credit</th>
+            <th class="num">Slabs</th>
+            <th class="num">ToD Periods</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (t of tariffs(); track t.id) {
+            <tr (click)="open(t.id)" class="row-clickable">
+              <td>{{ t.name }}</td>
+              <td>{{ categoryLabel(t.category) }}</td>
+              <td class="num">₹{{ t.fixedChargePerUnitPerMonth | number: '1.2-2' }} / unit / month</td>
+              <td class="num">{{ t.prepaidEnergyRebatePercent }}%</td>
+              <td class="num">₹{{ t.emergencyCreditLimit | number: '1.2-2' }}</td>
+              <td class="num">{{ t.slabCount }}</td>
+              <td class="num">{{ t.touPeriodCount }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>

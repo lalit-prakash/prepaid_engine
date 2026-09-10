@@ -12,7 +12,8 @@ verify it, then extend.
 
 Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
 `GET /api/v1/consumers/{accountNumber}`, `POST .../recharge`, `GET /api/v1/bills`,
-`GET /api/v1/bills/{id}`, `GET /api/v1/recharges`, `GET /api/v1/recharges/{id}`):
+`GET /api/v1/bills/{id}`, `GET /api/v1/recharges`, `GET /api/v1/recharges/{id}`,
+`GET /api/v1/tariffs`, `GET /api/v1/tariffs/{id}`):
 
 - **Sign-in** (`/login`) — verifies the HTTP Basic credential against a real API call before
   caching it (same approach as the static demo console at `backend/PrepaidEngine.Api/wwwroot/index.html`).
@@ -36,13 +37,22 @@ Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
   confirmation shown as a distinct step from meter credit (labeled "Not modeled in this
   environment" rather than implied or faked, since no meter-command domain exists yet) — see
   the "No fake success states" rule below.
+- **Tariffs & Rules** (`/tariffs`) — the real tariff configuration this engine bills against
+  (slabs, ToD periods where configured, prepaid rebate, fixed charge, emergency-credit limit,
+  vend limits), sourced straight from `Tariff`/`TariffSlab`/`TouPeriod`.
+- **Tariff Detail** (`/tariffs/:id`) — one tariff's full slab table, ToD schedule (hidden
+  entirely when a tariff has none, e.g. Domestic/DLT), and vend limits. Read-only: there is no
+  create/update endpoint, since a real tariff-change workflow needs versioning, effective
+  dating, and approval that this project hasn't built — see "never silently overwrite an
+  active tariff" in the original UI/UX request. Exposing a naive PUT would violate that rule,
+  so nothing was built rather than something that violates it.
 
 ## What's a labeled stub
 
 Every other sidebar module (Meter Credit, RC/DC, Conversion, Exceptions, Reconciliation,
-Tariffs & Rules, Calculation Workbench, Reports, Automation Center, Audit & Activity,
-System Health) routes to an honest placeholder page stating that no backing domain model or
-API exists yet — never a fake dashboard with invented numbers presented as real.
+Calculation Workbench, Reports, Automation Center, Audit & Activity, System Health) routes to
+an honest placeholder page stating that no backing domain model or API exists yet — never a
+fake dashboard with invented numbers presented as real.
 
 ## Design system
 
@@ -66,9 +76,10 @@ than implying a downstream acknowledgement that never happened.
 
 ## Build order for what comes next
 
-Continuing in the same phase order as the UI/UX specification: Billing + Bill Detail and
-Recharge Operations + Recharge Detail are done (this phase added `GET /api/v1/bills`,
-`GET /api/v1/bills/{id}`, `GET /api/v1/recharges`, and `GET /api/v1/recharges/{id}` to the
+Continuing in the same phase order as the UI/UX specification: Billing + Bill Detail, Recharge
+Operations + Recharge Detail, and Tariffs & Rules + Tariff Detail are done (this phase added
+`GET /api/v1/bills`, `GET /api/v1/bills/{id}`, `GET /api/v1/recharges`,
+`GET /api/v1/recharges/{id}`, `GET /api/v1/tariffs`, and `GET /api/v1/tariffs/{id}` to the
 backend specifically to back them with real, joined data). Next up: Meter Credit once a domain
 model for meter commands exists (today `RechargeTransaction` stops at "RMS confirmed" — there
 is no meter-command entity to build a real Meter Credit page against), then the remaining

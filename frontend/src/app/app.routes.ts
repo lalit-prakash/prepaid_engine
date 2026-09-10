@@ -51,7 +51,16 @@ export const routes: Routes = [
       ...stubRoute('conversion', 'Conversion'),
       ...stubRoute('exceptions', 'Exceptions'),
       ...stubRoute('reconciliation', 'Reconciliation'),
-      ...stubRoute('tariffs', 'Tariffs & Rules'),
+      {
+        path: 'tariffs',
+        loadComponent: () =>
+          import('./features/tariffs/pages/tariff-management/tariff-management').then((m) => m.TariffManagement),
+      },
+      {
+        path: 'tariffs/:id',
+        loadComponent: () =>
+          import('./features/tariffs/pages/tariff-detail/tariff-detail').then((m) => m.TariffDetail),
+      },
       ...stubRoute('calculation-workbench', 'Calculation Workbench'),
       ...stubRoute('reports', 'Reports'),
       ...stubRoute('automation', 'Automation Center'),

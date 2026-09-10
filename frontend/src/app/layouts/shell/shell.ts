@@ -34,7 +34,7 @@ export class Shell {
     { label: 'Conversion', path: '/conversion', icon: '⇌', stub: true },
     { label: 'Exceptions', path: '/exceptions', icon: '!', stub: true },
     { label: 'Reconciliation', path: '/reconciliation', icon: '≈', stub: true },
-    { label: 'Tariffs & Rules', path: '/tariffs', icon: '§', stub: true },
+    { label: 'Tariffs & Rules', path: '/tariffs', icon: '§' },
     { label: 'Calculation Workbench', path: '/calculation-workbench', icon: 'ƒ', stub: true },
     { label: 'Reports', path: '/reports', icon: '▤', stub: true },
     { label: 'Automation Center', path: '/automation', icon: '⚙', stub: true },

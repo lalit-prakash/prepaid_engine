@@ -3,16 +3,10 @@ import { Component, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { BillService } from '../../../../core/services/bill.service';
 import { BillStatus } from '../../../../core/models/consumer.model';
-import { BillSummary, ConsumerCategory } from '../../../../core/models/bill.model';
+import { BillSummary } from '../../../../core/models/bill.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
-
-const CATEGORY_LABELS: Record<ConsumerCategory, string> = {
-  [ConsumerCategory.Domestic]: 'Domestic',
-  [ConsumerCategory.Bpl]: 'BPL / Kutir Jyoti',
-  [ConsumerCategory.Industrial]: 'Industrial',
-  [ConsumerCategory.Commercial]: 'Commercial',
-};
+import { categoryLabel } from '../../../../shared/utils/category-label';
 
 /**
  * Real, API-backed billing dashboard (GET /api/v1/bills) — every bill ever
@@ -31,7 +25,7 @@ export class BillingDashboard implements OnInit {
   protected readonly error = signal<string | null>(null);
   protected readonly searchTerm = signal('');
   protected readonly BillStatus = BillStatus;
-  protected readonly categoryLabel = (c: ConsumerCategory) => CATEGORY_LABELS[c] ?? 'Unknown';
+  protected readonly categoryLabel = categoryLabel;
 
   constructor(
     private readonly billService: BillService,

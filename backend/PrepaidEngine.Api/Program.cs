@@ -234,6 +234,65 @@ app.MapGet("/api/v1/bills/{id:guid}", async (Guid id, PrepaidEngineDbContext db)
 .WithName("GetBillById")
 .RequireAuthorization();
 
+// Tariff Management read endpoints — the real Tariff/TariffSlab/TouPeriod configuration this
+// engine actually bills against (see docs/tariff-validation-report.md for sourcing). Read-only
+// for now: no create/update endpoint exists yet, since tariff changes need versioning/approval
+// workflow (see the UI/UX spec's "never silently overwrite an active tariff" rule) that this
+// project hasn't built — better to expose nothing than a naive PUT that violates it.
+app.MapGet("/api/v1/tariffs", async (PrepaidEngineDbContext db) =>
+{
+    var tariffs = await db.Tariffs
+        .Select(t => new
+        {
+            t.Id,
+            t.Name,
+            t.Category,
+            t.FixedChargePerUnitPerMonth,
+            t.PrepaidEnergyRebatePercent,
+            t.EmergencyCreditLimit,
+            SlabCount = t.Slabs.Count,
+            TouPeriodCount = t.TouPeriods.Count,
+        })
+        .ToListAsync();
+
+    return Results.Ok(tariffs);
+})
+.WithName("ListTariffs")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/tariffs/{id:guid}", async (Guid id, PrepaidEngineDbContext db) =>
+{
+    var tariff = await db.Tariffs
+        .Include(t => t.Slabs)
+        .Include(t => t.TouPeriods)
+        .FirstOrDefaultAsync(t => t.Id == id);
+
+    if (tariff is null)
+        return Results.NotFound();
+
+    return Results.Ok(new
+    {
+        tariff.Id,
+        tariff.Name,
+        tariff.Category,
+        tariff.FixedChargePerUnitPerMonth,
+        tariff.PrepaidEnergyRebatePercent,
+        tariff.EmergencyCreditLimit,
+        tariff.MinVendAmountSinglePhase,
+        tariff.MaxVendAmountSinglePhase,
+        tariff.MinVendAmountThreePhase,
+        tariff.MaxVendAmountThreePhase,
+        Slabs = tariff.Slabs
+            .OrderBy(s => s.FromKwh)
+            .Select(s => new { s.Id, s.FromKwh, s.UpToKwh, s.RatePerKwh }),
+        TouPeriods = tariff.TouPeriods
+            .OrderBy(p => p.StartTime)
+            .Select(p => new { p.Id, p.Label, StartTime = p.StartTime.ToString(), EndTime = p.EndTime.ToString(), p.RatePerKvah }),
+    });
+})
+.WithName("GetTariffById")
+.RequireAuthorization();
+
 // Recharge Operations read endpoints — real RechargeTransaction records across all consumers.
 // Note: RechargeStatus has no explicit "Pending" value — the RMS-Pending branch of the POST
 // endpoint below deliberately leaves a transaction in its initial "Initiated" state (RMS
