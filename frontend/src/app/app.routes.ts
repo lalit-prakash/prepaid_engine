@@ -26,7 +26,16 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/consumers/pages/consumer-360/consumer-360').then((m) => m.Consumer360),
       },
-      ...stubRoute('billing', 'Billing'),
+      {
+        path: 'billing',
+        loadComponent: () =>
+          import('./features/billing/pages/billing-dashboard/billing-dashboard').then((m) => m.BillingDashboard),
+      },
+      {
+        path: 'billing/:id',
+        loadComponent: () =>
+          import('./features/billing/pages/bill-detail/bill-detail').then((m) => m.BillDetail),
+      },
       ...stubRoute('recharge', 'Recharge Operations'),
       ...stubRoute('meter-credit', 'Meter Credit'),
       ...stubRoute('rc-dc', 'RC / DC'),

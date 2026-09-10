@@ -260,6 +260,8 @@ dotnet tool run dotnet-ef migrations add <Name> \
 | `GET /api/v1/consumers` | HTTP Basic | List consumers with wallet balance |
 | `GET /api/v1/consumers/{accountNumber}` | HTTP Basic | Full detail: meter, wallet ledger, bills |
 | `POST /api/v1/consumers/{accountNumber}/recharge` | HTTP Basic | Recharge flow (see above) |
+| `GET /api/v1/bills` | HTTP Basic | Every bill across all consumers, joined with tariff/category — backs the Billing dashboard |
+| `GET /api/v1/bills/{id}` | HTTP Basic | Full calculation trace for one bill — backs Bill Detail |
 | `GET /swagger` | none (Development only) | Interactive API docs |
 
 Set Basic-auth demo credentials before running (`appsettings.json` only holds `CHANGE_ME`
@@ -343,6 +345,10 @@ Built:
   breakdown, wallet ledger, and the complete recharge flow wired to every actual API response
   (200 success, 200 replayed, 202 pending, 402 declined, 503 unavailable, 400 invalid) —
   verified live in-browser against the real Postgres-backed API.
+- **Billing** (`/billing`) — every bill across all consumers with real KPIs (generated/paid/
+  pending/overdue counts, total charges) and search.
+- **Bill Detail** (`/billing/:id`) — the full calculation trace for one bill, reachable from
+  both the Billing table and Consumer 360's bill table.
 - Every other sidebar module routes to an honest "not yet backed" stub, never a fake dashboard.
 
 ## Documentation

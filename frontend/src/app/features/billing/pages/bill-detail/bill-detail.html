@@ -1,0 +1,120 @@
+<div class="bill-detail">
+  <a routerLink="/billing" class="back-link">← Back to Billing</a>
+
+  @if (loading()) {
+    <div class="skeleton-block"></div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else if (bill(); as b) {
+    <header class="detail-header">
+      <div>
+        <h1>Bill for {{ b.consumer.name }}</h1>
+        <div class="detail-header__meta">
+          <span>{{ b.consumer.accountNumber }}</span>
+          <span>·</span>
+          <span>Generated {{ b.generatedAt | date: 'medium' }}</span>
+        </div>
+      </div>
+      @switch (b.status) {
+        @case (BillStatus.Paid) { <pe-status-badge label="Paid" tone="success" /> }
+        @case (BillStatus.PartiallyPaid) { <pe-status-badge label="Partially Paid" tone="warning" /> }
+        @case (BillStatus.Overdue) { <pe-status-badge label="Overdue" tone="danger" /> }
+        @case (BillStatus.Cancelled) { <pe-status-badge label="Cancelled" tone="neutral" /> }
+        @default { <pe-status-badge label="Generated" tone="info" /> }
+      }
+    </header>
+
+    <div class="detail-grid">
+      <section class="panel">
+        <h2>Calculation Trace</h2>
+        <p class="panel__hint">Every step from metered consumption to the final charge, in order.</p>
+
+        <ol class="trace">
+          <li>
+            <div class="trace__label">Consumption</div>
+            <div class="trace__value num">{{ b.reading.consumptionKwh | number: '1.2-2' }} kWh</div>
+            <div class="trace__note">
+              {{ b.reading.periodStart | date: 'mediumDate' }} → {{ b.reading.periodEnd | date: 'mediumDate' }}
+            </div>
+          </li>
+          <li>
+            <div class="trace__label">Applicable Tariff</div>
+            <div class="trace__value">{{ b.tariff.name }}</div>
+          </li>
+          <li>
+            <div class="trace__label">Gross Energy Charge</div>
+            <div class="trace__value num">₹{{ b.energyChargeGross | number: '1.2-2' }}</div>
+          </li>
+          <li>
+            <div class="trace__label">Prepaid Rebate ({{ b.tariff.prepaidEnergyRebatePercent }}%)</div>
+            <div class="trace__value num trace__value--negative">-₹{{ b.prepaidRebateAmount | number: '1.2-2' }}</div>
+          </li>
+          <li class="trace--subtotal">
+            <div class="trace__label">Net Energy Charge</div>
+            <div class="trace__value num">₹{{ b.energyChargeNet | number: '1.2-2' }}</div>
+          </li>
+          <li>
+            <div class="trace__label">Fixed Charge</div>
+            <div class="trace__value num">₹{{ b.fixedCharge | number: '1.2-2' }}</div>
+            <div class="trace__note">₹{{ b.tariff.fixedChargePerUnitPerMonth }}/unit/month, daily-prorated</div>
+          </li>
+          <li>
+            <div class="trace__label">Electricity Duty</div>
+            <div class="trace__value num">₹{{ b.electricityDutyAmount | number: '1.2-2' }}</div>
+          </li>
+          <li>
+            <div class="trace__label">FPPAS</div>
+            <div class="trace__value num">₹{{ b.fppasAmount | number: '1.2-2' }}</div>
+            @if (b.fppasChargeId) {
+              <div class="trace__note mono">Charge {{ b.fppasChargeId }}</div>
+            }
+          </li>
+          <li>
+            <div class="trace__label">TMC</div>
+            <div class="trace__value num">₹{{ b.tmcAmount | number: '1.2-2' }}</div>
+          </li>
+          <li>
+            <div class="trace__label">CPMC</div>
+            <div class="trace__value num">₹{{ b.cpmcAmount | number: '1.2-2' }}</div>
+          </li>
+          <li>
+            <div class="trace__label">Arrears</div>
+            <div class="trace__value num">₹{{ b.arrearsAmount | number: '1.2-2' }}</div>
+            @if (b.arrearsAmount > 0) {
+              <div class="trace__note">₹{{ b.arrearsRecovered | number: '1.2-2' }} recovered so far</div>
+            }
+          </li>
+          <li class="trace--total">
+            <div class="trace__label">Total Charge</div>
+            <div class="trace__value num">₹{{ b.amount | number: '1.2-2' }}</div>
+          </li>
+        </ol>
+      </section>
+
+      <section class="panel">
+        <h2>Payment</h2>
+        <div class="payment-grid">
+          <div>
+            <div class="payment-grid__label">Total</div>
+            <div class="payment-grid__value num">₹{{ b.amount | number: '1.2-2' }}</div>
+          </div>
+          <div>
+            <div class="payment-grid__label">Paid</div>
+            <div class="payment-grid__value num">₹{{ b.amountPaid | number: '1.2-2' }}</div>
+          </div>
+          <div>
+            <div class="payment-grid__label">Outstanding</div>
+            <div class="payment-grid__value num">₹{{ (b.amount - b.amountPaid) | number: '1.2-2' }}</div>
+          </div>
+        </div>
+
+        <h2 class="tariff-heading">Tariff</h2>
+        <dl class="kv-list">
+          <dt>Name</dt><dd>{{ b.tariff.name }}</dd>
+          <dt>Fixed Charge</dt><dd>₹{{ b.tariff.fixedChargePerUnitPerMonth }} / unit / month</dd>
+          <dt>Prepaid Rebate</dt><dd>{{ b.tariff.prepaidEnergyRebatePercent }}%</dd>
+        </dl>
+      </section>
+    </div>
+  }
+</div>

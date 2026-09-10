@@ -163,7 +163,7 @@
           </thead>
           <tbody>
             @for (b of [...c.bills].reverse(); track b.id) {
-              <tr>
+              <tr class="row-clickable" [routerLink]="['/billing', b.id]">
                 <td>{{ b.generatedAt | date: 'mediumDate' }}</td>
                 <td class="num">₹{{ b.energyChargeGross | number: '1.2-2' }}</td>
                 <td class="num">-₹{{ b.prepaidRebateAmount | number: '1.2-2' }}</td>

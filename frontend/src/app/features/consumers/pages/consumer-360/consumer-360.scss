@@ -137,5 +137,7 @@ button[type='submit']:disabled { opacity: 0.6; cursor: not-allowed; }
   border-bottom: 1px solid var(--border-subtle);
 }
 .mini-table .mono { font-family: monospace; font-size: 11px; color: var(--text-muted); }
+.mini-table tr.row-clickable { cursor: pointer; }
+.mini-table tr.row-clickable:hover td { background: var(--color-primary-lighter); }
 
 .empty-note { color: var(--text-muted); font-size: var(--font-size-body); }

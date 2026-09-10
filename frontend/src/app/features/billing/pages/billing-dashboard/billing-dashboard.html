@@ -1,0 +1,80 @@
+<div class="billing">
+  <div class="page-header">
+    <h1>Billing</h1>
+    <p class="page-header__subtitle">{{ bills().length }} bill(s) generated across all consumers</p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2,3,4]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else {
+    <section class="kpi-row">
+      <pe-kpi-card label="Bills Generated" [value]="bills().length" tone="primary" />
+      <pe-kpi-card label="Paid" [value]="paidCount" tone="success" />
+      <pe-kpi-card label="Pending" [value]="pendingCount" tone="warning" />
+      <pe-kpi-card label="Overdue" [value]="overdueCount" tone="danger" />
+      <pe-kpi-card label="Total Charges" [value]="'₹' + (totalCharges | number: '1.2-2')" tone="info" />
+    </section>
+
+    <div class="toolbar">
+      <input
+        type="search"
+        placeholder="Search account number, name, or tariff…"
+        [value]="searchTerm()"
+        (input)="searchTerm.set($any($event.target).value)"
+      />
+    </div>
+
+    @if (filtered.length === 0) {
+      <div class="empty-panel">No bills matched your search.</div>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Generated</th>
+              <th>Account</th>
+              <th>Consumer</th>
+              <th>Category</th>
+              <th>Tariff</th>
+              <th class="num">Net Energy</th>
+              <th class="num">Fixed</th>
+              <th class="num">Duty</th>
+              <th class="num">FPPAS</th>
+              <th class="num">Total</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (b of filtered; track b.id) {
+              <tr (click)="open(b.id)" class="row-clickable">
+                <td>{{ b.generatedAt | date: 'mediumDate' }}</td>
+                <td>{{ b.accountNumber }}</td>
+                <td>{{ b.name }}</td>
+                <td>{{ categoryLabel(b.category) }}</td>
+                <td>{{ b.tariffName }}</td>
+                <td class="num">₹{{ b.energyChargeNet | number: '1.2-2' }}</td>
+                <td class="num">₹{{ b.fixedCharge | number: '1.2-2' }}</td>
+                <td class="num">₹{{ b.electricityDutyAmount | number: '1.2-2' }}</td>
+                <td class="num">₹{{ b.fppasAmount | number: '1.2-2' }}</td>
+                <td class="num"><strong>₹{{ b.amount | number: '1.2-2' }}</strong></td>
+                <td>
+                  @switch (b.status) {
+                    @case (BillStatus.Paid) { <pe-status-badge label="Paid" tone="success" /> }
+                    @case (BillStatus.PartiallyPaid) { <pe-status-badge label="Partially Paid" tone="warning" /> }
+                    @case (BillStatus.Overdue) { <pe-status-badge label="Overdue" tone="danger" /> }
+                    @case (BillStatus.Cancelled) { <pe-status-badge label="Cancelled" tone="neutral" /> }
+                    @default { <pe-status-badge label="Generated" tone="info" /> }
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</div>

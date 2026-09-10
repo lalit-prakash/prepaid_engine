@@ -151,6 +151,89 @@ app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, Pre
 .WithName("GetConsumerByAccountNumber")
 .RequireAuthorization();
 
+// Billing dashboard read endpoints — real data across all consumers, joined with the tariff
+// and consumption reading each bill was generated from. Demo/local-only, same Basic-auth
+// stop-gap as every other endpoint above (see docs/assumptions-and-security.md).
+app.MapGet("/api/v1/bills", async (PrepaidEngineDbContext db) =>
+{
+    var bills = await db.Bills
+        .Join(db.Consumers, b => b.ConsumerId, c => c.Id, (b, c) => new { Bill = b, Consumer = c })
+        .Join(db.Tariffs, x => x.Bill.TariffId, t => t.Id, (x, t) => new { x.Bill, x.Consumer, Tariff = t })
+        .OrderByDescending(x => x.Bill.GeneratedAt)
+        .Select(x => new
+        {
+            x.Bill.Id,
+            x.Consumer.AccountNumber,
+            x.Consumer.Name,
+            Category = x.Tariff.Category,
+            TariffName = x.Tariff.Name,
+            x.Bill.EnergyChargeGross,
+            x.Bill.PrepaidRebateAmount,
+            EnergyChargeNet = x.Bill.EnergyChargeGross - x.Bill.PrepaidRebateAmount,
+            x.Bill.FixedCharge,
+            x.Bill.ElectricityDutyAmount,
+            x.Bill.FppasAmount,
+            x.Bill.TmcAmount,
+            x.Bill.CpmcAmount,
+            x.Bill.ArrearsAmount,
+            x.Bill.Amount,
+            x.Bill.AmountPaid,
+            x.Bill.Status,
+            x.Bill.GeneratedAt,
+        })
+        .ToListAsync();
+
+    return Results.Ok(bills);
+})
+.WithName("ListBills")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/bills/{id:guid}", async (Guid id, PrepaidEngineDbContext db) =>
+{
+    var bill = await db.Bills.FirstOrDefaultAsync(b => b.Id == id);
+    if (bill is null)
+        return Results.NotFound();
+
+    var consumer = await db.Consumers.FirstOrDefaultAsync(c => c.Id == bill.ConsumerId);
+    var tariff = await db.Tariffs.Include(t => t.Slabs).FirstOrDefaultAsync(t => t.Id == bill.TariffId);
+    var reading = await db.ConsumptionReadings.FirstOrDefaultAsync(r => r.Id == bill.ConsumptionReadingId);
+
+    if (consumer is null || tariff is null || reading is null)
+    {
+        // Data integrity issue (a bill referencing a deleted consumer/tariff/reading) rather
+        // than a legitimate "not found" for the bill itself — surface it distinctly.
+        return Results.Problem(
+            statusCode: StatusCodes.Status500InternalServerError,
+            title: "Bill references missing data",
+            detail: $"Bill {id} references a consumer, tariff, or consumption reading that no longer exists.");
+    }
+
+    return Results.Ok(new
+    {
+        bill.Id,
+        Consumer = new { consumer.AccountNumber, consumer.Name },
+        Tariff = new { tariff.Id, tariff.Name, tariff.Category, tariff.FixedChargePerUnitPerMonth, tariff.PrepaidEnergyRebatePercent },
+        Reading = new { reading.ConsumptionKwh, reading.PeriodStart, reading.PeriodEnd },
+        bill.EnergyChargeGross,
+        bill.PrepaidRebateAmount,
+        EnergyChargeNet = bill.EnergyChargeGross - bill.PrepaidRebateAmount,
+        bill.FixedCharge,
+        bill.ElectricityDutyAmount,
+        bill.FppasAmount,
+        bill.FppasChargeId,
+        bill.TmcAmount,
+        bill.CpmcAmount,
+        bill.ArrearsAmount,
+        bill.ArrearsRecovered,
+        bill.Amount,
+        bill.AmountPaid,
+        bill.Status,
+        bill.GeneratedAt,
+    });
+})
+.WithName("GetBillById")
+.RequireAuthorization();
+
 // Recharge flow, orchestrated through IRmsClient (MockRmsClient for now — see the TODO
 // above). RMS remains authoritative: this endpoint only credits the wallet once RMS reports
 // Success, and never re-credits for a repeated idempotency key or a duplicated RMS reference.

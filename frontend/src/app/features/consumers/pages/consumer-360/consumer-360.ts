@@ -1,7 +1,7 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ConsumerService } from '../../../../core/services/consumer.service';
 import { BillStatus, ConnectionStatus, ConsumerDetail, WalletTransactionType } from '../../../../core/models/consumer.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
@@ -21,7 +21,7 @@ type RechargeOutcome =
  */
 @Component({
   selector: 'pe-consumer-360',
-  imports: [FormsModule, StatusBadge, DatePipe, DecimalPipe],
+  imports: [FormsModule, StatusBadge, DatePipe, DecimalPipe, RouterLink],
   templateUrl: './consumer-360.html',
   styleUrl: './consumer-360.scss',
 })

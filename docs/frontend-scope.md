@@ -11,7 +11,8 @@ verify it, then extend.
 ## What's real today
 
 Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
-`GET /api/v1/consumers/{accountNumber}`, `POST .../recharge`):
+`GET /api/v1/consumers/{accountNumber}`, `POST .../recharge`, `GET /api/v1/bills`,
+`GET /api/v1/bills/{id}`):
 
 - **Sign-in** (`/login`) — verifies the HTTP Basic credential against a real API call before
   caching it (same approach as the static demo console at `backend/PrepaidEngine.Api/wwwroot/index.html`).
@@ -22,11 +23,18 @@ Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
   fixed, duty, FPPAS, TMC, CPMC, arrears), real wallet ledger, and the **real recharge flow**
   end to end, handling every actual API response: 200 success, 200 replayed, 202 pending,
   402 declined, 503 unavailable, 400 invalid.
+- **Billing** (`/billing`) — every bill ever generated across all consumers, joined with
+  tariff/category, with real KPIs (bills generated, paid/pending/overdue counts, total
+  charges) derived from the same data — nothing illustrative on this page.
+- **Bill Detail** (`/billing/:id`) — the full calculation trace for one bill (consumption →
+  tariff → gross energy → rebate → net energy → fixed → duty → FPPAS → TMC → CPMC → arrears →
+  total), plus payment status, all from the real API. Reachable from both the Billing table
+  and Consumer 360's bill table.
 
 ## What's a labeled stub
 
-Every other sidebar module (Billing, Recharge Operations, Meter Credit, RC/DC, Conversion,
-Exceptions, Reconciliation, Tariffs & Rules, Calculation Workbench, Reports, Automation Center,
+Every other sidebar module (Recharge Operations, Meter Credit, RC/DC, Conversion, Exceptions,
+Reconciliation, Tariffs & Rules, Calculation Workbench, Reports, Automation Center,
 Audit & Activity, System Health) routes to an honest placeholder page stating that no backing
 domain model or API exists yet — never a fake dashboard with invented numbers presented as real.
 
@@ -52,8 +60,9 @@ than implying a downstream acknowledgement that never happened.
 
 ## Build order for what comes next
 
-Continuing in the same phase order as the UI/UX specification, next up: Billing dashboard +
-Bill Detail (both already have real backend data via the bills already on `ConsumerDetail`),
-then Recharge Operations/Meter Credit once/if a domain model for meter commands exists,
+Continuing in the same phase order as the UI/UX specification: Billing + Bill Detail are done
+(this phase added `GET /api/v1/bills` and `GET /api/v1/bills/{id}` to the backend specifically
+to back them with real, joined data rather than reusing only the per-consumer bill list).
+Next up: Recharge Operations/Meter Credit once/if a domain model for meter commands exists,
 then the remaining modules in spec order. Each phase gets its own real backend support (or an
 explicit mock clearly labeled as such) before its UI is built — never the reverse.
