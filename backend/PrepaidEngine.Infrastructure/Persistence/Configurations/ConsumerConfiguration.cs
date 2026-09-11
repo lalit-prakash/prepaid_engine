@@ -29,8 +29,16 @@ public class ConsumerConfiguration : IEntityTypeConfiguration<Consumer>
             .HasMaxLength(30)
             .IsRequired();
 
+        builder.Property(c => c.BillingMode)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .IsRequired();
+
         builder.Property(c => c.ConnectedLoadKw)
             .HasColumnType("decimal(18,3)")
+            .IsRequired();
+
+        builder.Property(c => c.IsNetMeter)
             .IsRequired();
 
         // One-to-one: a consumer is linked to a single smart meter.

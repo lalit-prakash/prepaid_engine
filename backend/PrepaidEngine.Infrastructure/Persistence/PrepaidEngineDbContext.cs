@@ -30,6 +30,11 @@ public class PrepaidEngineDbContext : DbContext
     public DbSet<FppasCharge> FppasCharges => Set<FppasCharge>();
     public DbSet<MeterCommand> MeterCommands => Set<MeterCommand>();
     public DbSet<ConnectivityCommand> ConnectivityCommands => Set<ConnectivityCommand>();
+    public DbSet<ConversionRequest> ConversionRequests => Set<ConversionRequest>();
+    public DbSet<ReconciliationAdjustment> ReconciliationAdjustments => Set<ReconciliationAdjustment>();
+    public DbSet<OperationalException> OperationalExceptions => Set<OperationalException>();
+    public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<TariffVersion> TariffVersions => Set<TariffVersion>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

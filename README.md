@@ -20,9 +20,13 @@ into the recharge flow end to end (see [Meter credit domain model](#meter-credit
 below) with its own dashboard/detail pages, including a genuine `Retry()` action. RC/DC is now
 wired into a real disconnect/reconnect workflow too (see
 [RC/DC domain model](#rcdc-domain-model--wired-into-a-disconnectreconnect-workflow) below),
-though — unlike Meter Credit — it doesn't have a dedicated cross-consumer dashboard/detail page
-yet, only the real panel on Consumer 360. The remaining modules (a standalone RC/DC page,
-Conversion, Exceptions, Reconciliation, Automation, Audit, System Health) still render an
+and now has its own dashboard/detail pages too, mirroring Meter Credit's. Backend support now
+also exists for prepaid conversion, billing reconciliation, operational exceptions, an audit
+trail, and tariff version history, implementing sections 1-8 of MePDCL's own AMISP integration
+requirement doc for the first two (see
+[Prepaid conversion, billing reconciliation, and the AMISP integration requirement doc](#prepaid-conversion-billing-reconciliation-and-the-amisp-integration-requirement-doc)
+below) — none of these five have a frontend page yet. The remaining frontend modules
+(Conversion, Exceptions, Reconciliation, Automation, Audit, System Health) still render an
 explicit "not yet backed" stub rather than invented data — see
 [docs/frontend-scope.md](docs/frontend-scope.md) for the real-vs-planned boundary.
 
@@ -33,7 +37,7 @@ explicit "not yet backed" stub rather than invented data — see
   - `PrepaidEngine.Application` — use cases / integration ports (`IRmsClient`, `IMeterCommandClient`)
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
-  - `PrepaidEngine.Tests` — xUnit test project (215 tests — see [Testing](#testing))
+  - `PrepaidEngine.Tests` — xUnit test project (283 tests — see [Testing](#testing))
 - `frontend/` — Angular 22 enterprise operations UI (see [Frontend](#frontend) below and
   [docs/frontend-scope.md](docs/frontend-scope.md))
 - `docs/` — sourcing, security, tariff-validation, and frontend-scope documentation (see [Documentation](#documentation))
@@ -56,6 +60,11 @@ explicit "not yet backed" stub rather than invented data — see
 | `FppasCharge` | A notified FPPAS (Fuel and Power Purchase Adjustment Surcharge) rate change, deferred one billing month and prorated across every day of the following month |
 | `MeterCommand` | A meter credit command — the step that actually updates the smart meter's available credit after RMS confirms a recharge, wired into the recharge endpoint. Deliberately a separate entity/lifecycle from `RechargeTransaction` (`Queued`/`Sent`/`Acknowledged`/`Failed`/`TimedOut`) — RMS confirming payment and the meter itself being credited are two different systems succeeding independently, and the domain model refuses to conflate them (see below) |
 | `ConnectivityCommand` | A remote disconnect/reconnect command dispatched to a consumer's meter (`Disconnect`/`Reconnect`, with a mandatory `Reason`), wired into real disconnect/reconnect endpoints. Deliberately a separate entity/lifecycle from `Consumer.ConnectionStatus` (`Queued`/`Sent`/`Acknowledged`/`Failed`/`TimedOut`) — the consumer's status records local *intent*, this entity tracks whether the physical meter actually acted on it, the same command/acknowledgement split used for `MeterCommand` (see [RC/DC domain model](#rcdc-domain-model--wired-into-a-disconnectreconnect-workflow) below) |
+| `ConversionRequest` | A postpaid→prepaid conversion request as pushed by RMS (AMISP integration requirement doc §1), wired into a real batch endpoint. Tracks the RMS payload (transaction/meter/consumer numbers, consumer type, initial reading, conversion date) and its own decision trail, separate from `Consumer.BillingMode`'s real-time fact (see [Prepaid conversion](#prepaid-conversion-billing-reconciliation-and-the-amisp-integration-requirement-doc) below) |
+| `ReconciliationAdjustment` | A signed wallet adjustment pushed by RMS (AMISP spec §7-8) — a gap found in RMS's own reconciliation, or a credit owed the consumer — applied to the wallet like a recharge but tagged distinctly in the ledger |
+| `OperationalException` | An auto-raised operator work item whenever a `MeterCommand`/`ConnectivityCommand` reaches `Failed`/`TimedOut` — never hand-entered, resolved only with a mandatory note |
+| `AuditEntry` | An immutable, append-only log entry for a tracked operational/config change (RC/DC dispatch, conversion completion, reconciliation adjustment, tariff version) |
+| `TariffVersion` | A recorded parameter change against a `Tariff`, with a mandatory change note and effective date — enables a future Tariff Change Report even though `Tariff` itself has no update endpoint yet |
 
 ### Tariff engine — verified calculation methods
 
@@ -284,10 +293,10 @@ consumer's meter, and is now wired into two real endpoints:
 - In `MockConnectivityCommandClient`, include `CONNFAIL-` or `CONNTIMEOUT-` anywhere in the
   disconnect/reconnect `Reason` (or an optional `CorrelationId`) to force the meter to reject or
   never acknowledge the command.
-- Exposed via `GET /api/v1/connectivity-commands` and `GET /api/v1/connectivity-commands/{id}`
-  (real data across all consumers — no dedicated RC/DC dashboard/detail page exists yet, unlike
-  Meter Credit). Consumer 360 has a real RC/DC panel: Disconnect/Reconnect buttons (gated behind
-  an explicit confirmation dialog per the "critical command confirmation" rule), a live outcome
+- Exposed via `GET /api/v1/connectivity-commands` and `GET /api/v1/connectivity-commands/{id}`,
+  backing a real dashboard (`/rc-dc`) and detail page (`/rc-dc/:id`), mirroring Meter Credit's.
+  Consumer 360 also has a real RC/DC panel: Disconnect/Reconnect buttons (gated behind an
+  explicit confirmation dialog per the "critical command confirmation" rule), a live outcome
   banner, and the header's connection-status badge reflecting all four real states (`Active`/
   `Disconnected`/`DisconnectionPending`/`ReconnectionPending`).
 - Unlike `MeterCommand` (at most one per recharge), a consumer can be disconnected and later
@@ -296,6 +305,89 @@ consumer's meter, and is now wired into two real endpoints:
 - Says nothing about the transport (STS/DLMS/COSEM/vendor API) — no such integration exists
   yet; a future real `IConnectivityCommandClient` adapter would plug in the same way a real
   `IMeterCommandClient` adapter would for meter credit.
+- **"Happy Hours" window (spec-required):** `POST /api/v1/consumers/{accountNumber}/disconnect`
+  and the retry endpoint (when retrying a `Disconnect` command) both reject with `400` outside
+  9:00 AM-2:00 PM IST (a fixed UTC+5:30 offset, not the server's own timezone). The spec (see below) also exempts public holidays on the Nagaland
+  State Govt calendar — this project has no holiday-calendar concept, so only the daily window is
+  enforced; the holiday gap is a known, documented limitation, not silently ignored.
+
+### Prepaid conversion, billing reconciliation, and the AMISP integration requirement doc
+
+This project implements sections 1-8 of MePDCL's own
+`Prepaid_Integration_Requirement_Document_ProposalFromAMISP_V1.1` (the AMISP integration
+requirement doc RMS and this engine are meant to satisfy) for two workflows: RMS pushing
+postpaid→prepaid conversion requests, and RMS pushing reconciliation adjustments against a
+consumer's wallet. Both replace an earlier, generic guess at these two domain models built before
+the real spec was available — the shapes below are the real RMS payloads, not invented ones.
+
+**Conversion** (`ConversionRequest`, spec section 1 — "Prepaid conversion" — and section 2,
+first-bill generation):
+- `POST /api/v1/conversions` accepts a **batch** (spec: "pushed in an array") of conversion
+  requests, each carrying `TransactionId`, `MeterSerialNumber`, `ConsumerNumber` (matched against
+  `Consumer.AccountNumber`), `RequestType` (defaults `"PRE"`), `ConsumerType`
+  (`Residential`/`Vip`/`Hospital`/`School`/`ShoppingComplex`/`Other`), `InitialReading` +
+  `InitialReadingDateTime` (the post-paid bill's final reading), and `ConversionDate`. Each item
+  is validated and applied independently — one bad item in a batch never fails the rest — and the
+  response is the spec's own per-item shape: `TransactionId`, `ConsumerNumber`, `ResponseCode`
+  (`Success`/`Fail`), `ResponseMessage`.
+- A `Consumer.IsNetMeter` consumer is always rejected (spec: "If the consumer is NET meter
+  consumer, then such meter shall not be converted to prepaid").
+- The decision trail (`ConversionRequest`: `Requested` → `Approved`/`Rejected` → `Completed`) and
+  the actual billing-mode change (`Consumer.ConvertToPrepaid()`, never a raw property set) are
+  always two explicit calls, even though the real flow applies both within one request — the same
+  intent/execution split used by RC/DC and meter credit.
+- `GracePeriodEndDate` (5 working days, Mon-Fri, after `ConversionDate`) and the `-300` grace
+  threshold (vs. the normal `-200`) are computed on the entity and surfaced on
+  `GET /api/v1/consumers/{accountNumber}` as `IsWithinConversionGracePeriod` /
+  `EffectiveDisconnectThreshold` — **advisory only**: this project has no automated credit-based
+  disconnect trigger (disconnection here is always the explicit manual operator action described
+  above), so there is nothing for the grace threshold to override automatically yet. Building a
+  real auto-disconnect decision engine is out of this project's current scope.
+- Real SMS delivery ("your CID is now in pre-paid mode...") is **not modeled** — this repo has no
+  notification/SMS gateway abstraction, and per the "no fake success states" rule the conversion
+  endpoint does not report an SMS as sent, only the real `Success`/`Fail` response.
+- `GET /api/v1/conversions` and `GET /api/v1/conversions/{id}` expose the full decision trail.
+
+**Billing reconciliation** (`ReconciliationAdjustment`, spec sections 6-8):
+- The real direction: RMS reconciles AMISP's daily billing data against its own shadow monthly
+  bill and pushes any gap (or a consumer credit, e.g. from a bill revision or meter swap) to
+  AMISP as a **signed amount**. This is an inbound instruction from RMS — not a three-way
+  RMS/engine/meter comparison AMISP computes itself (an earlier version of this entity did that
+  comparison; it modeled the wrong direction against the real spec and has been replaced).
+- `POST /api/v1/consumers/{accountNumber}/reconciliation-adjustments` applies the signed `Amount`
+  to the wallet exactly like a recharge credit/debit (tagged `WalletTransactionType.Reconciliation`
+  in the ledger so it's never confused with a real top-up), with a required `Reference` and
+  `ReconciliationDate`. Unlike a recharge, the amount may be negative and has no Rs. 500 floor.
+- `GET /api/v1/billing-reconciliation/daily-export?date=` exposes what AMISP would push to RMS
+  per spec section 7 — but **only the fields this domain genuinely tracks**: `MeterReadingDate`,
+  `BillNumber`, `AccountNumber`, `MeterNumber`, and 3 charge-code/amount pairs derived from real
+  `PrepaidBill` fields (Energy, Fixed, and a `0`-valued Public Lighting placeholder — this system
+  has no separate public-lighting charge component to report). The spec's 4 cumulative
+  midnight-reading fields (import/export kWh for the reading date and the day after) are always
+  `null` — **not fabricated** — because `ConsumptionReading` only stores a period delta, and this
+  system has no export/feed-in (NET meter) reading concept at all. RMS's own shadow monthly-bill
+  calculation is entirely outside this system and is not modeled here.
+- `GET /api/v1/reconciliation-adjustments` and `.../{id}` expose the applied-adjustment history.
+
+**Minimum recharge (spec section 6):** `POST /api/v1/consumers/{accountNumber}/recharge` now
+rejects amounts under Rs. 500 with `400`. This floor applies only to genuine top-ups — a
+reconciliation adjustment (above) is a separate endpoint and is never subject to it, matching the
+spec's own distinction between a recharge and a reconciliation-mode entry.
+
+**Operational exceptions and audit trail** (`OperationalException`, `AuditEntry` — not part of the
+AMISP spec, but built alongside it): an `OperationalException` is raised automatically whenever a
+`MeterCommand` or `ConnectivityCommand` reaches `Failed`/`TimedOut` (`GET /api/v1/exceptions`,
+resolve via `POST .../resolve` with a mandatory note) — never hand-entered, so nothing that needs
+operator attention can go unlisted. An `AuditEntry` is appended for every RC/DC dispatch/retry, a
+completed conversion's billing-mode change, an applied reconciliation adjustment, and a recorded
+tariff version (`GET /api/v1/audit-entries`, filterable by entity type and date range) — an
+immutable, append-only log, never edited or deleted.
+
+**Tariff version history** (`TariffVersion` — also not part of the AMISP spec): `Tariff` itself
+still exposes only its single current version (no update endpoint exists), but
+`POST /api/v1/tariffs/{id}/versions` and `GET /api/v1/tariffs/{id}/versions` let a parameter
+change be recorded with a mandatory change note and effective date, enabling a real Tariff Change
+Report once one is built.
 
 ### Demo console
 
@@ -369,7 +461,20 @@ dotnet tool run dotnet-ef migrations add <Name> \
 | `POST /api/v1/consumers/{accountNumber}/reconnect` | HTTP Basic | Real RC/DC reconnect: requires a `Reason`, `409` unless currently `Disconnected`, `400` if wallet balance isn't positive, otherwise same dispatch/acknowledgement discipline as disconnect |
 | `GET /api/v1/connectivity-commands` | HTTP Basic | Every disconnect/reconnect command across all consumers |
 | `GET /api/v1/connectivity-commands/{id}` | HTTP Basic | Full connectivity command detail plus the consumer's current connection status |
-| `POST /api/v1/connectivity-commands/{id}/retry` | HTTP Basic | Genuinely retries a `Failed`/`TimedOut` command (`409` otherwise, `400` if a `Reconnect` retry's balance precondition no longer holds) |
+| `POST /api/v1/connectivity-commands/{id}/retry` | HTTP Basic | Genuinely retries a `Failed`/`TimedOut` command (`409` otherwise, `400` if a `Reconnect` retry's balance precondition no longer holds, `400` outside the 9AM-2PM Happy Hours window for a `Disconnect` retry) |
+| `POST /api/v1/conversions` | HTTP Basic | Batch prepaid conversion requests from RMS (AMISP spec §1) — per-item `Success`/`Fail` response |
+| `GET /api/v1/conversions` | HTTP Basic | Every conversion request's decision trail |
+| `GET /api/v1/conversions/{id}` | HTTP Basic | Full conversion request detail plus the consumer's current billing mode |
+| `POST /api/v1/consumers/{accountNumber}/reconciliation-adjustments` | HTTP Basic | Applies an RMS-pushed signed wallet adjustment (AMISP spec §7-8) |
+| `GET /api/v1/reconciliation-adjustments` | HTTP Basic | Every applied reconciliation adjustment across all consumers |
+| `GET /api/v1/reconciliation-adjustments/{id}` | HTTP Basic | Full reconciliation adjustment detail |
+| `GET /api/v1/billing-reconciliation/daily-export` | HTTP Basic | Daily billing data AMISP would push to RMS (AMISP spec §7) — real fields only, unmodeled ones left `null` |
+| `GET /api/v1/exceptions` | HTTP Basic | Every operational exception, auto-raised on a `Failed`/`TimedOut` command |
+| `GET /api/v1/exceptions/{id}` | HTTP Basic | Full operational exception detail |
+| `POST /api/v1/exceptions/{id}/resolve` | HTTP Basic | Resolves an exception with a mandatory note |
+| `GET /api/v1/audit-entries` | HTTP Basic | The immutable audit log, filterable by entity type and date range |
+| `POST /api/v1/tariffs/{id}/versions` | HTTP Basic | Records a tariff parameter change with a mandatory note |
+| `GET /api/v1/tariffs/{id}/versions` | HTTP Basic | A tariff's recorded version history |
 | `GET /api/v1/tariffs` | HTTP Basic | Every configured tariff — backs Tariffs & Rules |
 | `GET /api/v1/tariffs/{id}` | HTTP Basic | One tariff's slabs, ToD periods, and vend limits — backs Tariff Detail |
 | `POST /api/v1/calculation-workbench/simulate` | HTTP Basic | SIMULATION-ONLY charge preview for an arbitrary tariff/consumption/load — backs the Calculation Workbench |
@@ -396,7 +501,7 @@ cd backend
 dotnet test PrepaidEngine.sln
 ```
 
-**215 tests, all passing.** Breakdown:
+**283 tests, all passing.** Breakdown:
 
 | Test class | Count | What it covers |
 |---|---|---|
@@ -419,6 +524,12 @@ dotnet test PrepaidEngine.sln
 | `MockMeterCommandClientTests` | 9 | `METERFAIL-`/`METERTIMEOUT-` correlation-id markers (case-insensitive, anywhere in the string) producing `Failed`/`TimedOut`, default success path, non-positive credit amount / null-request / cancellation validation |
 | `ConnectivityCommandTests` | 21 | Full lifecycle state-machine coverage mirroring `MeterCommandTests`: `Queued`→`Sent`→`Acknowledged`, `Sent`→`Failed`/`TimedOut`→`Retry()`, every invalid transition guarded and tested, plus `Disconnect`/`Reconnect` type recording and mandatory-`Reason` validation (null/empty/whitespace) |
 | `MockConnectivityCommandClientTests` | 9 | `CONNFAIL-`/`CONNTIMEOUT-` correlation-id/reason markers (case-insensitive, anywhere in the string) producing `Failed`/`TimedOut`, default success path, null-request / cancellation validation |
+| `ConversionRequestTests` | 22 | Real AMISP-spec fields (`TransactionId`/`MeterSerialNumber`/`ConsumerNumber`/`ConsumerType`/`InitialReading`/`ConversionDate`), `RequestType` defaulting to `"PRE"`, the 5-working-day grace-period-end calculation (skipping weekends) and `IsWithinGracePeriod`, full `Requested`→`Approved`/`Rejected`→`Completed` lifecycle coverage, validation guards |
+| `ConsumerConversionTests` | 5 | `Consumer.ConvertToPrepaid()`/`ConvertToPostpaid()` guard against converting to the billing mode already in effect |
+| `ReconciliationAdjustmentTests` | 9 | Signed-amount recording (positive and negative), zero-amount rejection, mandatory `Reference`/`ConsumerNumber` validation |
+| `OperationalExceptionTests` | 11 | `Open`→`Resolved` lifecycle, mandatory resolution note, every `OperationalExceptionSourceType` |
+| `AuditEntryTests` | 14 | Immutable append-only construction, mandatory fields, optional old/new value and details recording |
+| `TariffVersionTests` | 7 | Mandatory change note and field name, old/new value recording, effective-date tracking |
 
 Every number in `TariffGoldenDataTests`, `BplTariffTests`, and `DhtTariffDiscrepancyTests` is
 taken verbatim from MePDCL's tariff book or reference workbooks, not invented — a failure there

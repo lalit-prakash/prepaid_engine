@@ -163,9 +163,27 @@ Credit already established. `GET /api/v1/connectivity-commands` and `.../{id}` e
 list/detail, and `POST /api/v1/connectivity-commands/{id}/retry` re-dispatches a `Failed`/
 `TimedOut` command through `ConnectivityCommand.Retry()`. Consumer 360 got a real **RC/DC panel**
 (Disconnect/Reconnect, one shown at a time based on actual `ConnectionStatus`, gated behind an
-inline confirmation step, with a live outcome banner) — this is the wiring phase's UI, same as
-Meter Credit's recharge-panel integration was for that phase; a dedicated RC/DC dashboard/detail
-page (mirroring `/meter-credit`) has not been built yet.
+inline confirmation step, with a live outcome banner) — this was the wiring phase's UI, same as
+Meter Credit's recharge-panel integration was for that phase. **A dedicated RC/DC dashboard and
+detail page were built in the following phase** (`/rc-dc`, `/rc-dc/:id`), mirroring Meter
+Credit's exactly, including a genuine confirmed `Retry()` action.
+
+**Backend now also implements the real AMISP integration requirement doc (sections 1-8) for
+prepaid conversion and billing reconciliation — no frontend exists for either yet.**
+`POST /api/v1/conversions` (batch), `GET /api/v1/conversions`, `.../{id}`, `POST /api/v1/consumers/
+{accountNumber}/reconciliation-adjustments`, `GET /api/v1/reconciliation-adjustments`, `.../{id}`,
+and `GET /api/v1/billing-reconciliation/daily-export` are all real and tested, replacing an
+earlier generic (and wrong-direction) guess at these two domain models built before the real spec
+document arrived. `GET /api/v1/exceptions`, `GET /api/v1/audit-entries`, and
+`POST`/`GET /api/v1/tariffs/{id}/versions` are also real (built alongside, not part of the AMISP
+spec). None of these five backends have a frontend page — they join Conversion/Exceptions/
+Reconciliation/Audit in the stub list below until a UI phase is scoped for them.
+
+**One known frontend gap from this phase:** the recharge endpoint now enforces a real Rs. 500
+minimum (AMISP spec §6), but Consumer 360's recharge form has no client-side minimum-amount
+validation or hint — a sub-₹500 attempt will show the backend's real `400` error, which is
+correct but not as helpful as an inline hint would be. Left as-is rather than guessing at the
+right UX treatment; worth fixing whenever that panel is next touched.
 
 **A real bug was found and fixed during this phase's code review**, the same way the
 apiBaseUrl/auth-interceptor bug was found during an earlier phase: the retry endpoint checked the
@@ -181,8 +199,9 @@ original `/reconnect` dispatch. This is exactly the kind of gap the intent-vs-ac
 split exists to catch — and also exactly why time-sensitive preconditions need re-checking at
 every dispatch point, not just the first one.
 
-Next up, in spec order: build the RC/DC dashboard/detail pages (mirroring Meter Credit's), then
-Conversion, Reconciliation, Exception, and Audit once their domain models exist, plus the
-reports that depend on all of that data — including the now-unblocked `Day-wise RC/DC Report`s
-and `Meter Credit Failure Report`. Each phase gets its own real backend support (or an explicit
-mock clearly labeled as such) before its UI is built — never the reverse.
+Next up: Conversion, Reconciliation, Exception, Audit, and Tariff Version History all now have
+real backend support (see above) but no frontend page — building those UIs is the next phase in
+spec order, followed by the reports that depend on all of that data (including the now-unblocked
+`Day-wise RC/DC Report`s and `Meter Credit Failure Report`). Each phase gets its own real backend
+support (or an explicit mock clearly labeled as such) before its UI is built — never the reverse,
+which is exactly why these five have working endpoints today and zero frontend surface.
