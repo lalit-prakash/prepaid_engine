@@ -98,10 +98,15 @@ static OperationalException RaiseException(PrepaidEngineDbContext db, Operationa
 static ReconciliationAdjustment ApplyReconciliationAdjustment(
     PrepaidEngineDbContext db, Consumer consumer, decimal amount, DateTime reconciliationDate, string reference)
 {
-    if (amount > 0)
-        consumer.Wallet.Credit(amount, WalletTransactionType.Reconciliation, reference);
-    else
-        consumer.Wallet.Debit(-amount, WalletTransactionType.Reconciliation, reference);
+    // Explicitly track the new ledger entry as Added, same as the recharge endpoint does and for
+    // the same reason (see its comment): the wallet was loaded from the DB (already tracked, not
+    // part of a brand-new graph), and EF's change detection does not reliably infer "newly added"
+    // for an entity appended to an already-tracked entity's backing-field collection — it can
+    // mis-detect it as Modified and emit a bogus UPDATE for a row that doesn't exist yet.
+    var walletTransaction = amount > 0
+        ? consumer.Wallet.Credit(amount, WalletTransactionType.Reconciliation, reference)
+        : consumer.Wallet.Debit(-amount, WalletTransactionType.Reconciliation, reference);
+    db.WalletTransactions.Add(walletTransaction);
 
     var adjustment = new ReconciliationAdjustment(
         Guid.NewGuid(), consumer.Id, consumer.AccountNumber, amount, reconciliationDate, reference,
@@ -1239,7 +1244,8 @@ app.MapPost("/api/v1/consumers/{accountNumber}/reconciliation-adjustments", asyn
     if (string.IsNullOrWhiteSpace(request.Reference))
         return Results.BadRequest(new { error = "A reference is required for a reconciliation adjustment." });
 
-    var consumer = await db.Consumers.Include(c => c.Wallet).FirstOrDefaultAsync(c => c.AccountNumber == accountNumber);
+    var consumer = await db.Consumers.Include(c => c.Wallet).ThenInclude(w => w.Transactions)
+        .FirstOrDefaultAsync(c => c.AccountNumber == accountNumber);
     if (consumer is null)
         return Results.NotFound();
 

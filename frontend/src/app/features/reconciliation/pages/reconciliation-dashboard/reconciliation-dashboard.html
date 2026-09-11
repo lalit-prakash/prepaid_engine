@@ -1,0 +1,99 @@
+<div class="reconciliation">
+  <div class="page-header">
+    <h1>Billing Reconciliation</h1>
+    <p class="page-header__subtitle">{{ adjustments().length }} adjustment(s) pushed by RMS against consumer wallets</p>
+  </div>
+
+  <section class="panel apply-panel">
+    <h2>Apply a Reconciliation Adjustment</h2>
+    <p class="panel__hint">
+      Mirrors the real <code>POST /consumers/&#123;accountNumber&#125;/reconciliation-adjustments</code>
+      endpoint RMS calls — a gap RMS found between its shadow monthly bill and AMISP's daily
+      billing data, or a credit owed the consumer. The amount can be negative. This is a real
+      action: it changes the consumer's actual wallet balance, tagged distinctly in the ledger.
+    </p>
+    <form (ngSubmit)="submitAdjustment()">
+      <div class="form-row">
+        <label>
+          Account Number
+          <input type="text" name="accountNumber" [(ngModel)]="accountNumber" placeholder="DEMO-0001" />
+        </label>
+        <label>
+          Amount (₹, signed)
+          <input type="number" step="0.01" name="amount" [ngModel]="amount()" (ngModelChange)="amount.set($event)" />
+        </label>
+        <label class="reference-label">
+          Reference
+          <input type="text" name="reference" [(ngModel)]="reference" placeholder="RMS shadow-bill gap for Sep 2026" />
+        </label>
+      </div>
+      <button type="submit" [disabled]="applying()">
+        {{ applying() ? 'Applying…' : 'Apply Adjustment' }}
+      </button>
+    </form>
+    @if (applyError()) {
+      <p class="form-error">{{ applyError() }}</p>
+    }
+    @if (applySuccess()) {
+      <p class="form-success">{{ applySuccess() }}</p>
+    }
+  </section>
+
+  @if (loading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else {
+    <section class="kpi-row">
+      <pe-kpi-card label="Total Adjustments" [value]="adjustments().length" tone="primary" />
+      <pe-kpi-card label="Total Credited" [value]="'₹' + (totalCredited | number: '1.2-2')" tone="success" />
+      <pe-kpi-card label="Total Debited" [value]="'₹' + (totalDebited | number: '1.2-2')" tone="danger" />
+    </section>
+
+    <div class="toolbar">
+      <input
+        type="search"
+        placeholder="Search account number or name…"
+        [value]="searchTerm()"
+        (input)="searchTerm.set($any($event.target).value)"
+      />
+    </div>
+
+    @if (filtered.length === 0) {
+      <div class="empty-panel">No reconciliation adjustments matched your search.</div>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Applied</th>
+              <th>Account</th>
+              <th>Consumer</th>
+              <th class="num">Amount</th>
+              <th>Payment Mode</th>
+              <th>Reference</th>
+              <th class="num">Balance After</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (a of filtered; track a.id) {
+              <tr>
+                <td>{{ a.appliedAt | date: 'medium' }}</td>
+                <td><a [routerLink]="['/consumers', a.accountNumber]">{{ a.accountNumber }}</a></td>
+                <td>{{ a.name }}</td>
+                <td class="num" [class.negative]="a.amount < 0">
+                  {{ a.amount < 0 ? '-' : '+' }}₹{{ (a.amount < 0 ? -a.amount : a.amount) | number: '1.2-2' }}
+                </td>
+                <td>{{ a.paymentMode }}</td>
+                <td class="reference">{{ a.reference }}</td>
+                <td class="num">₹{{ a.balanceAfter | number: '1.2-2' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</div>

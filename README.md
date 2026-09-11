@@ -13,20 +13,20 @@ working ledger for billing/recharge orchestration, not a competing wallet.
 **Current status**: backend domain + persistence + a mock RMS integration + mock meter-command
 and connectivity-command integrations + a small demo API + a minimal hand-built demo console +
 an Angular enterprise-operations frontend covering the real API surface (Overview, Consumers/360
-with a real RC/DC panel, Billing, Recharge Operations, Meter Credit, Tariffs & Rules,
-Calculation Workbench, and 2 of 14 Reports), all verified against real data (a live PostgreSQL
-database and MePDCL's own tariff book + reference calculation workbooks). Meter credit is wired
-into the recharge flow end to end (see [Meter credit domain model](#meter-credit-domain-model)
-below) with its own dashboard/detail pages, including a genuine `Retry()` action. RC/DC is now
-wired into a real disconnect/reconnect workflow too (see
-[RC/DC domain model](#rcdc-domain-model--wired-into-a-disconnectreconnect-workflow) below),
-and now has its own dashboard/detail pages too, mirroring Meter Credit's. Backend support now
-also exists for prepaid conversion, billing reconciliation, operational exceptions, an audit
+with a real RC/DC panel, Billing, Recharge Operations, Meter Credit, RC/DC, Conversion,
+Reconciliation, Exceptions, Audit, Tariffs & Rules, Calculation Workbench, and 2 of 14 Reports),
+all verified against real data (a live PostgreSQL database and MePDCL's own tariff book +
+reference calculation workbooks). Meter credit is wired into the recharge flow end to end (see
+[Meter credit domain model](#meter-credit-domain-model) below) with its own dashboard/detail
+pages, including a genuine `Retry()` action. RC/DC is wired into a real disconnect/reconnect
+workflow (see
+[RC/DC domain model](#rcdc-domain-model--wired-into-a-disconnectreconnect-workflow) below) with
+its own dashboard/detail pages too, mirroring Meter Credit's. Backend and frontend support now
+also exist for prepaid conversion, billing reconciliation, operational exceptions, an audit
 trail, and tariff version history, implementing sections 1-8 of MePDCL's own AMISP integration
 requirement doc for the first two (see
 [Prepaid conversion, billing reconciliation, and the AMISP integration requirement doc](#prepaid-conversion-billing-reconciliation-and-the-amisp-integration-requirement-doc)
-below) — none of these five have a frontend page yet. The remaining frontend modules
-(Conversion, Exceptions, Reconciliation, Automation, Audit, System Health) still render an
+below). The remaining frontend modules (Automation Center, System Health) still render an
 explicit "not yet backed" stub rather than invented data — see
 [docs/frontend-scope.md](docs/frontend-scope.md) for the real-vs-planned boundary.
 
@@ -589,10 +589,22 @@ Built:
   acknowledged/failed/timed-out), cross-linked to its originating recharge, with a **genuine**
   Retry action for `Failed`/`TimedOut` commands — gated behind an explicit confirmation dialog,
   re-dispatches through the real `IMeterCommandClient`, never a fabricated status flip.
+- **Conversion** (`/conversion`) — every RMS postpaid→prepaid conversion request (AMISP spec
+  §1), real KPIs (completed/rejected/pending counts, success rate), and search. Read-only — RMS
+  submits the batch itself; this UI shows the resulting decision trail, never triggers one.
+- **Reconciliation** (`/reconciliation`) — every applied `ReconciliationAdjustment` (AMISP spec
+  §7-8), real KPIs (total credited/debited), and a genuine "Apply a Reconciliation Adjustment"
+  form that calls the real endpoint and changes the consumer's actual wallet balance.
+- **Exceptions** (`/exceptions`) — every auto-raised `OperationalException`, real KPIs
+  (open/resolved counts), and a **genuine** Resolve action gated behind a mandatory note.
+- **Audit** (`/audit`) — the immutable audit log, filterable by entity type and free text.
+  Read-only by design — an audit entry is never edited or deleted from the UI.
 - **Tariffs & Rules** (`/tariffs`) — the real tariff configuration this engine bills against.
 - **Tariff Detail** (`/tariffs/:id`) — one tariff's slab table, ToD schedule (when configured),
-  and vend limits. Read-only — no create/update endpoint exists, since a real tariff-change
-  workflow needs versioning/effective-dating/approval this project hasn't built yet.
+  vend limits, and its recorded **Version History** (mandatory change note + effective date per
+  entry, if any changes have been logged). Read-only — no create/update endpoint exists, since a
+  real tariff-change workflow needs versioning/effective-dating/approval this project hasn't
+  built yet (version *history* can still be recorded independently, which is what this shows).
 - **Calculation Workbench** (`/calculation-workbench`) — a SIMULATION-ONLY charge preview for
   an arbitrary tariff/consumption/load combination. The frontend never computes the numbers
   itself: the backend delegates to the exact same domain methods production billing uses.

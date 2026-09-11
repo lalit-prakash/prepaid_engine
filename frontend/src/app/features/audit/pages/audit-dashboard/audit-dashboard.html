@@ -1,0 +1,73 @@
+<div class="audit">
+  <div class="page-header">
+    <h1>Audit</h1>
+    <p class="page-header__subtitle">{{ entries().length }} audit entr{{ entries().length === 1 ? 'y' : 'ies' }} — an immutable, append-only log</p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else {
+    <section class="kpi-row">
+      <pe-kpi-card label="Total Entries" [value]="entries().length" tone="primary" />
+      <pe-kpi-card label="Entity Types" [value]="entityTypes.length" tone="info" />
+    </section>
+
+    <div class="toolbar">
+      <input
+        type="search"
+        placeholder="Search entity ID, action, actor, or details…"
+        [value]="searchTerm()"
+        (input)="searchTerm.set($any($event.target).value)"
+      />
+      <select [value]="entityTypeFilter()" (change)="entityTypeFilter.set($any($event.target).value)">
+        <option value="">All entity types</option>
+        @for (type of entityTypes; track type) {
+          <option [value]="type">{{ type }}</option>
+        }
+      </select>
+    </div>
+
+    @if (filtered.length === 0) {
+      <div class="empty-panel">No audit entries matched your search.</div>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Entity Type</th>
+              <th>Entity ID</th>
+              <th>Action</th>
+              <th>Actor</th>
+              <th>Old → New</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (e of filtered; track e.id) {
+              <tr>
+                <td>{{ e.occurredAt | date: 'medium' }}</td>
+                <td>{{ e.entityType }}</td>
+                <td class="mono">{{ e.entityId }}</td>
+                <td>{{ e.action }}</td>
+                <td>{{ e.actor }}</td>
+                <td>
+                  @if (e.oldValue || e.newValue) {
+                    {{ e.oldValue ?? '—' }} → {{ e.newValue ?? '—' }}
+                  } @else {
+                    <span class="empty-note">—</span>
+                  }
+                </td>
+                <td class="details">{{ e.details ?? '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</div>

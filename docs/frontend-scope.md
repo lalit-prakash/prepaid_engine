@@ -91,6 +91,15 @@ Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
     consumption/reading data), plus CSV export.
   - CSV export (`shared/utils/csv-export.ts`) is genuinely functional — it serializes exactly
     the rows already on screen via a Blob download, not a placeholder button.
+- **Conversion** (`/conversion`) — every RMS conversion request (AMISP spec §1), real KPIs, and
+  search. Read-only — RMS submits the batch itself, this UI doesn't.
+- **Reconciliation** (`/reconciliation`) — every applied adjustment plus a genuine "Apply a
+  Reconciliation Adjustment" form that calls the real endpoint and changes the consumer's actual
+  wallet balance.
+- **Exceptions** (`/exceptions`) — every auto-raised operational exception, with a genuine
+  confirmed Resolve action requiring a mandatory note.
+- **Audit** (`/audit`) — the immutable, filterable audit log. Read-only by design.
+- **Tariff Detail**'s Version History section — a tariff's recorded parameter changes, if any.
 
 ## What's a labeled stub
 
@@ -176,8 +185,29 @@ and `GET /api/v1/billing-reconciliation/daily-export` are all real and tested, r
 earlier generic (and wrong-direction) guess at these two domain models built before the real spec
 document arrived. `GET /api/v1/exceptions`, `GET /api/v1/audit-entries`, and
 `POST`/`GET /api/v1/tariffs/{id}/versions` are also real (built alongside, not part of the AMISP
-spec). None of these five backends have a frontend page — they join Conversion/Exceptions/
-Reconciliation/Audit in the stub list below until a UI phase is scoped for them.
+spec).
+
+**All five now have a real frontend page too.** `/conversion` (real KPIs — total/completed/
+rejected/pending/success rate — and a searchable table of every RMS conversion request, read-only
+since RMS submits the batch itself, not this UI), `/reconciliation` (real KPIs plus a genuine
+"Apply a Reconciliation Adjustment" form that calls the actual endpoint and changes the consumer's
+real wallet balance — not a preview), `/exceptions` (real KPIs, a searchable table, and a genuine
+confirmed Resolve action requiring a mandatory note, calling `POST /exceptions/{id}/resolve`), and
+`/audit` (a read-only, filterable log — never editable, matching the entity's own immutability).
+Tariff version history got a section on the existing Tariff Detail page instead of a new route,
+since it's naturally scoped to one tariff rather than a cross-consumer list.
+
+**A real bug was found and fixed while wiring the Reconciliation page's Apply form to the live
+API**: `POST /consumers/{accountNumber}/reconciliation-adjustments` threw an unhandled
+`DbUpdateConcurrencyException` on every call. The cause: unlike the recharge endpoint (which
+explicitly calls `db.WalletTransactions.Add(...)` on the new ledger entry, with a comment
+explaining why), the new reconciliation code relied on EF Core's automatic change detection to
+notice a `WalletTransaction` appended to an already-tracked `Consumer.Wallet`'s backing
+collection — which EF misdetects as a `Modified` entity rather than `Added`, emitting a bogus
+`UPDATE` for a row that doesn't exist yet. Fixed by explicitly tracking the new transaction the
+same way the recharge endpoint already does, and by loading `Wallet.Transactions` in the first
+place (it wasn't included at all). Verified live: both a positive and a negative adjustment now
+apply cleanly and show up correctly in the dashboard and the audit log.
 
 **One known frontend gap from this phase:** the recharge endpoint now enforces a real Rs. 500
 minimum (AMISP spec §6), but Consumer 360's recharge form has no client-side minimum-amount
@@ -199,9 +229,9 @@ original `/reconnect` dispatch. This is exactly the kind of gap the intent-vs-ac
 split exists to catch — and also exactly why time-sensitive preconditions need re-checking at
 every dispatch point, not just the first one.
 
-Next up: Conversion, Reconciliation, Exception, Audit, and Tariff Version History all now have
-real backend support (see above) but no frontend page — building those UIs is the next phase in
-spec order, followed by the reports that depend on all of that data (including the now-unblocked
-`Day-wise RC/DC Report`s and `Meter Credit Failure Report`). Each phase gets its own real backend
-support (or an explicit mock clearly labeled as such) before its UI is built — never the reverse,
-which is exactly why these five have working endpoints today and zero frontend surface.
+Next up: Conversion, Reconciliation, Exception, Audit, and Tariff Version History now all have
+both real backend support and a real frontend page. What's left: the reports that depend on all
+of that data (including the now-unblocked `Day-wise RC/DC Report`s and `Meter Credit Failure
+Report`), and the remaining stub modules (Conversion's own detail drill-down if one is scoped,
+Automation Center, System Health). Each phase still gets its own real backend support (or an
+explicit mock clearly labeled as such) before its UI is built — never the reverse.

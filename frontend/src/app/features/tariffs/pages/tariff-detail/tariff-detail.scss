@@ -64,6 +64,11 @@
   padding: var(--space-5);
 }
 .panel h2 { font-size: var(--font-size-section-title); margin-bottom: var(--space-3); }
+.panel__hint { color: var(--text-muted); font-size: var(--font-size-meta); margin-bottom: var(--space-4); line-height: 1.5; }
+
+.version-history { margin-top: var(--space-5); }
+.change-note { max-width: 280px; white-space: normal; }
+.empty-note { color: var(--text-muted); font-size: var(--font-size-body); }
 
 .mini-table { width: 100%; font-size: var(--font-size-table); }
 .mini-table th {

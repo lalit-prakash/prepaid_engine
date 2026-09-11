@@ -31,14 +31,14 @@ export class Shell {
     { label: 'Recharge Operations', path: '/recharge', icon: '⇄' },
     { label: 'Meter Credit', path: '/meter-credit', icon: '◈' },
     { label: 'RC / DC', path: '/rc-dc', icon: '⏻' },
-    { label: 'Conversion', path: '/conversion', icon: '⇌', stub: true },
-    { label: 'Exceptions', path: '/exceptions', icon: '!', stub: true },
-    { label: 'Reconciliation', path: '/reconciliation', icon: '≈', stub: true },
+    { label: 'Conversion', path: '/conversion', icon: '⇌' },
+    { label: 'Exceptions', path: '/exceptions', icon: '!' },
+    { label: 'Reconciliation', path: '/reconciliation', icon: '≈' },
     { label: 'Tariffs & Rules', path: '/tariffs', icon: '§' },
     { label: 'Calculation Workbench', path: '/calculation-workbench', icon: 'ƒ' },
     { label: 'Reports', path: '/reports', icon: '▤' },
     { label: 'Automation Center', path: '/automation', icon: '⚙', stub: true },
-    { label: 'Audit & Activity', path: '/audit', icon: '⏱', stub: true },
+    { label: 'Audit & Activity', path: '/audit', icon: '⏱' },
     { label: 'System Health', path: '/system-health', icon: '♥', stub: true },
   ];
 

@@ -83,5 +83,36 @@
         </dl>
       </section>
     </div>
+
+    <section class="panel version-history">
+      <h2>Version History</h2>
+      <p class="panel__hint">
+        Recorded parameter changes (GET /api/v1/tariffs/&#123;id&#125;/versions) — this tariff has no
+        update endpoint yet, so a version here reflects a change logged independently, not one
+        applied through this page.
+      </p>
+      @if (versionsLoading()) {
+        <p class="empty-note">Loading version history…</p>
+      } @else if (versions().length === 0) {
+        <p class="empty-note">No parameter changes recorded for this tariff yet.</p>
+      } @else {
+        <table class="mini-table">
+          <thead>
+            <tr><th>Effective</th><th>Field</th><th>Old → New</th><th>Change Note</th><th>Recorded</th></tr>
+          </thead>
+          <tbody>
+            @for (v of versions(); track v.id) {
+              <tr>
+                <td>{{ v.effectiveDate | date: 'mediumDate' }}</td>
+                <td>{{ v.fieldName }}</td>
+                <td>{{ v.oldValue }} → {{ v.newValue }}</td>
+                <td class="change-note">{{ v.changeNote }}</td>
+                <td>{{ v.recordedAt | date: 'medium' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
   }
 </div>

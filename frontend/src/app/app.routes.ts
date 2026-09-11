@@ -70,9 +70,27 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/rc-dc/pages/rc-dc-detail/rc-dc-detail').then((m) => m.RcDcDetail),
       },
-      ...stubRoute('conversion', 'Conversion'),
-      ...stubRoute('exceptions', 'Exceptions'),
-      ...stubRoute('reconciliation', 'Reconciliation'),
+      {
+        path: 'conversion',
+        loadComponent: () =>
+          import('./features/conversion/pages/conversion-dashboard/conversion-dashboard').then(
+            (m) => m.ConversionDashboard,
+          ),
+      },
+      {
+        path: 'exceptions',
+        loadComponent: () =>
+          import('./features/exceptions/pages/exceptions-dashboard/exceptions-dashboard').then(
+            (m) => m.ExceptionsDashboard,
+          ),
+      },
+      {
+        path: 'reconciliation',
+        loadComponent: () =>
+          import('./features/reconciliation/pages/reconciliation-dashboard/reconciliation-dashboard').then(
+            (m) => m.ReconciliationDashboard,
+          ),
+      },
       {
         path: 'tariffs',
         loadComponent: () =>
@@ -108,7 +126,11 @@ export const routes: Routes = [
           ),
       },
       ...stubRoute('automation', 'Automation Center'),
-      ...stubRoute('audit', 'Audit & Activity'),
+      {
+        path: 'audit',
+        loadComponent: () =>
+          import('./features/audit/pages/audit-dashboard/audit-dashboard').then((m) => m.AuditDashboard),
+      },
       ...stubRoute('system-health', 'System Health'),
       { path: '**', redirectTo: 'overview' },
     ],
