@@ -32,6 +32,37 @@
       </label>
     </div>
 
+    @if (selectedMeterIds().size > 0) {
+      <div class="bulk-bar">
+        @if (!bulkClearing()) {
+          <span>{{ selectedMeterIds().size }} selected</span>
+          <button type="button" class="clear-btn" (click)="requestBulkClear()">Clear Selected</button>
+        } @else {
+          <div class="bulk-confirm">
+            <p>
+              Clear {{ selectedMeterIds().size }} selected billing hold(s)? One shared resolution
+              note is applied to all of them.
+            </p>
+            <div class="bulk-confirm__row">
+              <input
+                type="text"
+                placeholder="Resolution note (applies to all selected)…"
+                [(ngModel)]="bulkNote"
+              />
+              <button type="button" class="clear-btn" [disabled]="bulkSubmitting()" (click)="confirmBulkClear()">
+                {{ bulkSubmitting() ? 'Clearing…' : 'Confirm' }}
+              </button>
+              <button type="button" class="cancel-btn" (click)="cancelBulkClear()">Cancel</button>
+            </div>
+            @if (bulkError()) { <div class="form-error">{{ bulkError() }}</div> }
+          </div>
+        }
+      </div>
+    }
+    @if (bulkResult()) {
+      <div class="bulk-result">{{ bulkResult() }}</div>
+    }
+
     @if (filtered.length === 0) {
       <div class="empty-panel">No billing holds matched your search.</div>
     } @else {
@@ -39,6 +70,9 @@
         <table>
           <thead>
             <tr>
+              <th class="checkbox-col">
+                <input type="checkbox" [checked]="allActiveSelected" (change)="toggleSelectAll()" title="Select all active holds" />
+              </th>
               <th>Blocked</th>
               <th>Account</th>
               <th>Consumer</th>
@@ -51,6 +85,11 @@
           <tbody>
             @for (h of filtered; track h.id) {
               <tr>
+                <td class="checkbox-col">
+                  @if (h.actualBillingBlocked) {
+                    <input type="checkbox" [checked]="isSelected(h.meterId)" (change)="toggleSelect(h.meterId)" />
+                  }
+                </td>
                 <td>{{ h.blockedAt | date: 'medium' }}</td>
                 <td><a [routerLink]="['/consumers', h.accountNumber]">{{ h.accountNumber }}</a></td>
                 <td>{{ h.name }}</td>

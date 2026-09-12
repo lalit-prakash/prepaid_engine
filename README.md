@@ -477,6 +477,11 @@ adjustment, never a blind full re-debit on top of what the hourly debits already
   **Billing Holds** (`/billing-holds`): real KPIs (total/active/cleared), a searchable table, a
   toggle to include cleared history, and a genuine confirmed Clear action requiring the same
   mandatory note the endpoint enforces. Bug (4) above was found while verifying this live.
+  A bulk variant followed: `POST /api/v1/meter-data/billing-holds/clear-bulk` clears several
+  meters at once with one shared resolution note (a bad/inactive meter ID in the batch is
+  reported per-item, matching the batch-processing pattern already used by
+  `POST /api/v1/conversions` — never a failed batch), and the frontend page gained a checkbox
+  per active row, a "select all" header checkbox, and a "Clear Selected" bulk action.
 - **Explicitly out of scope for this phase** (per the spec's own "known limitations" section,
   and this project's discipline of never building a fake version of something real):
   a formal VEE (validation/estimation/editing) service with configurable thresholds, a real SMS
@@ -586,6 +591,7 @@ dotnet tool run dotnet-ef migrations add <Name> \
 | `GET /api/v1/notifications` | HTTP Basic | Every consumer's queued notification history, cross-consumer — backs Notification History |
 | `GET /api/v1/meter-data/billing-holds` | HTTP Basic | Every `MeterBillingControl` hold (active-only by default, `?activeOnly=false` for full history) |
 | `POST /api/v1/meter-data/{meterId}/billing-hold/clear` | HTTP Basic | Clears an active billing hold — requires a mandatory resolution note |
+| `POST /api/v1/meter-data/billing-holds/clear-bulk` | HTTP Basic | Clears several active billing holds at once with one shared resolution note — a bad/inactive meter ID in the batch is reported per-item, not a batch failure |
 | `GET /swagger` | none (Development only) | Interactive API docs |
 
 Set Basic-auth demo credentials before running (`appsettings.json` only holds `CHANGE_ME`
@@ -714,8 +720,9 @@ Built:
 - **Billing Holds** (`/billing-holds`) — every `MeterBillingControl` hold (real KPIs, a searchable
   table, a toggle to include cleared history), auto-raised on a real negative-consumption Load
   Survey sequence, with a **genuine** confirmed Clear action requiring a mandatory resolution
-  note — see the [LS/DLP billing pipeline](#lsdlp-billing-pipeline-load-survey--daily-load-profile)
-  section above.
+  note, plus a bulk variant — a checkbox per active row, "select all", and a "Clear Selected"
+  action applying one shared note to every selected meter — see the
+  [LS/DLP billing pipeline](#lsdlp-billing-pipeline-load-survey--daily-load-profile) section above.
 - **Notification History** (`/notifications`) — every consumer notification queued automatically
   during LS/DLP billing processing (real KPIs — pending/sent/failed — a searchable table, and an
   event-type filter). Read-only by design; this project has no real SMS gateway, so "Sent" only

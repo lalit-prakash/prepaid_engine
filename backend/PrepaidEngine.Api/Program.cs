@@ -1921,6 +1921,45 @@ app.MapPost("/api/v1/meter-data/{meterId:guid}/billing-hold/clear", async (
 .WithName("ClearMeterBillingHold")
 .RequireAuthorization();
 
+// Bulk variant of the endpoint above — the same mandatory-reason discipline, one shared
+// resolution note applied to every meter in the batch (an operator clearing several holds at
+// once is asserting one common finding, e.g. "confirmed with field crew: all listed meters were
+// reset during today's maintenance window" — if the reasons genuinely differ per meter, that's a
+// signal to clear them individually with the single-hold endpoint instead, not something this
+// endpoint should paper over with per-item notes). One bad meter ID in the batch does not fail
+// the rest — each is independently validated and reported, matching the batch-processing pattern
+// already used by POST /api/v1/conversions.
+app.MapPost("/api/v1/meter-data/billing-holds/clear-bulk", async (
+    BulkClearBillingHoldsRequest request, PrepaidEngineDbContext db) =>
+{
+    if (request.MeterIds is null || request.MeterIds.Count == 0)
+        return Results.BadRequest(new { error = "At least one meter ID is required." });
+    if (string.IsNullOrWhiteSpace(request.Note))
+        return Results.BadRequest(new { error = "A resolution note is required to clear a billing hold." });
+
+    var results = new List<object>();
+
+    foreach (var meterId in request.MeterIds.Distinct())
+    {
+        var control = await db.MeterBillingControls.FirstOrDefaultAsync(c => c.MeterId == meterId && c.ActualBillingBlocked);
+        if (control is null)
+        {
+            results.Add(new { MeterId = meterId, Cleared = false, Error = "No active billing hold exists for this meter." });
+            continue;
+        }
+
+        control.Clear(DateTime.UtcNow);
+        Audit(db, nameof(MeterBillingControl), control.Id.ToString(), "BillingHoldCleared", "system", details: request.Note);
+        results.Add(new { MeterId = meterId, Cleared = true, Error = (string?)null, control.Id, control.ClearedAt });
+    }
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(results);
+})
+.WithName("ClearMeterBillingHoldsBulk")
+.RequireAuthorization();
+
 app.Run();
 
 /// <param name="Amount">Recharge amount.</param>
@@ -1971,6 +2010,10 @@ public record ConversionResponseItem(string TransactionId, string ConsumerNumber
 
 /// <param name="Note">Required resolution note, mirroring ConnectivityCommand's mandatory Reason pattern.</param>
 public record ResolutionRequest(string Note);
+
+/// <param name="MeterIds">The meters whose active billing hold should be cleared.</param>
+/// <param name="Note">Required — one shared resolution note applied to every meter in the batch.</param>
+public record BulkClearBillingHoldsRequest(List<Guid> MeterIds, string Note);
 
 /// <summary>An RMS-pushed reconciliation gap/credit, per spec sections 7-8.</summary>
 /// <param name="Amount">Signed: positive credits the wallet, negative debits it.</param>

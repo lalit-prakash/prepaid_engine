@@ -32,6 +32,13 @@ export class BillingHoldsDashboard implements OnInit {
   protected readonly clearError = signal<string | null>(null);
   protected readonly clearSubmitting = signal(false);
 
+  protected readonly selectedMeterIds = signal<ReadonlySet<string>>(new Set());
+  protected readonly bulkClearing = signal(false);
+  protected readonly bulkNote = signal('');
+  protected readonly bulkError = signal<string | null>(null);
+  protected readonly bulkSubmitting = signal(false);
+  protected readonly bulkResult = signal<string | null>(null);
+
   constructor(private readonly billingHoldService: BillingHoldService) {}
 
   ngOnInit(): void {
@@ -40,6 +47,7 @@ export class BillingHoldsDashboard implements OnInit {
 
   private load(): void {
     this.loading.set(true);
+    this.selectedMeterIds.set(new Set());
     this.billingHoldService.list(!this.showCleared()).subscribe({
       next: (holds) => {
         this.holds.set(holds);
@@ -104,6 +112,77 @@ export class BillingHoldsDashboard implements OnInit {
       error: (err) => {
         this.clearSubmitting.set(false);
         this.clearError.set(err?.error?.error ?? 'Could not clear this billing hold.');
+      },
+    });
+  }
+
+  // ------------------------------------------------------------------ Bulk clear
+
+  protected get activeHolds(): BillingHoldSummary[] {
+    return this.filtered.filter((h) => h.actualBillingBlocked);
+  }
+
+  protected isSelected(meterId: string): boolean {
+    return this.selectedMeterIds().has(meterId);
+  }
+
+  toggleSelect(meterId: string): void {
+    const next = new Set(this.selectedMeterIds());
+    if (next.has(meterId)) next.delete(meterId);
+    else next.add(meterId);
+    this.selectedMeterIds.set(next);
+  }
+
+  protected get allActiveSelected(): boolean {
+    const active = this.activeHolds;
+    return active.length > 0 && active.every((h) => this.isSelected(h.meterId));
+  }
+
+  toggleSelectAll(): void {
+    if (this.allActiveSelected) {
+      this.selectedMeterIds.set(new Set());
+    } else {
+      this.selectedMeterIds.set(new Set(this.activeHolds.map((h) => h.meterId)));
+    }
+  }
+
+  requestBulkClear(): void {
+    this.bulkClearing.set(true);
+    this.bulkNote.set('');
+    this.bulkError.set(null);
+    this.bulkResult.set(null);
+  }
+
+  cancelBulkClear(): void {
+    this.bulkClearing.set(false);
+  }
+
+  confirmBulkClear(): void {
+    const meterIds = [...this.selectedMeterIds()];
+    const note = this.bulkNote().trim();
+    if (meterIds.length === 0) return;
+    if (!note) {
+      this.bulkError.set('A resolution note is required.');
+      return;
+    }
+
+    this.bulkSubmitting.set(true);
+    this.billingHoldService.clearBulk(meterIds, note).subscribe({
+      next: (results) => {
+        this.bulkSubmitting.set(false);
+        this.bulkClearing.set(false);
+        const clearedCount = results.filter((r) => r.cleared).length;
+        const skippedCount = results.length - clearedCount;
+        this.bulkResult.set(
+          skippedCount === 0
+            ? `Cleared ${clearedCount} billing hold(s).`
+            : `Cleared ${clearedCount} billing hold(s); ${skippedCount} skipped (no active hold).`,
+        );
+        this.load();
+      },
+      error: (err) => {
+        this.bulkSubmitting.set(false);
+        this.bulkError.set(err?.error?.error ?? 'Could not clear the selected billing holds.');
       },
     });
   }
