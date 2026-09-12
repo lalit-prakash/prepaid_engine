@@ -743,6 +743,9 @@ Built:
   note, plus a bulk variant — a checkbox per active row, "select all", and a "Clear Selected"
   action applying one shared note to every selected meter — see the
   [LS/DLP billing pipeline](#lsdlp-billing-pipeline-load-survey--daily-load-profile) section above.
+  As part of the UI/UX redesign's Phase 3 (Billing/LS-DLP workspaces), each row now carries a
+  "View LS data →" cross-link that jumps to Meter Data's Load Survey tab pre-filtered to that
+  meter number, using the same `q`/`tab` query-param prefill pattern established in Phases 1-2.
 - **Notification History** (`/notifications`) — every consumer notification queued automatically
   during LS/DLP billing processing (real KPIs — pending/sent/failed — a searchable table, and an
   event-type filter). Read-only by design; this project has no real SMS gateway, so "Sent" only
@@ -753,7 +756,9 @@ Built:
 - **Meter Data** (`/meter-data`) — the raw LS (Load Survey) and DLP (Daily Load Profile) streams
   the billing pipeline runs on, as two separate tabs (real KPIs per tab, a searchable table),
   never shown as one list — matching the pipeline's own core "LS and DLP are different meter-data
-  products" rule. Read-only by design; both lists are capped at the 500 most-recent rows.
+  products" rule. Read-only by design; both lists are capped at the 500 most-recent rows. Carries
+  a header cross-link to Billing Holds, and accepts `?tab=ls|dlp&q=...` to land pre-filtered on a
+  specific tab/search term (used by the Billing Holds cross-link above).
 - **Tariffs & Rules** (`/tariffs`) — the real tariff configuration this engine bills against.
 - **Tariff Detail** (`/tariffs/:id`) — one tariff's slab table, ToD schedule (when configured),
   vend limits, and its recorded **Version History** (mandatory change note + effective date per

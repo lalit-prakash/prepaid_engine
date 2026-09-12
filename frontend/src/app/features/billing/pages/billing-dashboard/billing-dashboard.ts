@@ -1,6 +1,6 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { BillService } from '../../../../core/services/bill.service';
 import { BillStatus } from '../../../../core/models/consumer.model';
 import { BillSummary } from '../../../../core/models/bill.model';
@@ -30,9 +30,13 @@ export class BillingDashboard implements OnInit {
   constructor(
     private readonly billService: BillService,
     private readonly router: Router,
+    private readonly route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
+    const initialQuery = this.route.snapshot.queryParamMap.get('q');
+    if (initialQuery) this.searchTerm.set(initialQuery);
+
     this.billService.list().subscribe({
       next: (bills) => {
         this.bills.set(bills);

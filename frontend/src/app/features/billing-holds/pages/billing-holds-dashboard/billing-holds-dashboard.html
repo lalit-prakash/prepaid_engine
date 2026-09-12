@@ -93,7 +93,12 @@
                 <td>{{ h.blockedAt | date: 'medium' }}</td>
                 <td><a [routerLink]="['/consumers', h.accountNumber]">{{ h.accountNumber }}</a></td>
                 <td>{{ h.name }}</td>
-                <td class="mono">{{ h.meterNumber }}</td>
+                <td class="mono">
+                  {{ h.meterNumber }}
+                  <a [routerLink]="['/meter-data']" [queryParams]="{ tab: 'ls', q: h.meterNumber }" class="row-cross-link">
+                    View LS data →
+                  </a>
+                </td>
                 <td class="reason">{{ h.blockReason }}</td>
                 <td>
                   @if (h.actualBillingBlocked) {

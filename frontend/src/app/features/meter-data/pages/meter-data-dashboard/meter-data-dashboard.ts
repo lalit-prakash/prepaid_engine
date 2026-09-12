@@ -1,6 +1,6 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MeterDataService } from '../../../../core/services/meter-data.service';
 import {
   DailyLoadProfileSummary,
@@ -41,9 +41,19 @@ export class MeterDataDashboard implements OnInit {
   protected readonly LoadSurveyStatus = LoadSurveyStatus;
   protected readonly DailyProfileStatus = DailyProfileStatus;
 
-  constructor(private readonly meterDataService: MeterDataService) {}
+  constructor(
+    private readonly meterDataService: MeterDataService,
+    private readonly route: ActivatedRoute,
+  ) {}
 
   ngOnInit(): void {
+    // Prefills from a cross-link (e.g. Billing Holds' "View LS data →") — real reuse of
+    // this page's own tab/search state, not a separate filtered endpoint.
+    const initialTab = this.route.snapshot.queryParamMap.get('tab');
+    if (initialTab === 'ls' || initialTab === 'dlp') this.activeTab.set(initialTab);
+    const initialQuery = this.route.snapshot.queryParamMap.get('q');
+    if (initialQuery) this.searchTerm.set(initialQuery);
+
     this.load();
   }
 

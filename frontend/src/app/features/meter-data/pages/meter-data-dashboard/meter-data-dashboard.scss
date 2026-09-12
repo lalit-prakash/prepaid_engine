@@ -1,6 +1,18 @@
-.page-header { margin-bottom: var(--space-5); }
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+}
 .page-header h1 { font-size: var(--font-size-page-title); }
-.page-header__subtitle { color: var(--text-secondary); margin-top: 4px; }
+.page-header__subtitle { color: var(--text-secondary); margin-top: 4px; max-width: 70ch; }
+.page-header__cross-link {
+  font-size: var(--font-size-meta);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
 
 .skeleton-row {
   display: grid;

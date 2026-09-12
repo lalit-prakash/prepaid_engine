@@ -1,9 +1,12 @@
 <div class="meter-data">
   <div class="page-header">
-    <h1>Meter Data</h1>
-    <p class="page-header__subtitle">
-      The raw LS (30-minute Load Survey) and DLP (Daily Load Profile) streams — two different meter-data products, never shown as one
-    </p>
+    <div>
+      <h1>Meter Data</h1>
+      <p class="page-header__subtitle">
+        The raw LS (30-minute Load Survey) and DLP (Daily Load Profile) streams — two different meter-data products, never shown as one
+      </p>
+    </div>
+    <a routerLink="/billing-holds" class="page-header__cross-link">Billing Holds →</a>
   </div>
 
   @if (loading()) {
