@@ -1729,6 +1729,61 @@ app.MapGet("/api/v1/consumers/{consumerId:guid}/notifications", async (Guid cons
 .WithName("GetConsumerNotifications")
 .RequireAuthorization();
 
+// Operator visibility into MeterBillingControl holds (spec §8) — without this, the clear
+// endpoint below has nothing for an operator to act against.
+app.MapGet("/api/v1/meter-data/billing-holds", async (bool? activeOnly, PrepaidEngineDbContext db) =>
+{
+    var query = db.MeterBillingControls.AsQueryable();
+    if (activeOnly ?? true)
+        query = query.Where(c => c.ActualBillingBlocked);
+
+    var holds = await (
+        from c in query
+        join consumer in db.Consumers on c.ConsumerId equals consumer.Id
+        join meter in db.Meters on c.MeterId equals meter.Id
+        orderby c.BlockedAt descending
+        select new
+        {
+            c.Id,
+            consumer.AccountNumber,
+            consumer.Name,
+            meter.MeterNumber,
+            c.ActualBillingBlocked,
+            c.BlockReason,
+            c.BlockedAt,
+            c.ClearedAt,
+        })
+        .ToListAsync();
+
+    return Results.Ok(holds);
+})
+.WithName("ListMeterBillingHolds")
+.RequireAuthorization();
+
+// The operator-facing clear API the LS/DLP spec §8 calls for — a documented follow-up when that
+// spec landed, built now. Requires a mandatory resolution note (this project's established
+// mandatory-reason discipline — see ConnectivityCommand.Reason) and leaves an audit trail; actual
+// billing for the meter resumes (both hourly LS and daily DLP) the moment the hold clears.
+app.MapPost("/api/v1/meter-data/{meterId:guid}/billing-hold/clear", async (
+    Guid meterId, ResolutionRequest request, PrepaidEngineDbContext db) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Note))
+        return Results.BadRequest(new { error = "A resolution note is required to clear a billing hold." });
+
+    var control = await db.MeterBillingControls.FirstOrDefaultAsync(c => c.MeterId == meterId && c.ActualBillingBlocked);
+    if (control is null)
+        return Results.NotFound(new { error = "No active billing hold exists for this meter." });
+
+    control.Clear(DateTime.UtcNow);
+
+    Audit(db, nameof(MeterBillingControl), control.Id.ToString(), "BillingHoldCleared", "system", details: request.Note);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { control.Id, control.MeterId, control.ActualBillingBlocked, control.ClearedAt });
+})
+.WithName("ClearMeterBillingHold")
+.RequireAuthorization();
+
 app.Run();
 
 /// <param name="Amount">Recharge amount.</param>

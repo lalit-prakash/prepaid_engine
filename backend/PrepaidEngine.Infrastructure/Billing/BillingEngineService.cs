@@ -37,13 +37,24 @@ public class BillingEngineService : IBillingEngineService
     {
         var results = new List<LoadSurveyIngestResult>();
 
+        // Blocks added earlier in THIS batch aren't visible to a DB query until SaveChangesAsync
+        // runs at the end of the whole batch — without tracking them separately, a batch
+        // containing e.g. the two 30-minute blocks forming one hour would check each block's
+        // continuity/duplicate status against the database only, missing the other block sitting
+        // right next to it in the same request. Assumes blocks for a given meter arrive in
+        // chronological order within a batch (matches the spec's own example payload).
+        var pendingLatestByMeter = new Dictionary<Guid, LoadSurveyInterval>();
+        var pendingKeys = new HashSet<(Guid MeterId, DateTime Start, DateTime End)>();
+
         foreach (var block in blocks)
         {
+            var key = (block.MeterId, block.IntervalStart, block.IntervalEnd);
+
             // Duplicate protection: MeterId + IntervalStart + IntervalEnd uniqueness (spec §5.2)
             // is also enforced at the database level (see LoadSurveyIntervalConfiguration) as the
             // final safety barrier under concurrent ingestion — this check gives a clean, honest
             // per-block result rather than surfacing a raw constraint-violation exception.
-            var duplicate = await _db.LoadSurveyIntervals.AnyAsync(
+            var duplicate = pendingKeys.Contains(key) || await _db.LoadSurveyIntervals.AnyAsync(
                 l => l.MeterId == block.MeterId && l.IntervalStart == block.IntervalStart && l.IntervalEnd == block.IntervalEnd,
                 cancellationToken);
 
@@ -75,16 +86,28 @@ public class BillingEngineService : IBillingEngineService
             // Sequence continuity: compare against the immediately preceding block for the SAME
             // physical meter only (MeterId scopes this naturally — see MeterAssignment's doc
             // comment on why a meter replacement can never produce a false-positive here).
-            var previous = await _db.LoadSurveyIntervals
-                .Where(l => l.MeterId == block.MeterId && l.IntervalEnd <= block.IntervalStart)
-                .OrderByDescending(l => l.IntervalEnd)
-                .FirstOrDefaultAsync(cancellationToken);
+            // Prefer a block already seen earlier in this same batch over the database, since it
+            // is chronologically more recent than anything a DB query alone could find.
+            LoadSurveyInterval? previous;
+            if (pendingLatestByMeter.TryGetValue(block.MeterId, out var pendingPrevious) && pendingPrevious.IntervalEnd <= block.IntervalStart)
+            {
+                previous = pendingPrevious;
+            }
+            else
+            {
+                previous = await _db.LoadSurveyIntervals
+                    .Where(l => l.MeterId == block.MeterId && l.IntervalEnd <= block.IntervalStart)
+                    .OrderByDescending(l => l.IntervalEnd)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
 
             if (previous is not null && block.CumulativeKwh < previous.CumulativeKwh)
             {
                 // Negative consumption is a data-quality event, never silently zeroed (spec §7).
                 interval.MarkRejected(LoadSurveyQuality.NegativeConsumption);
                 _db.LoadSurveyIntervals.Add(interval);
+                pendingKeys.Add(key);
+                pendingLatestByMeter[block.MeterId] = interval;
 
                 var control = await _db.MeterBillingControls.FirstOrDefaultAsync(
                     c => c.MeterId == block.MeterId, cancellationToken);
@@ -105,6 +128,8 @@ public class BillingEngineService : IBillingEngineService
 
             interval.MarkValidated();
             _db.LoadSurveyIntervals.Add(interval);
+            pendingKeys.Add(key);
+            pendingLatestByMeter[block.MeterId] = interval;
             results.Add(new LoadSurveyIngestResult(interval.Id, interval.Quality.ToString(), interval.Status.ToString(), null));
         }
 

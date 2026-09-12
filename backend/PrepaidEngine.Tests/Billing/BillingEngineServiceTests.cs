@@ -113,6 +113,40 @@ public class BillingEngineServiceTests : IDisposable
         Assert.True(control.ActualBillingBlocked);
     }
 
+    [Fact]
+    public async Task IngestLoadSurvey_NegativeConsumptionWithinSameBatch_IsDetected()
+    {
+        // Both blocks arrive in ONE call — nothing has been saved to the database yet when the
+        // second block's continuity check runs, so it must compare against the first block still
+        // sitting in this same batch, not just what's already persisted.
+        var hourStart = new DateTime(2026, 9, 11, 10, 0, 0, DateTimeKind.Utc);
+        var results = await _service.IngestLoadSurveyAsync(new[]
+        {
+            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourStart, hourStart.AddMinutes(30), 100m, 10m),
+            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourStart.AddMinutes(30), hourStart.AddMinutes(60), 50m, 0m),
+        });
+
+        Assert.Equal("Valid", results[0].Quality);
+        Assert.Equal("NegativeConsumption", results[1].Quality);
+        Assert.Equal("Rejected", results[1].Status);
+
+        var control = await _db.MeterBillingControls.SingleAsync(c => c.MeterId == _consumer.Meter.Id);
+        Assert.True(control.ActualBillingBlocked);
+    }
+
+    [Fact]
+    public async Task IngestLoadSurvey_DuplicateWithinSameBatch_IsDetected()
+    {
+        var hourStart = new DateTime(2026, 9, 11, 10, 0, 0, DateTimeKind.Utc);
+        var block = new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourStart, hourStart.AddMinutes(30), 10m, 10m);
+
+        var results = await _service.IngestLoadSurveyAsync(new[] { block, block });
+
+        Assert.Equal("Valid", results[0].Quality);
+        Assert.Equal("Duplicate", results[1].Quality);
+        Assert.Equal("Rejected", results[1].Status);
+    }
+
     // ------------------------------------------------------------------ Hourly processing
 
     [Fact]
