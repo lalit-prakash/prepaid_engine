@@ -2,7 +2,8 @@
   <div class="page-header">
     <h1>Reports</h1>
     <p class="page-header__subtitle">
-      2 of {{ reports.length }} reports are backed by real data today — the rest need domain
+      {{ enabledCount }} of {{ reports.length }} cards open to real data today — two as a
+      dedicated report page, the rest as that module's real dashboard; the remainder need domain
       models this project hasn't built yet (see each card's reason).
     </p>
   </div>
@@ -14,7 +15,7 @@
           <div class="report-card__category">{{ r.category }}</div>
           <h2>{{ r.title }}</h2>
           <p>{{ r.description }}</p>
-          <span class="report-card__cta">Run Report →</span>
+          <span class="report-card__cta">{{ r.linkKind === 'dashboard' ? 'Open Dashboard →' : 'Run Report →' }}</span>
         </a>
       } @else {
         <div class="report-card report-card--disabled">

@@ -7,13 +7,19 @@ interface ReportDefinition {
   category: string;
   description: string;
   path: string | null;
+  /** 'report': a dedicated report page with date/status filters and CSV export.
+   *  'dashboard': links out to that module's real (non-report) dashboard — real data, but
+   *  without a report page's filtering/export — the card's CTA reflects this distinction so
+   *  "Run Report" is never shown for a page that doesn't actually behave like one. */
+  linkKind?: 'report' | 'dashboard';
 }
 
 /**
  * Reports Center — lists every report from the original UI/UX request's mandatory-reports
- * section. Only reports with a real backing data source are clickable; the rest are shown
- * disabled with an honest reason, never built as fake pages with invented numbers. See
- * docs/frontend-scope.md for the current real-vs-planned boundary.
+ * section. Cards link to a real dedicated report page where one exists, or to that module's
+ * real dashboard where the underlying data exists but no dedicated report page has been built
+ * yet; only cards with neither are shown disabled with an honest reason — never a fake page
+ * with invented numbers. See docs/frontend-scope.md for the current real-vs-planned boundary.
  */
 @Component({
   selector: 'pe-reports-center',
@@ -22,6 +28,10 @@ interface ReportDefinition {
   styleUrl: './reports-center.scss',
 })
 export class ReportsCenter {
+  protected get enabledCount(): number {
+    return this.reports.filter((r) => r.path).length;
+  }
+
   protected readonly reports: ReportDefinition[] = [
     {
       id: 'daily-billing',
@@ -29,6 +39,7 @@ export class ReportsCenter {
       category: 'Billing',
       description: 'Every bill generated, with the full charge breakdown, filterable by date range, category, and status.',
       path: '/reports/daily-billing',
+      linkKind: 'report',
     },
     {
       id: 'charge-calculation',
@@ -36,6 +47,7 @@ export class ReportsCenter {
       category: 'Financial',
       description: 'Full calculation trace for every bill belonging to one consumer.',
       path: '/reports/charge-calculation',
+      linkKind: 'report',
     },
     {
       id: 'day-wise-rc',
@@ -55,14 +67,15 @@ export class ReportsCenter {
       id: 'postpaid-to-prepaid',
       title: 'Postpaid → Prepaid Conversion Report',
       category: 'Conversion',
-      description: 'Consumers converted from postpaid to prepaid billing.',
-      path: null,
+      description: 'Every RMS postpaid→prepaid conversion request and its decision trail — opens the real Conversion dashboard (not yet a dedicated date-filterable report page).',
+      path: '/conversion',
+      linkKind: 'dashboard',
     },
     {
       id: 'prepaid-to-postpaid',
       title: 'Prepaid → Postpaid Conversion Report',
       category: 'Conversion',
-      description: 'Consumers converted from prepaid to postpaid billing.',
+      description: 'The reverse direction (prepaid back to postpaid) has no domain model — every ConversionRequest this project handles is a postpaid→prepaid request per the AMISP spec.',
       path: null,
     },
     {
@@ -97,29 +110,33 @@ export class ReportsCenter {
       id: 'reconciliation',
       title: 'Reconciliation Report',
       category: 'Reconciliation',
-      description: 'RMS vs. engine vs. meter amount mismatches.',
-      path: null,
+      description: 'Every applied reconciliation adjustment (RMS vs. engine amount mismatches) — opens the real Reconciliation dashboard (not yet a dedicated date-filterable report page).',
+      path: '/reconciliation',
+      linkKind: 'dashboard',
     },
     {
       id: 'exception',
       title: 'Exception Report',
       category: 'Exception',
-      description: 'Open and resolved operational exceptions.',
-      path: null,
+      description: 'Every auto-raised operational exception, open and resolved — opens the real Exceptions dashboard (not yet a dedicated date-filterable report page).',
+      path: '/exceptions',
+      linkKind: 'dashboard',
     },
     {
       id: 'audit',
       title: 'Audit Report',
       category: 'Audit',
-      description: 'Every tracked configuration and operational change.',
-      path: null,
+      description: 'The immutable audit log of tracked configuration and operational changes — opens the real Audit Activity page (not yet a dedicated date-filterable report page).',
+      path: '/audit',
+      linkKind: 'dashboard',
     },
     {
       id: 'tariff-change',
       title: 'Tariff Change Report',
       category: 'Tariff',
-      description: 'Tariff parameter changes across versions.',
-      path: null,
+      description: 'Recorded tariff parameter changes — each tariff’s own Version History is available from its detail page (not yet a single cross-tariff report view).',
+      path: '/tariffs',
+      linkKind: 'dashboard',
     },
   ];
 
@@ -127,26 +144,17 @@ export class ReportsCenter {
     switch (report.id) {
       case 'day-wise-rc':
       case 'day-wise-dc':
-        return 'ConnectivityCommand data exists (see RC/DC on Consumer 360) but no daily-aggregation report endpoint is built yet';
-      case 'postpaid-to-prepaid':
+        return 'Per-command connectivity data exists (see the RC/DC dashboard), but a day-wise aggregation endpoint is not built yet';
       case 'prepaid-to-postpaid':
-        return 'No conversion workflow domain model exists yet';
+        return 'No reverse-conversion domain model exists — every ConversionRequest handled here is postpaid→prepaid';
       case 'recharge-summary':
-        return 'Requires daily aggregation not yet built';
+        return 'Per-transaction recharge data exists (see Recharge Operations), but a day-wise aggregation endpoint is not built yet';
       case 'billing-failure':
-        return 'No billing-failure tracking domain model exists yet';
+        return 'No billing-failure tracking domain model exists yet — a rejected bill has no distinct failure record';
       case 'recharge-failure':
         return 'Recharge failures are visible per-transaction in Recharge Operations, but not yet as a dedicated report';
       case 'meter-credit-failure':
-        return 'No meter-command domain model exists yet';
-      case 'reconciliation':
-        return 'No reconciliation domain model exists yet';
-      case 'exception':
-        return 'No exception-tracking domain model exists yet';
-      case 'audit':
-        return 'No audit-trail domain model exists yet';
-      case 'tariff-change':
-        return 'Tariffs have no version history yet (single current version only)';
+        return 'Meter command failures are visible per-transaction in Meter Credit, but not yet as a dedicated report';
       default:
         return 'Not yet available';
     }

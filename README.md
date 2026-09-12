@@ -768,13 +768,27 @@ Built:
 - **Calculation Workbench** (`/calculation-workbench`) — a SIMULATION-ONLY charge preview for
   an arbitrary tariff/consumption/load combination. The frontend never computes the numbers
   itself: the backend delegates to the exact same domain methods production billing uses.
-- **Reports** (`/reports`) — lists all 14 mandatory reports from the UI/UX spec; only 2 are
-  real and clickable (the rest are disabled with a specific reason, e.g. "No RC/DC domain
-  model exists yet"):
+- **Reports** (`/reports`) — lists all 14 mandatory reports from the UI/UX spec. As of the
+  redesign's Phase 4 pass, this was corrected against the app's actual current state — several
+  cards were previously disabled with claims ("no reconciliation domain model exists yet", "no
+  audit-trail domain model exists yet", etc.) that had gone stale as those modules were built in
+  earlier phases of this project. 7 of 14 cards now open to real data (2 as a dedicated report
+  page, 5 as that module's real dashboard where no dedicated report page exists yet); the
+  remaining 7 stay honestly disabled with an accurate reason:
   - **Daily Billing Report** (`/reports/daily-billing`) — real bills filterable by date/status/
-    search, with a real summary and CSV export.
+    search, with a real summary and CSV export ("Run Report →").
   - **Individual Charge Calculation Report** (`/reports/charge-calculation`) — every real bill
-    for one consumer with its full calculation trace, plus CSV export.
+    for one consumer with its full calculation trace, plus CSV export ("Run Report →").
+  - **Postpaid → Prepaid Conversion**, **Reconciliation**, **Exception**, **Audit**, and
+    **Tariff Change** "reports" now open the real Conversion/Reconciliation/Exceptions/Audit/
+    Tariffs dashboard/detail pages ("Open Dashboard →") — real data, but without a report page's
+    date filters/CSV export, which the card's CTA makes explicit rather than implying more than
+    what's actually there.
+  - The remaining 7 (Day-wise RC/DC, Prepaid → Postpaid Conversion, Day-wise Recharge Summary,
+    Billing/Recharge/Meter-Credit Failure reports) stay disabled with a reason naming exactly
+    what real data already exists per-transaction vs. what a true report would still need
+    (typically a day-wise aggregation endpoint, or — for the reverse conversion direction — a
+    domain model that doesn't exist at all).
 - Every other sidebar module routes to an honest "not yet backed" stub, never a fake dashboard.
 
 ## Documentation
