@@ -39,6 +39,7 @@ export class Shell {
     { label: 'Reports', path: '/reports', icon: '▤' },
     { label: 'Automation Center', path: '/automation', icon: '⚙', stub: true },
     { label: 'Audit & Activity', path: '/audit', icon: '⏱' },
+    { label: 'Billing Holds', path: '/billing-holds', icon: '⛔' },
     { label: 'System Health', path: '/system-health', icon: '♥', stub: true },
   ];
 

@@ -1745,6 +1745,7 @@ app.MapGet("/api/v1/meter-data/billing-holds", async (bool? activeOnly, PrepaidE
         select new
         {
             c.Id,
+            c.MeterId,
             consumer.AccountNumber,
             consumer.Name,
             meter.MeterNumber,

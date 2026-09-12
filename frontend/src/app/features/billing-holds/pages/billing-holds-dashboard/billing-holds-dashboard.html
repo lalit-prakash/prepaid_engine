@@ -1,0 +1,98 @@
+<div class="billing-holds">
+  <div class="page-header">
+    <h1>Billing Holds</h1>
+    <p class="page-header__subtitle">
+      {{ holds().length }} billing hold(s), auto-raised on a real negative-consumption Load Survey sequence
+    </p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else {
+    <section class="kpi-row">
+      <pe-kpi-card label="Total Holds" [value]="holds().length" tone="primary" />
+      <pe-kpi-card label="Active" [value]="activeCount" tone="danger" />
+      <pe-kpi-card label="Cleared" [value]="clearedCount" tone="success" />
+    </section>
+
+    <div class="toolbar">
+      <input
+        type="search"
+        placeholder="Search account number, name, or meter number…"
+        [value]="searchTerm()"
+        (input)="searchTerm.set($any($event.target).value)"
+      />
+      <label class="toggle-label">
+        <input type="checkbox" [checked]="showCleared()" (change)="toggleShowCleared()" />
+        Show cleared holds too
+      </label>
+    </div>
+
+    @if (filtered.length === 0) {
+      <div class="empty-panel">No billing holds matched your search.</div>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Blocked</th>
+              <th>Account</th>
+              <th>Consumer</th>
+              <th>Meter</th>
+              <th>Reason</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (h of filtered; track h.id) {
+              <tr>
+                <td>{{ h.blockedAt | date: 'medium' }}</td>
+                <td><a [routerLink]="['/consumers', h.accountNumber]">{{ h.accountNumber }}</a></td>
+                <td>{{ h.name }}</td>
+                <td class="mono">{{ h.meterNumber }}</td>
+                <td class="reason">{{ h.blockReason }}</td>
+                <td>
+                  @if (h.actualBillingBlocked) {
+                    <pe-status-badge label="Active" tone="danger" />
+                  } @else {
+                    <pe-status-badge label="Cleared" tone="success" />
+                    <div class="cleared-at">{{ h.clearedAt | date: 'medium' }}</div>
+                  }
+                </td>
+                <td>
+                  @if (h.actualBillingBlocked) {
+                    @if (clearingMeterId() !== h.meterId) {
+                      <button type="button" class="clear-btn" (click)="requestClear(h.meterId)">Clear Hold</button>
+                    } @else {
+                      <div class="clear-confirm">
+                        <input
+                          type="text"
+                          placeholder="Resolution note…"
+                          [(ngModel)]="resolutionNote"
+                        />
+                        <div class="clear-confirm__actions">
+                          <button type="button" class="clear-btn" [disabled]="clearSubmitting()" (click)="confirmClear()">
+                            {{ clearSubmitting() ? 'Clearing…' : 'Confirm' }}
+                          </button>
+                          <button type="button" class="cancel-btn" (click)="cancelClear()">Cancel</button>
+                        </div>
+                        @if (clearError()) { <div class="form-error">{{ clearError() }}</div> }
+                      </div>
+                    }
+                  } @else {
+                    <span class="empty-note">—</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</div>

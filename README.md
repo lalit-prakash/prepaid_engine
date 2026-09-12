@@ -469,6 +469,14 @@ adjustment, never a blind full re-debit on top of what the hourly debits already
   blocks in one request both came back `Valid` when the second should have triggered a hold).
   Fixed by tracking each batch's own added-but-not-yet-saved intervals alongside the database
   query.
+- **The operator API to clear a `MeterBillingControl` hold is now built** (a follow-up flagged
+  when this section first landed): `GET /api/v1/meter-data/billing-holds` (active-only by
+  default, `?activeOnly=false` for full history) and
+  `POST /api/v1/meter-data/{meterId}/billing-hold/clear` (mandatory resolution note, audit trail,
+  actual LS/DLP billing for the meter resumes the moment it clears) — plus a real frontend page,
+  **Billing Holds** (`/billing-holds`): real KPIs (total/active/cleared), a searchable table, a
+  toggle to include cleared history, and a genuine confirmed Clear action requiring the same
+  mandatory note the endpoint enforces. Bug (4) above was found while verifying this live.
 - **Explicitly out of scope for this phase** (per the spec's own "known limitations" section,
   and this project's discipline of never building a fake version of something real):
   a formal VEE (validation/estimation/editing) service with configurable thresholds, a real SMS
@@ -476,8 +484,7 @@ adjustment, never a blind full re-debit on top of what the hourly debits already
   correction for an already-closed hour, wallet-mutation row-locking/optimistic-concurrency under
   concurrent workers, a utility timezone configuration (the daily 00:00 boundary uses UTC,
   matching how every other timestamp in this system is stored), and a holiday calendar. Frontend
-  pages for LS/DLP data, meter replacement history, billing holds, and notification history were
-  also not built this phase.
+  pages for LS/DLP data itself and meter replacement history were also not built this phase.
 
 ### Demo console
 
@@ -701,6 +708,11 @@ Built:
   (open/resolved counts), and a **genuine** Resolve action gated behind a mandatory note.
 - **Audit** (`/audit`) — the immutable audit log, filterable by entity type and free text.
   Read-only by design — an audit entry is never edited or deleted from the UI.
+- **Billing Holds** (`/billing-holds`) — every `MeterBillingControl` hold (real KPIs, a searchable
+  table, a toggle to include cleared history), auto-raised on a real negative-consumption Load
+  Survey sequence, with a **genuine** confirmed Clear action requiring a mandatory resolution
+  note — see the [LS/DLP billing pipeline](#lsdlp-billing-pipeline-load-survey--daily-load-profile)
+  section above.
 - **Tariffs & Rules** (`/tariffs`) — the real tariff configuration this engine bills against.
 - **Tariff Detail** (`/tariffs/:id`) — one tariff's slab table, ToD schedule (when configured),
   vend limits, and its recorded **Version History** (mandatory change note + effective date per

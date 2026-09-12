@@ -131,6 +131,13 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/audit/pages/audit-dashboard/audit-dashboard').then((m) => m.AuditDashboard),
       },
+      {
+        path: 'billing-holds',
+        loadComponent: () =>
+          import('./features/billing-holds/pages/billing-holds-dashboard/billing-holds-dashboard').then(
+            (m) => m.BillingHoldsDashboard,
+          ),
+      },
       ...stubRoute('system-health', 'System Health'),
       { path: '**', redirectTo: 'overview' },
     ],
