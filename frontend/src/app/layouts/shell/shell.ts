@@ -40,6 +40,7 @@ export class Shell {
     { label: 'Automation Center', path: '/automation', icon: '⚙', stub: true },
     { label: 'Audit & Activity', path: '/audit', icon: '⏱' },
     { label: 'Billing Holds', path: '/billing-holds', icon: '⛔' },
+    { label: 'Notifications', path: '/notifications', icon: '✉' },
     { label: 'System Health', path: '/system-health', icon: '♥', stub: true },
   ];
 

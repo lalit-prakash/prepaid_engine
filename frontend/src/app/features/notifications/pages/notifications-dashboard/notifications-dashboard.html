@@ -1,0 +1,86 @@
+<div class="notifications">
+  <div class="page-header">
+    <h1>Notification History</h1>
+    <p class="page-header__subtitle">
+      {{ notifications().length }} notification(s), queued automatically during LS/DLP billing processing
+    </p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else {
+    <p class="no-gateway-note">
+      This project has no real SMS gateway — "Sent" means a real dispatcher would pick this up
+      next, never that an SMS actually left this system.
+    </p>
+
+    <section class="kpi-row">
+      <pe-kpi-card label="Total Notifications" [value]="notifications().length" tone="primary" />
+      <pe-kpi-card label="Pending" [value]="pendingCount" tone="warning" />
+      <pe-kpi-card label="Sent" [value]="sentCount" tone="success" />
+      <pe-kpi-card label="Failed" [value]="failedCount" tone="danger" />
+    </section>
+
+    <div class="toolbar">
+      <input
+        type="search"
+        placeholder="Search account number, name, or message…"
+        [value]="searchTerm()"
+        (input)="searchTerm.set($any($event.target).value)"
+      />
+      <select [value]="eventTypeFilter()" (change)="eventTypeFilter.set($any($event.target).value)">
+        <option value="">All event types</option>
+        <option [value]="NotificationEventType.LowBalance">Low Balance</option>
+        <option [value]="NotificationEventType.EmergencyCredit">Emergency Credit</option>
+        <option [value]="NotificationEventType.DisconnectionEligible">Disconnection Eligible</option>
+        <option [value]="NotificationEventType.BillingProvisional">Billing Provisional</option>
+      </select>
+    </div>
+
+    @if (filtered.length === 0) {
+      <div class="empty-panel">No notifications matched your search.</div>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Created</th>
+              <th>Account</th>
+              <th>Consumer</th>
+              <th>Event Type</th>
+              <th>Message</th>
+              <th>Status</th>
+              <th>Provider Reference</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (n of filtered; track n.id) {
+              <tr>
+                <td>{{ n.createdAt | date: 'medium' }}</td>
+                <td><a [routerLink]="['/consumers', n.accountNumber]">{{ n.accountNumber }}</a></td>
+                <td>{{ n.name }}</td>
+                <td>{{ eventTypeLabel(n.eventType) }}</td>
+                <td class="message">{{ n.message }}</td>
+                <td>
+                  @switch (n.status) {
+                    @case (NotificationStatus.Sent) {
+                      <pe-status-badge label="Sent" tone="success" />
+                      @if (n.sentAt) { <div class="sent-at">{{ n.sentAt | date: 'medium' }}</div> }
+                    }
+                    @case (NotificationStatus.Failed) { <pe-status-badge label="Failed" tone="danger" /> }
+                    @default { <pe-status-badge label="Pending" tone="warning" /> }
+                  }
+                </td>
+                <td class="mono">{{ n.providerReference ?? '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</div>

@@ -581,6 +581,7 @@ dotnet tool run dotnet-ef migrations add <Name> \
 | `POST /api/v1/billing/daily/{date}` | HTTP Basic | Runs the daily DLP settlement for every prepaid consumer with an assigned tariff |
 | `POST /api/v1/consumers/{consumerId}/meter-replacement` | HTTP Basic | Records a physical meter swap with the old/new meter audit trail |
 | `GET /api/v1/consumers/{consumerId}/notifications` | HTTP Basic | A consumer's queued notification history |
+| `GET /api/v1/notifications` | HTTP Basic | Every consumer's queued notification history, cross-consumer — backs Notification History |
 | `GET /api/v1/meter-data/billing-holds` | HTTP Basic | Every `MeterBillingControl` hold (active-only by default, `?activeOnly=false` for full history) |
 | `POST /api/v1/meter-data/{meterId}/billing-hold/clear` | HTTP Basic | Clears an active billing hold — requires a mandatory resolution note |
 | `GET /swagger` | none (Development only) | Interactive API docs |
@@ -713,6 +714,10 @@ Built:
   Survey sequence, with a **genuine** confirmed Clear action requiring a mandatory resolution
   note — see the [LS/DLP billing pipeline](#lsdlp-billing-pipeline-load-survey--daily-load-profile)
   section above.
+- **Notification History** (`/notifications`) — every consumer notification queued automatically
+  during LS/DLP billing processing (real KPIs — pending/sent/failed — a searchable table, and an
+  event-type filter). Read-only by design; this project has no real SMS gateway, so "Sent" only
+  ever means a real dispatcher would pick it up next, never that an SMS actually left the system.
 - **Tariffs & Rules** (`/tariffs`) — the real tariff configuration this engine bills against.
 - **Tariff Detail** (`/tariffs/:id`) — one tariff's slab table, ToD schedule (when configured),
   vend limits, and its recorded **Version History** (mandatory change note + effective date per

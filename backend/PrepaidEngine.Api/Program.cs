@@ -1729,6 +1729,33 @@ app.MapGet("/api/v1/consumers/{consumerId:guid}/notifications", async (Guid cons
 .WithName("GetConsumerNotifications")
 .RequireAuthorization();
 
+// Cross-consumer operator view — GetConsumerNotifications above is scoped to one consumer (e.g.
+// for a future Consumer 360 section); this backs a standalone Notification History page.
+app.MapGet("/api/v1/notifications", async (PrepaidEngineDbContext db) =>
+{
+    var notifications = await (
+        from n in db.NotificationEvents
+        join consumer in db.Consumers on n.ConsumerId equals consumer.Id
+        orderby n.CreatedAt descending
+        select new
+        {
+            n.Id,
+            consumer.AccountNumber,
+            consumer.Name,
+            n.EventType,
+            n.Message,
+            n.Status,
+            n.CreatedAt,
+            n.SentAt,
+            n.ProviderReference,
+        })
+        .ToListAsync();
+
+    return Results.Ok(notifications);
+})
+.WithName("ListNotifications")
+.RequireAuthorization();
+
 // Operator visibility into MeterBillingControl holds (spec §8) — without this, the clear
 // endpoint below has nothing for an operator to act against.
 app.MapGet("/api/v1/meter-data/billing-holds", async (bool? activeOnly, PrepaidEngineDbContext db) =>

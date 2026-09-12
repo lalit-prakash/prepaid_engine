@@ -138,6 +138,13 @@ export const routes: Routes = [
             (m) => m.BillingHoldsDashboard,
           ),
       },
+      {
+        path: 'notifications',
+        loadComponent: () =>
+          import('./features/notifications/pages/notifications-dashboard/notifications-dashboard').then(
+            (m) => m.NotificationsDashboard,
+          ),
+      },
       ...stubRoute('system-health', 'System Health'),
       { path: '**', redirectTo: 'overview' },
     ],
