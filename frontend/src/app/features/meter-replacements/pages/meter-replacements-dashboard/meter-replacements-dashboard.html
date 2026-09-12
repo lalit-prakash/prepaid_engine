@@ -1,0 +1,76 @@
+<div class="meter-replacements">
+  <div class="page-header">
+    <h1>Meter Replacement History</h1>
+    <p class="page-header__subtitle">
+      {{ replacements().length }} recorded meter event(s) — old and new meter readings are never compared against each other
+    </p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else {
+    <section class="kpi-row">
+      <pe-kpi-card label="Total Events" [value]="replacements().length" tone="primary" />
+      <pe-kpi-card label="Replaced" [value]="replacedCount" tone="warning" />
+      <pe-kpi-card label="Installed" [value]="installedCount" tone="success" />
+    </section>
+
+    <div class="toolbar">
+      <input
+        type="search"
+        placeholder="Search account number, name, or meter number…"
+        [value]="searchTerm()"
+        (input)="searchTerm.set($any($event.target).value)"
+      />
+    </div>
+
+    @if (filtered.length === 0) {
+      <div class="empty-panel">No meter replacement events matched your search.</div>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Effective</th>
+              <th>Account</th>
+              <th>Consumer</th>
+              <th>Event</th>
+              <th>Old Meter</th>
+              <th class="num">Closing Reading</th>
+              <th>New Meter</th>
+              <th class="num">Opening Reading</th>
+              <th>Reason</th>
+              <th>Recorded</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of filtered; track r.id) {
+              <tr>
+                <td>{{ r.effectiveFrom | date: 'medium' }}</td>
+                <td><a [routerLink]="['/consumers', r.accountNumber]">{{ r.accountNumber }}</a></td>
+                <td>{{ r.name }}</td>
+                <td>
+                  @switch (r.eventType) {
+                    @case (MeterAssignmentEventType.Installed) { <pe-status-badge label="Installed" tone="success" /> }
+                    @case (MeterAssignmentEventType.Removed) { <pe-status-badge label="Removed" tone="neutral" /> }
+                    @default { <pe-status-badge label="Replaced" tone="warning" /> }
+                  }
+                </td>
+                <td class="mono">{{ r.oldMeterNumber ?? '—' }}</td>
+                <td class="num">{{ r.oldMeterClosingReadingKwh !== null ? (r.oldMeterClosingReadingKwh | number: '1.2-2') + ' kWh' : '—' }}</td>
+                <td class="mono">{{ r.newMeterNumber }}</td>
+                <td class="num">{{ r.newMeterOpeningReadingKwh | number: '1.2-2' }} kWh</td>
+                <td class="reason">{{ r.reason ?? '—' }}</td>
+                <td>{{ r.recordedAt | date: 'medium' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</div>

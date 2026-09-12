@@ -1707,6 +1707,41 @@ app.MapPost("/api/v1/consumers/{consumerId:guid}/meter-replacement", async (
 .WithName("ReplaceMeter")
 .RequireAuthorization();
 
+// Cross-consumer operator view of every recorded meter replacement (spec §15-16) — the audit
+// trail that exists specifically so an old meter's cumulative reading is never compared against
+// a new meter's (they're different physical meters). Old/new meter numbers are resolved via a
+// left join since OldMeterId is null for an initial Installed event (not currently produced by
+// ReplaceMeterAsync, which only ever records Replaced, but the entity/join supports it).
+app.MapGet("/api/v1/meter-replacements", async (PrepaidEngineDbContext db) =>
+{
+    var replacements = await (
+        from a in db.MeterAssignments
+        join consumer in db.Consumers on a.ConsumerId equals consumer.Id
+        join newMeter in db.Meters on a.NewMeterId equals newMeter.Id
+        join oldMeter in db.Meters on a.OldMeterId equals oldMeter.Id into oldMeterJoin
+        from oldMeter in oldMeterJoin.DefaultIfEmpty()
+        orderby a.RecordedAt descending
+        select new
+        {
+            a.Id,
+            consumer.AccountNumber,
+            consumer.Name,
+            a.EventType,
+            OldMeterNumber = oldMeter != null ? oldMeter.MeterNumber : null,
+            NewMeterNumber = newMeter.MeterNumber,
+            a.EffectiveFrom,
+            a.OldMeterClosingReadingKwh,
+            a.NewMeterOpeningReadingKwh,
+            a.Reason,
+            a.RecordedAt,
+        })
+        .ToListAsync();
+
+    return Results.Ok(replacements);
+})
+.WithName("ListMeterReplacements")
+.RequireAuthorization();
+
 app.MapGet("/api/v1/consumers/{consumerId:guid}/notifications", async (Guid consumerId, PrepaidEngineDbContext db) =>
 {
     var notifications = await db.NotificationEvents

@@ -41,6 +41,7 @@ export class Shell {
     { label: 'Audit & Activity', path: '/audit', icon: '⏱' },
     { label: 'Billing Holds', path: '/billing-holds', icon: '⛔' },
     { label: 'Notifications', path: '/notifications', icon: '✉' },
+    { label: 'Meter Replacements', path: '/meter-replacements', icon: '⇋' },
     { label: 'System Health', path: '/system-health', icon: '♥', stub: true },
   ];
 
