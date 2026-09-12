@@ -1,11 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Api.Auth;
+using PrepaidEngine.Application.Billing;
 using PrepaidEngine.Application.Connectivity;
 using PrepaidEngine.Application.MeterCommands;
 using PrepaidEngine.Application.Rms;
 using PrepaidEngine.Domain;
 using PrepaidEngine.Domain.Entities;
 using PrepaidEngine.Domain.Enums;
+using PrepaidEngine.Infrastructure.Billing;
 using PrepaidEngine.Infrastructure.Connectivity;
 using PrepaidEngine.Infrastructure.MeterCommands;
 using PrepaidEngine.Infrastructure.Persistence;
@@ -33,6 +35,14 @@ builder.Services.AddSingleton<IMeterCommandClient, MockMeterCommandClient>();
 // TODO(connectivity-command integration): swap for a real adapter once one exists; keep
 // MockConnectivityCommandClient registered for local dev / tests until then.
 builder.Services.AddSingleton<IConnectivityCommandClient, MockConnectivityCommandClient>();
+
+// The LS/DLP billing pipeline service — see IBillingEngineService's doc comment. Scoped (not
+// singleton) since it holds a scoped PrepaidEngineDbContext.
+builder.Services.AddScoped<IBillingEngineService, BillingEngineService>();
+
+// Local/demo background processing for the hourly and daily billing cycles — see the worker's
+// own doc comment for why this is intentionally simple.
+builder.Services.AddHostedService<PrepaidEngine.Api.Billing.BillingProcessingWorker>();
 
 // Basic auth for the demo endpoints only — a stop-gap, not a substitute for real
 // authentication before any shared/production exposure (see docs/assumptions-and-security.md).
@@ -1618,6 +1628,107 @@ app.MapGet("/api/v1/reports/recharge-failures", async (PrepaidEngineDbContext db
 .WithName("RechargeFailureReport")
 .RequireAuthorization();
 
+// --- LS/DLP billing pipeline: 30-minute Load Survey ingestion, hourly wallet debits, Daily -----
+// Load Profile ingestion, and daily settlement — see IBillingEngineService's doc comment for the
+// core rule this whole section exists to enforce.
+app.MapPost("/api/v1/meter-data/ls", async (LoadSurveyIngestRequest request, IBillingEngineService billingEngine) =>
+{
+    if (request.Blocks is null || request.Blocks.Count == 0)
+        return Results.BadRequest(new { error = "At least one Load Survey block is required." });
+
+    var results = await billingEngine.IngestLoadSurveyAsync(
+        request.Blocks.Select(b => new LoadSurveyBlockRequest(
+            b.ConsumerId, b.MeterId, b.IntervalStart, b.IntervalEnd, b.CumulativeKwh, b.IntervalKwh, b.SourceReference)).ToList());
+
+    return Results.Ok(results);
+})
+.WithName("IngestLoadSurvey")
+.RequireAuthorization();
+
+app.MapPost("/api/v1/meter-data/dlp", async (DailyLoadProfileIngestRequest request, IBillingEngineService billingEngine) =>
+{
+    var result = await billingEngine.IngestDailyLoadProfileAsync(
+        new DailyLoadProfileRequest(request.ConsumerId, request.MeterId, request.ProfileDate, request.GeneratedAt,
+            request.StartCumulativeKwh, request.EndCumulativeKwh, request.SourceReference));
+
+    return Results.Ok(result);
+})
+.WithName("IngestDailyLoadProfile")
+.RequireAuthorization();
+
+app.MapPost("/api/v1/billing/hourly", async (DateTime hourEndUtc, IBillingEngineService billingEngine) =>
+{
+    var results = await billingEngine.ProcessCompletedHourAsync(hourEndUtc);
+    return Results.Ok(results);
+})
+.WithName("ProcessHourlyBilling")
+.RequireAuthorization();
+
+app.MapPost("/api/v1/billing/daily/{billingDate}", async (DateOnly billingDate, IBillingEngineService billingEngine) =>
+{
+    var results = await billingEngine.ProcessDailyAsync(billingDate);
+    return Results.Ok(results);
+})
+.WithName("ProcessDailyBilling")
+.RequireAuthorization();
+
+app.MapPost("/api/v1/consumers/{consumerId:guid}/meter-replacement", async (
+    Guid consumerId, MeterReplacementApiRequest request, IBillingEngineService billingEngine) =>
+{
+    if (string.IsNullOrWhiteSpace(request.NewMeterNumber))
+        return Results.BadRequest(new { error = "A new meter number is required." });
+    if (string.IsNullOrWhiteSpace(request.Reason))
+        return Results.BadRequest(new { error = "A reason is required for a meter replacement." });
+
+    try
+    {
+        var assignment = await billingEngine.ReplaceMeterAsync(consumerId, new MeterReplacementRequest(
+            request.NewMeterNumber, request.Phase, request.EffectiveFrom,
+            request.OldMeterClosingReadingKwh, request.NewMeterOpeningReadingKwh, request.Reason));
+
+        return Results.Ok(new
+        {
+            assignment.Id,
+            assignment.ConsumerId,
+            assignment.OldMeterId,
+            assignment.NewMeterId,
+            assignment.EventType,
+            assignment.EffectiveFrom,
+            assignment.OldMeterClosingReadingKwh,
+            assignment.NewMeterOpeningReadingKwh,
+            assignment.Reason,
+        });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.NotFound(new { error = ex.Message });
+    }
+})
+.WithName("ReplaceMeter")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/consumers/{consumerId:guid}/notifications", async (Guid consumerId, PrepaidEngineDbContext db) =>
+{
+    var notifications = await db.NotificationEvents
+        .Where(n => n.ConsumerId == consumerId)
+        .OrderByDescending(n => n.CreatedAt)
+        .Select(n => new
+        {
+            n.Id,
+            n.EventType,
+            n.Message,
+            n.Status,
+            n.CreatedAt,
+            n.SentAt,
+            n.ProviderReference,
+        })
+        .ToListAsync();
+
+    return Results.Ok(notifications);
+})
+.WithName("GetConsumerNotifications")
+.RequireAuthorization();
+
 app.Run();
 
 /// <param name="Amount">Recharge amount.</param>
@@ -1681,6 +1792,24 @@ public record ReconciliationAdjustmentRequest(decimal Amount, DateTime Reconcili
 /// <param name="ChangeNote">Required — why the change was made.</param>
 /// <param name="EffectiveDate">When the new value takes effect.</param>
 public record TariffVersionRequest(string FieldName, string OldValue, string NewValue, string ChangeNote, DateTime EffectiveDate);
+
+/// <summary>One 30-minute Load Survey block in a POST /api/v1/meter-data/ls batch.</summary>
+public record LoadSurveyBlockApiRequest(
+    Guid ConsumerId, Guid MeterId, DateTime IntervalStart, DateTime IntervalEnd,
+    decimal CumulativeKwh, decimal IntervalKwh, string? SourceReference = null);
+
+/// <param name="Blocks">Requests arrive as an array — a single block or a batch.</param>
+public record LoadSurveyIngestRequest(List<LoadSurveyBlockApiRequest> Blocks);
+
+/// <summary>POST /api/v1/meter-data/dlp request body.</summary>
+public record DailyLoadProfileIngestRequest(
+    Guid ConsumerId, Guid MeterId, DateOnly ProfileDate, DateTime GeneratedAt,
+    decimal StartCumulativeKwh, decimal EndCumulativeKwh, string? SourceReference = null);
+
+/// <summary>POST /api/v1/consumers/{consumerId}/meter-replacement request body.</summary>
+public record MeterReplacementApiRequest(
+    string NewMeterNumber, MeterPhase Phase, DateTime EffectiveFrom,
+    decimal OldMeterClosingReadingKwh, decimal NewMeterOpeningReadingKwh, string Reason);
 
 // Exposed so WebApplicationFactory-based integration tests can bootstrap this Api project.
 public partial class Program { }

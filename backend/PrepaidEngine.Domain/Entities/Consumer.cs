@@ -27,6 +27,17 @@ public class Consumer
     /// A fixed physical fact recorded at enrollment — no setter, no domain reason to change it.</summary>
     public bool IsNetMeter { get; private set; }
 
+    /// <summary>The tariff automated LS/DLP billing uses for this consumer. A consumer without a
+    /// tariff is never silently billed against an arbitrary default — LS/DLP processing records
+    /// an exception instead (see the billing engine). Assigned via <see cref="AssignTariff"/>,
+    /// never a raw property set.</summary>
+    public Guid? TariffId { get; private set; }
+
+    /// <summary>Notification destination. Deliberately consumer-level, not meter-level — a meter
+    /// can be replaced while the consumer/service point (and their phone number) stays the
+    /// same.</summary>
+    public string? MobileNumber { get; private set; }
+
     public Consumer(Guid id, string accountNumber, string name, string serviceAddress, SmartMeter meter, decimal connectedLoadKw, bool isNetMeter = false)
     {
         if (string.IsNullOrWhiteSpace(accountNumber))
@@ -85,6 +96,29 @@ public class Consumer
     public void RequestDisconnection() => ConnectionStatus = ConnectionStatus.DisconnectionPending;
 
     public void RequestReconnection() => ConnectionStatus = ConnectionStatus.ReconnectionPending;
+
+    /// <summary>Assigns (or reassigns) the tariff automated LS/DLP billing uses for this
+    /// consumer. A domain method rather than a raw setter, per this project's convention that a
+    /// meaningful state change is always an explicit, named action.</summary>
+    public void AssignTariff(Guid tariffId) => TariffId = tariffId;
+
+    /// <summary>Sets the notification destination.</summary>
+    public void SetMobileNumber(string mobileNumber)
+    {
+        if (string.IsNullOrWhiteSpace(mobileNumber))
+            throw new ArgumentException("A mobile number is required.", nameof(mobileNumber));
+
+        MobileNumber = mobileNumber;
+    }
+
+    /// <summary>Swaps the consumer's physical meter (see <see cref="MeterAssignment"/> for the
+    /// audit trail this must be paired with). Never compares the old and new meter's cumulative
+    /// readings against each other — that boundary is exactly what <see cref="MeterAssignment"/>
+    /// exists to make explicit, since the two readings belong to different physical meters.</summary>
+    public void ReplaceMeter(SmartMeter newMeter)
+    {
+        Meter = newMeter ?? throw new ArgumentNullException(nameof(newMeter));
+    }
 
     /// <summary>Applies a postpaid-to-prepaid conversion. Only ever called after the
     /// corresponding <see cref="ConversionRequest"/> reaches <see cref="Enums.ConversionStatus.Approved"/>

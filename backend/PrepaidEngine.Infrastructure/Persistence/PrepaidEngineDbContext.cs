@@ -35,6 +35,12 @@ public class PrepaidEngineDbContext : DbContext
     public DbSet<OperationalException> OperationalExceptions => Set<OperationalException>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<TariffVersion> TariffVersions => Set<TariffVersion>();
+    public DbSet<LoadSurveyInterval> LoadSurveyIntervals => Set<LoadSurveyInterval>();
+    public DbSet<DailyLoadProfile> DailyLoadProfiles => Set<DailyLoadProfile>();
+    public DbSet<BillingRun> BillingRuns => Set<BillingRun>();
+    public DbSet<MeterAssignment> MeterAssignments => Set<MeterAssignment>();
+    public DbSet<NotificationEvent> NotificationEvents => Set<NotificationEvent>();
+    public DbSet<MeterBillingControl> MeterBillingControls => Set<MeterBillingControl>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

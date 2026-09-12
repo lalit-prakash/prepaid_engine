@@ -37,7 +37,7 @@ explicit "not yet backed" stub rather than invented data — see
   - `PrepaidEngine.Application` — use cases / integration ports (`IRmsClient`, `IMeterCommandClient`)
   - `PrepaidEngine.Domain` — core domain models and business rules, no external dependencies
   - `PrepaidEngine.Infrastructure` — EF Core persistence (PostgreSQL), mock RMS adapter, seed data
-  - `PrepaidEngine.Tests` — xUnit test project (283 tests — see [Testing](#testing))
+  - `PrepaidEngine.Tests` — xUnit test project (315 tests — see [Testing](#testing))
 - `frontend/` — Angular 22 enterprise operations UI (see [Frontend](#frontend) below and
   [docs/frontend-scope.md](docs/frontend-scope.md))
 - `docs/` — sourcing, security, tariff-validation, and frontend-scope documentation (see [Documentation](#documentation))
@@ -65,6 +65,12 @@ explicit "not yet backed" stub rather than invented data — see
 | `OperationalException` | An auto-raised operator work item whenever a `MeterCommand`/`ConnectivityCommand` reaches `Failed`/`TimedOut` — never hand-entered, resolved only with a mandatory note |
 | `AuditEntry` | An immutable, append-only log entry for a tracked operational/config change (RC/DC dispatch, conversion completion, reconciliation adjustment, tariff version) |
 | `TariffVersion` | A recorded parameter change against a `Tariff`, with a mandatory change note and effective date — enables a future Tariff Change Report even though `Tariff` itself has no update endpoint yet |
+| `LoadSurveyInterval` | One 30-minute Load Survey block — drives hourly wallet debits. Deliberately never the same object as `DailyLoadProfile` (see [LS/DLP billing pipeline](#lsdlp-billing-pipeline-load-survey--daily-load-profile) below) |
+| `DailyLoadProfile` | The meter's daily consumption profile, created at the 00:00 hrs boundary — drives the authoritative daily charge and its settlement against the day's LS debits |
+| `MeterBillingControl` | An active hold blocking actual (real, meter-driven) billing for one consumer/meter after negative-consumption data is detected — never silently converted to zero consumption |
+| `BillingRun` | An operational record of one daily DLP settlement batch, unique per `RunType + BillingDate` |
+| `MeterAssignment` | An audit record of a physical meter replacement — the boundary that guarantees an old meter's cumulative reading is never compared against a new meter's |
+| `NotificationEvent` | A queued (not sent) low-balance/emergency-credit/disconnection-eligible/provisional-billing notice — this project has no real SMS gateway |
 
 ### Tariff engine — verified calculation methods
 
@@ -389,6 +395,73 @@ still exposes only its single current version (no update endpoint exists), but
 change be recorded with a mandatory change note and effective date, enabling a real Tariff Change
 Report once one is built.
 
+### LS/DLP billing pipeline (Load Survey + Daily Load Profile)
+
+Implements the "Prepaid_Engine_Full_RnD_and_Code_Change_Spec" (v2.0, 11-09-2026): the engine
+treats Load Survey (LS, a 30-minute interval stream) and Daily Load Profile (DLP, the meter's
+daily profile created at the 00:00 hrs boundary) as two **different** meter-data products —
+never modeled as the same object — and the core financial rule they exist to enforce is: **the
+wallet must never be debited twice for the same consumption.** LS drives hourly debits; DLP
+drives the authoritative daily charge; the two are reconciled via one signed settlement
+adjustment, never a blind full re-debit on top of what the hourly debits already posted.
+
+- `LoadSurveyInterval` — one 30-minute block. Immutable and idempotent: unique per
+  `MeterId + IntervalStart + IntervalEnd` (DB-enforced), and its wallet debit uses the reference
+  `LS:<interval-id>` as a second idempotency layer — re-running the same hour is a safe no-op.
+- **Negative consumption is a data-quality event, never silently zeroed.** If a block's
+  cumulative reading is lower than the immediately preceding block **for the same physical
+  meter**, the block is rejected (`LoadSurveyQuality.NegativeConsumption`) and a
+  `MeterBillingControl` hold is created/reactivated for that meter — both hourly LS billing and
+  daily DLP billing stop for it until the hold is cleared. (Clearing it requires a mandatory
+  resolution note via a dedicated operator endpoint — not yet built; a documented, honest
+  follow-up, not a hidden gap.)
+- `DailyLoadProfile` — unique per `ConsumerId + MeterId + ProfileDate`. If none arrives by the
+  daily billing run, a **provisional** profile is created instead (spec's demo estimation:
+  average of up to the previous 7 valid DLPs, `0` if none exist — never treating a missing day as
+  zero consumption without saying so) and a provisional debit is posted; the historical
+  provisional transaction is never edited once the real DLP later arrives — only settled against.
+- **Daily settlement**: `Settlement = Authoritative DLP charge − that day's LS hourly debits −
+  any provisional debit already posted`. Debits the wallet if positive, credits it if negative,
+  posts nothing if exactly zero — verified against both of the spec's own worked examples.
+  Tracked under one `BillingRun` per date (`RunType + BillingDate` unique), so a run cannot be
+  accidentally duplicated for the same day.
+- `MeterAssignment` records a physical meter replacement (old/new meter id, closing/opening
+  readings, reason) — the point of this audit trail is that an old meter's cumulative reading is
+  **never** compared against a new meter's cumulative reading (they're different physical
+  meters); `Consumer.ReplaceMeter()` swaps the meter, and because every LS/DLP record already
+  scopes to a specific `MeterId`, sequence-continuity checks naturally never cross that boundary.
+- `NotificationEvent` — queued (not sent) low-balance/emergency-credit/disconnection-eligible/
+  provisional-billing notices, raised automatically during hourly and daily processing. This
+  project has no real SMS gateway; marking one "Sent" would only ever mean "a real dispatcher
+  would pick this up next", so it stays `Pending` here rather than faking delivery.
+- A minimal `BillingProcessingWorker` background service polls once a minute and processes the
+  previous completed hour (and, at midnight, the previous day's DLP settlement) — intentionally
+  simple, per the spec's own framing; a durable scheduler/retry-guaranteed job framework is a
+  documented production follow-up, not attempted here.
+- Endpoints: `POST /api/v1/meter-data/ls` (batch), `POST /api/v1/meter-data/dlp`,
+  `POST /api/v1/billing/hourly?hourEndUtc=`, `POST /api/v1/billing/daily/{date}`,
+  `POST /api/v1/consumers/{consumerId}/meter-replacement`,
+  `GET /api/v1/consumers/{consumerId}/notifications`.
+- **Two real bugs found and fixed during this phase** (one by a live curl test, not just unit
+  tests — the project's established discipline of verifying against the real Postgres-backed API
+  caught what an all-in-one-DbContext unit test setup had masked): (1) a duplicate LS block was
+  still being added to the DbContext before being marked rejected, tripping the very uniqueness
+  constraint meant to catch it — fixed by not persisting the duplicate at all, since the original
+  block is already stored. (2) The daily settlement's consumer query never loaded the `Meter`
+  navigation, throwing a `NullReferenceException` the moment `consumer.Meter.Id` was evaluated
+  against a freshly-queried (not already-tracked) consumer — invisible in the test suite because
+  its SQLite fixture reuses one long-lived, already-tracked `DbContext` throughout each test, but
+  immediate against the real API on a first request. Fixed by including `Meter` in that query.
+- **Explicitly out of scope for this phase** (per the spec's own "known limitations" section,
+  and this project's discipline of never building a fake version of something real):
+  the operator API to clear a `MeterBillingControl` hold, a formal VEE (validation/estimation/
+  editing) service with configurable thresholds, a real SMS provider and delivery-callback
+  dispatcher, a real HES/MDM adapter, late-arriving-data correction for an already-closed hour,
+  wallet-mutation row-locking/optimistic-concurrency under concurrent workers, a utility timezone
+  configuration (the daily 00:00 boundary uses UTC, matching how every other timestamp in this
+  system is stored), and a holiday calendar. Frontend pages for LS/DLP data, meter replacement
+  history, and notification history were also not built this phase.
+
 ### Demo console
 
 A minimal, hand-built single-page UI (`PrepaidEngine.Api/wwwroot/index.html`) is served
@@ -478,6 +551,12 @@ dotnet tool run dotnet-ef migrations add <Name> \
 | `GET /api/v1/tariffs` | HTTP Basic | Every configured tariff — backs Tariffs & Rules |
 | `GET /api/v1/tariffs/{id}` | HTTP Basic | One tariff's slabs, ToD periods, and vend limits — backs Tariff Detail |
 | `POST /api/v1/calculation-workbench/simulate` | HTTP Basic | SIMULATION-ONLY charge preview for an arbitrary tariff/consumption/load — backs the Calculation Workbench |
+| `POST /api/v1/meter-data/ls` | HTTP Basic | Ingests a batch of 30-minute LS blocks |
+| `POST /api/v1/meter-data/dlp` | HTTP Basic | Ingests one Daily Load Profile (replaces a provisional profile if one exists) |
+| `POST /api/v1/billing/hourly` | HTTP Basic | Processes every consumer's completed hour — idempotent, safe to re-run |
+| `POST /api/v1/billing/daily/{date}` | HTTP Basic | Runs the daily DLP settlement for every prepaid consumer with an assigned tariff |
+| `POST /api/v1/consumers/{consumerId}/meter-replacement` | HTTP Basic | Records a physical meter swap with the old/new meter audit trail |
+| `GET /api/v1/consumers/{consumerId}/notifications` | HTTP Basic | A consumer's queued notification history |
 | `GET /swagger` | none (Development only) | Interactive API docs |
 
 Set Basic-auth demo credentials before running (`appsettings.json` only holds `CHANGE_ME`
@@ -501,7 +580,7 @@ cd backend
 dotnet test PrepaidEngine.sln
 ```
 
-**283 tests, all passing.** Breakdown:
+**315 tests, all passing.** Breakdown:
 
 | Test class | Count | What it covers |
 |---|---|---|
@@ -530,6 +609,10 @@ dotnet test PrepaidEngine.sln
 | `OperationalExceptionTests` | 11 | `Open`→`Resolved` lifecycle, mandatory resolution note, every `OperationalExceptionSourceType` |
 | `AuditEntryTests` | 14 | Immutable append-only construction, mandatory fields, optional old/new value and details recording |
 | `TariffVersionTests` | 7 | Mandatory change note and field name, old/new value recording, effective-date tracking |
+| `LoadSurveyIntervalTests` | 8 | 30-minute duration enforcement, negative-cumulative-reading validation, `Received`→`Validated`/`Rejected`→`Processed` lifecycle |
+| `DailyLoadProfileTests` | 6 | Total-kWh computation, provisional-profile creation, `ReplaceWithActual` replacing a provisional profile's data and clearing the flag |
+| `MeterBillingControlTests` | 7 | Blocked-by-default construction, mandatory block reason, `Clear`/`Reactivate` lifecycle |
+| `BillingEngineServiceTests` | 11 | End-to-end against a real SQLite-backed `PrepaidEngineDbContext`: LS ingestion (valid/duplicate/negative-consumption-triggers-hold), hourly processing (debits once per block, idempotent re-run, skips a billing-held meter), daily settlement matching both of the spec's own worked examples (positive and negative settlement), missing-DLP provisional estimation, one-run-per-date enforcement, and meter replacement never comparing old/new cumulative readings |
 
 Every number in `TariffGoldenDataTests`, `BplTariffTests`, and `DhtTariffDiscrepancyTests` is
 taken verbatim from MePDCL's tariff book or reference workbooks, not invented — a failure there

@@ -41,6 +41,9 @@ public class ConsumerConfiguration : IEntityTypeConfiguration<Consumer>
         builder.Property(c => c.IsNetMeter)
             .IsRequired();
 
+        builder.Property(c => c.MobileNumber)
+            .HasMaxLength(20);
+
         // One-to-one: a consumer is linked to a single smart meter.
         builder.HasOne(c => c.Meter)
             .WithOne()
