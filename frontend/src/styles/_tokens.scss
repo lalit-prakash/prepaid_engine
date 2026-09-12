@@ -56,11 +56,15 @@
   --color-neutral-900: #182222;
 
   // ---- Surfaces --------------------------------------------------------------
+  // Light SaaS shell (see layouts/shell): white sidebar/header on a soft
+  // neutral app background, teal used for the active nav state and accents
+  // rather than as a dark sidebar fill — matches a modern fintech/ops-console
+  // reference rather than a dark enterprise-admin sidebar.
   --surface-app-bg: var(--color-neutral-50);
   --surface-card: var(--color-neutral-0);
-  --surface-sidebar: var(--color-primary-darker);
-  --surface-sidebar-hover: rgba(255, 255, 255, 0.08);
-  --surface-sidebar-active: rgba(255, 255, 255, 0.14);
+  --surface-sidebar: var(--color-neutral-0);
+  --surface-sidebar-hover: var(--color-neutral-100);
+  --surface-sidebar-active: var(--color-primary-lighter);
   --surface-header: var(--color-neutral-0);
   --surface-drawer: var(--color-neutral-0);
 

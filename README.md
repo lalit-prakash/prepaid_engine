@@ -676,12 +676,27 @@ Built:
 - **Design system** — centralized tokens (`src/styles/_tokens.scss`): a teal/cyan-first
   enterprise-utility palette (not a generic blue admin dashboard), spacing/radius/shadow/type
   scales, Inter typography. No component hardcodes a color.
-- **Shell** — collapsible sidebar (all planned modules listed, unbuilt ones marked "Soon") +
-  header with global search input (not yet wired to a search API) + sign-out.
+- **Shell** — a light SaaS-style app shell (redesigned from the original dark flat sidebar): a
+  collapsible sidebar with modules grouped into six sections (Operations, Finance, Meter Data,
+  Configuration, Reporting, Administration; unbuilt modules still marked "Soon") that expand
+  one at a time and auto-open to whichever section contains the current route, plus a header
+  with a real global search (reuses Consumers' own client-side search via a `q` query param and
+  an account-number-pattern shortcut straight to Consumer 360 — never a fabricated search
+  endpoint; `Ctrl/Cmd+K` focuses it), a Quick Actions menu, a notification-bell link, and a
+  user menu with sign-out.
 - **Sign-in** (`/login`) — verifies the HTTP Basic credential against a real API call before
   caching it in `sessionStorage`, mirroring the static demo console's approach.
-- **Overview** (`/overview`) — real consumer count and a derived low-credit count; every
-  other KPI is explicitly labeled "Illustrative" rather than inventing a number.
+- **Dashboard** (`/overview`, renamed from "Overview") — redesigned around real data end to end:
+  5 KPI cards (total consumers, total RMS wallet balance, low-balance count, disconnected count,
+  today's billing progress from DLP — or an explicit "Data unavailable" card if no DLP has been
+  generated yet for today), an "Hourly Consumption & Wallet Updates" chart built strictly from
+  Load Survey (LS) intervals aggregated by hour, a separate "Daily Billing Status" donut built
+  strictly from Daily Load Profile (DLP) status counts for the latest profile date (LS and DLP
+  are never conflated into one chart), an Alerts & Notifications feed, a System Status panel
+  (real API/DB status plus an honest "Mock adapter" label for RMS/meter-command/connectivity
+  clients), Recent Recharges and Meter Operations tables, and a Quick Reports list. Any metric
+  without a real source shows "Data unavailable" — this redesign removes the old "Illustrative"
+  badge convention from this page entirely rather than labeling fabricated numbers.
 - **Consumers** (`/consumers`) — real, API-backed consumer list with client-side search.
 - **Consumer 360** (`/consumers/:accountNumber`) — the primary screen: RMS Wallet Balance kept
   visually and semantically distinct from engine-calculated charges/arrears/emergency credit

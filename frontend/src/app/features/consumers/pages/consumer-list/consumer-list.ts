@@ -1,6 +1,6 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ConsumerService } from '../../../../core/services/consumer.service';
 import { ConnectionStatus, ConsumerSummary } from '../../../../core/models/consumer.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
@@ -26,9 +26,15 @@ export class ConsumerList implements OnInit {
   constructor(
     private readonly consumerService: ConsumerService,
     private readonly router: Router,
+    private readonly route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
+    // Prefills from the header's global search (see Shell.submitSearch) —
+    // real reuse of this page's own search, not a separate search endpoint.
+    const initialQuery = this.route.snapshot.queryParamMap.get('q');
+    if (initialQuery) this.searchTerm.set(initialQuery);
+
     this.consumerService.list().subscribe({
       next: (consumers) => {
         this.consumers.set(consumers);

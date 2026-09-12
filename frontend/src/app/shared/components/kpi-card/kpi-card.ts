@@ -12,8 +12,12 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
   template: `
     <div class="kpi" [class]="'kpi--' + tone()" [class.kpi--clickable]="clickable()">
       <div class="kpi__label">{{ label() }}</div>
-      <div class="kpi__value num">{{ value() }}</div>
-      @if (sublabel()) {
+      @if (unavailable()) {
+        <div class="kpi__value kpi__value--unavailable">Data unavailable</div>
+      } @else {
+        <div class="kpi__value num">{{ value() }}</div>
+      }
+      @if (sublabel() && !unavailable()) {
         <div class="kpi__sublabel">{{ sublabel() }}</div>
       }
       @if (illustrative()) {
@@ -57,6 +61,12 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
       overflow-wrap: break-word;
       word-break: break-word;
     }
+    .kpi__value--unavailable {
+      font-size: var(--font-size-body);
+      font-weight: var(--font-weight-medium);
+      color: var(--text-muted);
+      font-style: italic;
+    }
     .kpi__sublabel {
       margin-top: var(--space-1);
       font-size: var(--font-size-meta);
@@ -83,4 +93,7 @@ export class KpiCard {
   readonly clickable = input(false);
   /** True when this number has no real backend source yet (see docs/frontend-scope.md). */
   readonly illustrative = input(false);
+  /** True when the metric is real but genuinely cannot be computed right now (e.g. no rows
+   * for today yet) — shows "Data unavailable" instead of a fabricated or stale value. */
+  readonly unavailable = input(false);
 }

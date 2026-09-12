@@ -1,28 +1,58 @@
-<div class="shell" [class.shell--collapsed]="collapsed()">
+<div class="shell" [class.shell--collapsed]="collapsed()" (click)="closeMenus()">
   <aside class="sidebar" aria-label="Primary navigation">
     <div class="sidebar__brand">
-      <span class="sidebar__brand-mark">⚡</span>
+      <span class="sidebar__brand-mark" aria-hidden="true">⚡</span>
       @if (!collapsed()) {
-        <span class="sidebar__brand-name">PREPAID ENGINE</span>
+        <span class="sidebar__brand-text">
+          <span class="sidebar__brand-org">MePDCL</span>
+          <span class="sidebar__brand-name">Prepaid Engine</span>
+        </span>
       }
     </div>
 
     <nav class="sidebar__nav">
-      @for (item of navItems; track item.path) {
-        <a
-          class="sidebar__link"
-          [routerLink]="item.path"
-          routerLinkActive="sidebar__link--active"
-          [title]="item.label + (item.stub ? ' (not yet implemented)' : '')"
-        >
-          <span class="sidebar__icon" aria-hidden="true">{{ item.icon }}</span>
-          @if (!collapsed()) {
-            <span class="sidebar__label">{{ item.label }}</span>
-            @if (item.stub) {
-              <span class="sidebar__soon">Soon</span>
+      <a
+        class="sidebar__link sidebar__link--top"
+        routerLink="/overview"
+        routerLinkActive="sidebar__link--active"
+        [title]="collapsed() ? 'Dashboard' : ''"
+      >
+        <span class="sidebar__icon" aria-hidden="true">◆</span>
+        @if (!collapsed()) { <span class="sidebar__label">Dashboard</span> }
+      </a>
+
+      @for (group of navGroups; track group.label) {
+        <div class="sidebar__group">
+          <button
+            type="button"
+            class="sidebar__group-header"
+            [class.sidebar__group-header--expanded]="isGroupExpanded(group.label)"
+            (click)="toggleGroup(group.label)"
+            [title]="collapsed() ? group.label : ''"
+          >
+            <span class="sidebar__icon" aria-hidden="true">{{ group.icon }}</span>
+            @if (!collapsed()) {
+              <span class="sidebar__label">{{ group.label }}</span>
+              <span class="sidebar__chevron" aria-hidden="true">{{ isGroupExpanded(group.label) ? '▾' : '▸' }}</span>
             }
+          </button>
+
+          @if (isGroupExpanded(group.label) && !collapsed()) {
+            <div class="sidebar__group-items">
+              @for (item of group.items; track item.path) {
+                <a
+                  class="sidebar__link sidebar__link--nested"
+                  [routerLink]="item.path"
+                  routerLinkActive="sidebar__link--active"
+                  [title]="item.label + (item.stub ? ' (not yet implemented)' : '')"
+                >
+                  <span class="sidebar__label">{{ item.label }}</span>
+                  @if (item.stub) { <span class="sidebar__soon">Soon</span> }
+                </a>
+              }
+            </div>
           }
-        </a>
+        </div>
       }
     </nav>
 
@@ -35,14 +65,50 @@
   <div class="shell__main">
     <header class="header">
       <div class="header__search">
-        <input type="search" placeholder="Search consumer, meter, bill, recharge ID…" aria-label="Global search" />
+        <span class="header__search-icon" aria-hidden="true">⌕</span>
+        <input
+          #searchInput
+          type="search"
+          placeholder="Search consumer, meter, bill, recharge ID…"
+          aria-label="Global search"
+          (keydown.enter)="submitSearch($any($event.target).value)"
+        />
+        <kbd class="header__search-kbd">Ctrl K</kbd>
       </div>
-      <div class="header__context">
-        <span class="header__org">MePDCL · Demo Environment</span>
-        <span class="header__health" title="All illustrative system-health signals are nominal">
-          <span class="header__health-dot"></span> Systems Nominal
-        </span>
-        <button type="button" class="header__signout" (click)="signOut()">Sign out</button>
+
+      <div class="header__context" (click)="$event.stopPropagation()">
+        <span class="header__env">MePDCL · Demo</span>
+
+        <div class="header__menu">
+          <button type="button" class="header__quick-actions-btn" (click)="toggleQuickActions()">
+            + Quick Actions <span aria-hidden="true">▾</span>
+          </button>
+          @if (quickActionsOpen()) {
+            <div class="header__dropdown">
+              @for (action of quickActions; track action.path) {
+                <a [routerLink]="action.path" class="header__dropdown-item" (click)="closeMenus()">{{ action.label }}</a>
+              }
+            </div>
+          }
+        </div>
+
+        <a routerLink="/notifications" class="header__bell" title="Notifications" aria-label="Notifications">🔔</a>
+
+        <div class="header__menu">
+          <button type="button" class="header__user" (click)="toggleUserMenu()">
+            <span class="header__avatar">SO</span>
+            <span class="header__user-text">
+              <span class="header__user-name">System Operator</span>
+              <span class="header__user-role">Operator</span>
+            </span>
+            <span aria-hidden="true">▾</span>
+          </button>
+          @if (userMenuOpen()) {
+            <div class="header__dropdown header__dropdown--right">
+              <button type="button" class="header__dropdown-item" (click)="signOut()">Sign out</button>
+            </div>
+          }
+        </div>
       </div>
     </header>
 

@@ -1,5 +1,10 @@
 .overview__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
   margin-bottom: var(--space-6);
+  flex-wrap: wrap;
 }
 .overview__header h1 {
   font-size: var(--font-size-page-title);
@@ -9,6 +14,32 @@
   font-size: var(--font-size-body);
   margin-top: 4px;
 }
+.overview__quick-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-button);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+.btn--primary {
+  background: var(--color-primary);
+  color: var(--text-inverse);
+}
+.btn--primary:hover { background: var(--color-primary-dark); text-decoration: none; }
+.btn--secondary {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+}
+.btn--secondary:hover { border-color: var(--color-primary); color: var(--color-primary-dark); text-decoration: none; }
 
 .kpi-row {
   display: grid;
@@ -42,10 +73,21 @@
   padding: var(--space-5);
 }
 
+.chart-row {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+@media (max-width: 1100px) {
+  .chart-row { grid-template-columns: 1fr; }
+}
+
 .panel-row {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
   gap: var(--space-5);
+  margin-bottom: var(--space-5);
 }
 @media (max-width: 1100px) {
   .panel-row { grid-template-columns: 1fr; }
@@ -60,22 +102,103 @@
 .panel h2 {
   font-size: var(--font-size-section-title);
   margin-bottom: var(--space-4);
+}
+.panel__header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
   gap: var(--space-2);
 }
-.panel__illustrative {
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-analytic-dark);
-  background: var(--color-analytic-light);
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
+.panel__header h2 { margin-bottom: 0; }
+.panel__source {
+  font-size: var(--font-size-meta);
+  color: var(--text-muted);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+.panel__loading, .panel__unavailable, .panel__empty {
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+  font-style: italic;
+  padding: var(--space-6) 0;
+  text-align: center;
+}
+.panel__link {
+  display: inline-block;
+  margin-top: var(--space-3);
+  font-size: var(--font-size-meta);
   font-weight: var(--font-weight-medium);
 }
 
-.alert-list, .health-list {
+// ------------------------------------------------------------ Bar chart --
+.bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 160px;
+  padding-top: var(--space-4);
+}
+.bar-chart__col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  min-width: 0;
+}
+.bar-chart__bar {
+  width: 100%;
+  max-width: 14px;
+  background: var(--color-primary);
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+  transition: height var(--transition-base);
+}
+.bar-chart__label {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+  white-space: nowrap;
+}
+
+// ----------------------------------------------------------------- Donut --
+.donut-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+.donut {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  mask: radial-gradient(farthest-side, transparent calc(100% - 22px), #000 calc(100% - 22px));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 22px), #000 calc(100% - 22px));
+}
+.donut__legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.donut__legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-body);
+}
+.donut__legend-count {
+  color: var(--text-secondary);
+  font-size: var(--font-size-meta);
+}
+
+// ------------------------------------------------------------- Lists ------
+.alert-list, .health-list, .quick-reports {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -83,27 +206,15 @@
   flex-direction: column;
   gap: var(--space-3);
 }
-.alert-list button {
-  background: var(--color-warning-light);
-  color: var(--color-warning-dark);
-  border: none;
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-  text-align: left;
-  width: 100%;
-  cursor: pointer;
+.alert-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--font-size-body);
 }
-.alert-list button:hover { filter: brightness(0.97); }
-.alert-list__empty {
-  color: var(--text-muted);
-  font-size: var(--font-size-body);
-}
-.alert-list__illustrative {
-  color: var(--text-muted);
-  font-size: var(--font-size-meta);
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--space-3);
+.alert-list__text {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .health-list li {
@@ -113,3 +224,35 @@
   font-size: var(--font-size-body);
   color: var(--text-secondary);
 }
+
+.quick-reports li a {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium);
+}
+
+// ------------------------------------------------------------- Table -----
+.mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-table);
+}
+.mini-table th {
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-meta);
+  padding: var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mini-table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+.mini-table tr:last-child td { border-bottom: none; }
+.mini-table__meta {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.mini-table .num { text-align: right; }

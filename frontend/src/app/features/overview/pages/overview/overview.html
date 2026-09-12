@@ -1,12 +1,19 @@
 <div class="overview">
   <div class="overview__header">
-    <h1>Overview</h1>
-    <p class="overview__subtitle">Prepaid operation health — MePDCL demo environment</p>
+    <div>
+      <h1>Dashboard</h1>
+      <p class="overview__subtitle">Prepaid operation health — MePDCL demo environment</p>
+    </div>
+    <div class="overview__quick-actions">
+      <a routerLink="/recharge" class="btn btn--primary">Recharge Consumer</a>
+      <a routerLink="/meter-replacements" class="btn btn--secondary">Meter Replacement</a>
+      <a routerLink="/meter-data" class="btn btn--secondary">Load Survey / DLP</a>
+    </div>
   </div>
 
   @if (loading()) {
     <div class="skeleton-row">
-      @for (i of [1,2,3,4]; track i) {
+      @for (i of [1,2,3,4,5]; track i) {
         <div class="skeleton-card"></div>
       }
     </div>
@@ -19,43 +26,178 @@
     <section class="kpi-row" aria-label="Key performance indicators">
       <pe-kpi-card label="Total Prepaid Consumers" [value]="consumers().length" tone="primary"
         [clickable]="true" (click)="goToConsumers()" />
-      <pe-kpi-card label="Low Credit Consumers" [value]="lowCreditCount" tone="warning" />
-      <pe-kpi-card label="Recharge Success Rate" value="—" tone="info" [illustrative]="true" />
-      <pe-kpi-card label="Bills Generated Today" value="—" tone="neutral" [illustrative]="true" />
-      <pe-kpi-card label="Pending Meter Credit" value="—" tone="neutral" [illustrative]="true" />
-      <pe-kpi-card label="Unreconciled Transactions" value="—" tone="neutral" [illustrative]="true" />
+      <pe-kpi-card label="Total RMS Wallet Balance" [value]="'₹' + (totalWalletBalance | number:'1.0-0')" tone="info" />
+      <pe-kpi-card label="Low Balance Consumers" [value]="lowBalanceCount" tone="warning"
+        [clickable]="true" (click)="goToConsumers()" />
+      <pe-kpi-card label="Disconnected Consumers" [value]="disconnectedCount" tone="danger" />
+      @if (billingProgressAvailable) {
+        <pe-kpi-card label="Today's Billing Progress" [value]="billingProgressPct + '%'"
+          sublabel="Consumers billed from today's DLP" tone="success" />
+      } @else {
+        <pe-kpi-card label="Today's Billing Progress" value="" [unavailable]="true" tone="neutral" />
+      }
+    </section>
+
+    <section class="chart-row">
+      <div class="panel panel--chart">
+        <div class="panel__header">
+          <h2>Hourly Consumption &amp; Wallet Updates</h2>
+          <span class="panel__source">Load Survey (LS)</span>
+        </div>
+        @if (lsLoading()) {
+          <div class="panel__loading">Loading load survey data…</div>
+        } @else if (lsError()) {
+          <div class="panel__unavailable">Data unavailable — could not reach the meter-data API.</div>
+        } @else if (!hasLsData()) {
+          <div class="panel__unavailable">Data unavailable — no Load Survey intervals have been ingested yet.</div>
+        } @else {
+          <div class="bar-chart" role="img" aria-label="Hourly kWh consumption from Load Survey data">
+            @for (bar of hourlyLsChart(); track bar.hourLabel) {
+              <div class="bar-chart__col" [title]="bar.hourLabel + ' — ' + (bar.totalKwh | number:'1.1-2') + ' kWh'">
+                <div class="bar-chart__bar" [style.height.%]="bar.heightPct"></div>
+                @if ($index % 3 === 0) {
+                  <span class="bar-chart__label">{{ bar.hourLabel }}</span>
+                }
+              </div>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="panel panel--donut">
+        <div class="panel__header">
+          <h2>Daily Billing Status</h2>
+          <span class="panel__source">Daily Load Profile (DLP)</span>
+        </div>
+        @if (dlpLoading()) {
+          <div class="panel__loading">Loading daily load profile data…</div>
+        } @else if (dlpError()) {
+          <div class="panel__unavailable">Data unavailable — could not reach the meter-data API.</div>
+        } @else if (dlpStatusDonut().length === 0) {
+          <div class="panel__unavailable">Data unavailable — no Daily Load Profile has been generated yet.</div>
+        } @else {
+          <div class="donut-row">
+            <div class="donut" [style.background]="dlpDonutGradient()"></div>
+            <ul class="donut__legend">
+              @for (slice of dlpStatusDonut(); track slice.label) {
+                <li>
+                  <pe-status-badge [label]="slice.label" [tone]="slice.tone" />
+                  <span class="donut__legend-count">{{ slice.count }} ({{ slice.pct }}%)</span>
+                </li>
+              }
+            </ul>
+          </div>
+        }
+      </div>
     </section>
 
     <section class="panel-row">
       <div class="panel">
-        <h2>Operational Alerts</h2>
-        <ul class="alert-list">
-          @if (lowCreditCount > 0) {
-            <li>
-              <button type="button" (click)="goToConsumers()">
-                {{ lowCreditCount }} consumer(s) at or below their emergency-credit threshold.
-              </button>
-            </li>
-          } @else {
-            <li class="alert-list__empty">No consumers are currently below their emergency-credit threshold.</li>
-          }
-          <li class="alert-list__illustrative">
-            Meter-credit, reconciliation, and exception alerts will appear here once those
-            backend workflows exist — see the System Health panel.
-          </li>
-        </ul>
+        <h2>Alerts &amp; Notifications</h2>
+        @if (notificationsLoading()) {
+          <div class="panel__loading">Loading…</div>
+        } @else if (notificationsError()) {
+          <div class="panel__unavailable">Data unavailable — could not reach the notifications API.</div>
+        } @else if (recentNotifications().length === 0) {
+          <div class="panel__empty">No notifications have been generated yet.</div>
+        } @else {
+          <ul class="alert-list">
+            @for (n of recentNotifications(); track n.id) {
+              <li>
+                <pe-status-badge
+                  [label]="n.status === NotificationStatus.Sent ? 'Sent' : n.status === NotificationStatus.Failed ? 'Failed' : 'Pending'"
+                  [tone]="n.status === NotificationStatus.Sent ? 'success' : n.status === NotificationStatus.Failed ? 'danger' : 'warning'" />
+                <span class="alert-list__text">{{ n.message }} — {{ n.name }} ({{ n.accountNumber }})</span>
+              </li>
+            }
+          </ul>
+        }
+        <a routerLink="/notifications" class="panel__link">View all notifications →</a>
       </div>
 
       <div class="panel">
-        <h2>System Health <span class="panel__illustrative">Illustrative</span></h2>
+        <h2>System Status</h2>
         <ul class="health-list">
           <li><pe-status-badge label="Healthy" tone="success" /> Prepaid Engine API</li>
           <li><pe-status-badge label="Healthy" tone="success" /> PostgreSQL</li>
-          <li><pe-status-badge label="Not integrated" tone="neutral" /> RMS</li>
-          <li><pe-status-badge label="Not integrated" tone="neutral" /> Meter Command Service</li>
-          <li><pe-status-badge label="Not integrated" tone="neutral" /> Notification Service</li>
+          <li><pe-status-badge label="Mock adapter" tone="neutral" /> RMS Client</li>
+          <li><pe-status-badge label="Mock adapter" tone="neutral" /> Meter Command Client</li>
+          <li><pe-status-badge label="Mock adapter" tone="neutral" /> Connectivity Command Client</li>
         </ul>
       </div>
+    </section>
+
+    <section class="panel-row">
+      <div class="panel">
+        <h2>Recent Recharges</h2>
+        @if (rechargesLoading()) {
+          <div class="panel__loading">Loading…</div>
+        } @else if (rechargesError()) {
+          <div class="panel__unavailable">Data unavailable — could not reach the recharges API.</div>
+        } @else if (recentRecharges().length === 0) {
+          <div class="panel__empty">No recharges have been recorded yet.</div>
+        } @else {
+          <table class="mini-table">
+            <thead>
+              <tr><th>Consumer</th><th>Amount</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              @for (r of recentRecharges(); track r.id) {
+                <tr>
+                  <td>{{ r.name }} <span class="mini-table__meta">{{ r.accountNumber }}</span></td>
+                  <td class="num">₹{{ r.amount | number:'1.0-2' }}</td>
+                  <td>
+                    <pe-status-badge
+                      [label]="r.status === RechargeStatus.Success ? 'Success' : r.status === RechargeStatus.Failed ? 'Failed' : r.status === RechargeStatus.Reversed ? 'Reversed' : 'Initiated'"
+                      [tone]="r.status === RechargeStatus.Success ? 'success' : r.status === RechargeStatus.Failed ? 'danger' : r.status === RechargeStatus.Reversed ? 'warning' : 'info'" />
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+        <a routerLink="/recharge" class="panel__link">View all recharges →</a>
+      </div>
+
+      <div class="panel">
+        <h2>Meter Operations</h2>
+        @if (connectivityLoading()) {
+          <div class="panel__loading">Loading…</div>
+        } @else if (connectivityError()) {
+          <div class="panel__unavailable">Data unavailable — could not reach the connectivity-commands API.</div>
+        } @else if (recentMeterOps().length === 0) {
+          <div class="panel__empty">No connectivity commands have been issued yet.</div>
+        } @else {
+          <table class="mini-table">
+            <thead>
+              <tr><th>Consumer</th><th>Type</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              @for (c of recentMeterOps(); track c.id) {
+                <tr>
+                  <td>{{ c.name }} <span class="mini-table__meta">{{ c.accountNumber }}</span></td>
+                  <td>{{ c.commandType === 0 ? 'Disconnect' : 'Reconnect' }}</td>
+                  <td>
+                    <pe-status-badge
+                      [label]="c.status === ConnectivityCommandStatus.Acknowledged ? 'Acknowledged' : c.status === ConnectivityCommandStatus.Failed ? 'Failed' : c.status === ConnectivityCommandStatus.TimedOut ? 'Timed out' : c.status === ConnectivityCommandStatus.Sent ? 'Sent' : 'Queued'"
+                      [tone]="c.status === ConnectivityCommandStatus.Acknowledged ? 'success' : c.status === ConnectivityCommandStatus.Failed || c.status === ConnectivityCommandStatus.TimedOut ? 'danger' : 'info'" />
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+        <a routerLink="/rc-dc" class="panel__link">View all RC/DC operations →</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Quick Reports</h2>
+      <ul class="quick-reports">
+        @for (report of quickReports; track report.path) {
+          <li><a [routerLink]="report.path">{{ report.label }} →</a></li>
+        }
+      </ul>
     </section>
   }
 </div>
