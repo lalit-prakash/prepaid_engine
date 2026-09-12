@@ -1,6 +1,6 @@
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ConnectivityCommandService } from '../../../../core/services/connectivity-command.service';
 import {
   ConnectivityCommandStatus,
@@ -33,9 +33,14 @@ export class RcDcDashboard implements OnInit {
   constructor(
     private readonly connectivityCommandService: ConnectivityCommandService,
     private readonly router: Router,
+    private readonly route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
+    // Prefills from a cross-link (e.g. Consumer 360's RC/DC panel — "View RC/DC history").
+    const initialQuery = this.route.snapshot.queryParamMap.get('q');
+    if (initialQuery) this.searchTerm.set(initialQuery);
+
     this.load();
   }
 

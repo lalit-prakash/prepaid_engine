@@ -1,6 +1,6 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { MeterCommandService } from '../../../../core/services/meter-command.service';
 import { MeterCommandStatus, MeterCommandSummary } from '../../../../core/models/meter-command.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
@@ -28,9 +28,15 @@ export class MeterCreditDashboard implements OnInit {
   constructor(
     private readonly meterCommandService: MeterCommandService,
     private readonly router: Router,
+    private readonly route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
+    // Prefills from a cross-link (e.g. Consumer 360's Recharge panel — "View meter credit
+    // history").
+    const initialQuery = this.route.snapshot.queryParamMap.get('q');
+    if (initialQuery) this.searchTerm.set(initialQuery);
+
     this.load();
   }
 

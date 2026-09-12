@@ -705,7 +705,12 @@ Built:
   (200 success, 200 replayed, 202 pending, 402 declined, 503 unavailable, 400 invalid) — plus a
   real RC/DC panel (Disconnect/Reconnect, gated behind an explicit confirmation dialog, a live
   outcome banner, and a header badge reflecting all four real connection states) — verified
-  live in-browser against the real Postgres-backed API.
+  live in-browser against the real Postgres-backed API. As part of the UI/UX redesign's Phase 2
+  (Consumer 360/Wallet/Recharge/Meter Operations), the page now opens with a "← Back to
+  Consumers" breadcrumb, and its Recharge and RC/DC panels each carry a cross-link ("Recharge
+  history →", "Meter credit history →", "RC/DC history →") that jumps to the corresponding
+  operations dashboard pre-filtered to this consumer's account number, using the same `q`
+  query-param search-prefill pattern as the header's global search.
 - **Billing** (`/billing`) — every bill across all consumers with real KPIs (generated/paid/
   pending/overdue counts, total charges) and search.
 - **Bill Detail** (`/billing/:id`) — the full calculation trace for one bill, reachable from

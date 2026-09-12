@@ -7,6 +7,8 @@
       <p>Check the account number, or the API's health status.</p>
     </div>
   } @else if (consumer(); as c) {
+    <a routerLink="/consumers" class="c360-breadcrumb">← Back to Consumers</a>
+
     <header class="c360-header">
       <div>
         <h1>{{ c.name }}</h1>
@@ -55,7 +57,17 @@
 
     <div class="c360-grid">
       <section class="panel">
-        <h2>Recharge</h2>
+        <div class="panel__header-row">
+          <h2>Recharge</h2>
+          <div class="panel__cross-links">
+            <a [routerLink]="['/recharge']" [queryParams]="{ q: c.accountNumber }" class="panel__cross-link">
+              Recharge history →
+            </a>
+            <a [routerLink]="['/meter-credit']" [queryParams]="{ q: c.accountNumber }" class="panel__cross-link">
+              Meter credit history →
+            </a>
+          </div>
+        </div>
         <p class="panel__hint">
           Orchestrated through RMS (mock in this environment). Prefix the idempotency key with
           <code>FAIL-</code>, <code>PENDING-</code>, or <code>UNAVAILABLE-</code> to demo those RMS
@@ -120,7 +132,12 @@
       </section>
 
       <section class="panel">
-        <h2>RC / DC</h2>
+        <div class="panel__header-row">
+          <h2>RC / DC</h2>
+          <a [routerLink]="['/rc-dc']" [queryParams]="{ q: c.accountNumber }" class="panel__cross-link">
+            RC/DC history →
+          </a>
+        </div>
         <p class="panel__hint">
           Disconnect/reconnect are dispatched through the meter-command layer (mock in this
           environment) and only take effect once acknowledged. Include <code>CONNFAIL-</code> or

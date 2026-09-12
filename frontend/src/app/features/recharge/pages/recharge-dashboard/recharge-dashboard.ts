@@ -1,6 +1,6 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { RechargeService } from '../../../../core/services/recharge.service';
 import { RechargeStatus, RechargeSummary } from '../../../../core/models/recharge.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
@@ -28,9 +28,15 @@ export class RechargeDashboard implements OnInit {
   constructor(
     private readonly rechargeService: RechargeService,
     private readonly router: Router,
+    private readonly route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
+    // Prefills from a cross-link (e.g. Consumer 360's Recharge panel — "View recharge
+    // history") — real reuse of this page's own search, not a separate filtered endpoint.
+    const initialQuery = this.route.snapshot.queryParamMap.get('q');
+    if (initialQuery) this.searchTerm.set(initialQuery);
+
     this.rechargeService.list().subscribe({
       next: (recharges) => {
         this.recharges.set(recharges);
