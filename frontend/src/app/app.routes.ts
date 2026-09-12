@@ -152,6 +152,13 @@ export const routes: Routes = [
             (m) => m.MeterReplacementsDashboard,
           ),
       },
+      {
+        path: 'meter-data',
+        loadComponent: () =>
+          import('./features/meter-data/pages/meter-data-dashboard/meter-data-dashboard').then(
+            (m) => m.MeterDataDashboard,
+          ),
+      },
       ...stubRoute('system-health', 'System Health'),
       { path: '**', redirectTo: 'overview' },
     ],

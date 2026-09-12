@@ -1,0 +1,150 @@
+<div class="meter-data">
+  <div class="page-header">
+    <h1>Meter Data</h1>
+    <p class="page-header__subtitle">
+      The raw LS (30-minute Load Survey) and DLP (Daily Load Profile) streams — two different meter-data products, never shown as one
+    </p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else {
+    <div class="tabs">
+      <button type="button" class="tab" [class.tab--active]="activeTab() === 'ls'" (click)="setTab('ls')">
+        Load Survey ({{ intervals().length }})
+      </button>
+      <button type="button" class="tab" [class.tab--active]="activeTab() === 'dlp'" (click)="setTab('dlp')">
+        Daily Load Profile ({{ profiles().length }})
+      </button>
+    </div>
+
+    @if (activeTab() === 'ls') {
+      <section class="kpi-row">
+        <pe-kpi-card label="Total Blocks" [value]="intervals().length" tone="primary" />
+        <pe-kpi-card label="Valid" [value]="validCount" tone="success" />
+        <pe-kpi-card label="Rejected" [value]="rejectedCount" tone="danger" />
+        <pe-kpi-card label="Processed" [value]="processedCount" tone="info" />
+      </section>
+
+      <div class="toolbar">
+        <input
+          type="search"
+          placeholder="Search account number, name, or meter number…"
+          [value]="searchTerm()"
+          (input)="searchTerm.set($any($event.target).value)"
+        />
+      </div>
+
+      @if (filteredIntervals.length === 0) {
+        <div class="empty-panel">No Load Survey blocks matched your search.</div>
+      } @else {
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Interval</th>
+                <th>Account</th>
+                <th>Consumer</th>
+                <th>Meter</th>
+                <th class="num">Cumulative kWh</th>
+                <th class="num">Interval kWh</th>
+                <th>Quality</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (i of filteredIntervals; track i.id) {
+                <tr>
+                  <td>{{ i.intervalStart | date: 'short' }} – {{ i.intervalEnd | date: 'shortTime' }}</td>
+                  <td><a [routerLink]="['/consumers', i.accountNumber]">{{ i.accountNumber }}</a></td>
+                  <td>{{ i.name }}</td>
+                  <td class="mono">{{ i.meterNumber }}</td>
+                  <td class="num">{{ i.cumulativeKwh | number: '1.2-2' }}</td>
+                  <td class="num">{{ i.intervalKwh | number: '1.2-2' }}</td>
+                  <td>
+                    @if (i.quality === LoadSurveyQuality.Valid) {
+                      <pe-status-badge label="Valid" tone="success" />
+                    } @else {
+                      <pe-status-badge [label]="qualityLabel(i.quality)" tone="danger" />
+                    }
+                  </td>
+                  <td>
+                    @switch (i.status) {
+                      @case (LoadSurveyStatus.Processed) { <pe-status-badge label="Processed" tone="success" /> }
+                      @case (LoadSurveyStatus.Rejected) { <pe-status-badge label="Rejected" tone="danger" /> }
+                      @case (LoadSurveyStatus.Validated) { <pe-status-badge label="Validated" tone="info" /> }
+                      @default { <pe-status-badge [label]="statusLabel(i.status)" tone="neutral" /> }
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    } @else {
+      <section class="kpi-row">
+        <pe-kpi-card label="Total Profiles" [value]="profiles().length" tone="primary" />
+        <pe-kpi-card label="Provisional" [value]="provisionalCount" tone="warning" />
+        <pe-kpi-card label="Billed" [value]="billedCount" tone="success" />
+      </section>
+
+      <div class="toolbar">
+        <input
+          type="search"
+          placeholder="Search account number, name, or meter number…"
+          [value]="searchTerm()"
+          (input)="searchTerm.set($any($event.target).value)"
+        />
+      </div>
+
+      @if (filteredProfiles.length === 0) {
+        <div class="empty-panel">No Daily Load Profiles matched your search.</div>
+      } @else {
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Profile Date</th>
+                <th>Account</th>
+                <th>Consumer</th>
+                <th>Meter</th>
+                <th class="num">Total kWh</th>
+                <th>Status</th>
+                <th>Generated</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (p of filteredProfiles; track p.id) {
+                <tr>
+                  <td>{{ p.profileDate | date: 'mediumDate' }}</td>
+                  <td><a [routerLink]="['/consumers', p.accountNumber]">{{ p.accountNumber }}</a></td>
+                  <td>{{ p.name }}</td>
+                  <td class="mono">{{ p.meterNumber }}</td>
+                  <td class="num">{{ p.totalKwh | number: '1.2-2' }}</td>
+                  <td>
+                    @if (p.isProvisional) {
+                      <pe-status-badge label="Provisional" tone="warning" />
+                    } @else {
+                      @switch (p.status) {
+                        @case (DailyProfileStatus.Billed) { <pe-status-badge label="Billed" tone="success" /> }
+                        @case (DailyProfileStatus.Rejected) { <pe-status-badge label="Rejected" tone="danger" /> }
+                        @case (DailyProfileStatus.Validated) { <pe-status-badge label="Validated" tone="info" /> }
+                        @default { <pe-status-badge label="Received" tone="neutral" /> }
+                      }
+                    }
+                  </td>
+                  <td>{{ p.generatedAt | date: 'medium' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    }
+  }
+</div>

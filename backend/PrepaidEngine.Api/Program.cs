@@ -1645,6 +1645,44 @@ app.MapPost("/api/v1/meter-data/ls", async (LoadSurveyIngestRequest request, IBi
 .WithName("IngestLoadSurvey")
 .RequireAuthorization();
 
+// Cross-consumer operator visibility into the raw LS stream — every block ever ingested, real
+// data quality and processing status included, never hidden behind the aggregate hourly/daily
+// results alone. Capped at the 500 most recent rows — this project has no pagination anywhere;
+// a real deployment ingesting continuously would need one before this cap becomes a real limit.
+app.MapGet("/api/v1/meter-data/ls", async (Guid? consumerId, PrepaidEngineDbContext db) =>
+{
+    var query = db.LoadSurveyIntervals.AsQueryable();
+    if (consumerId.HasValue)
+        query = query.Where(l => l.ConsumerId == consumerId.Value);
+
+    var blocks = await (
+        from l in query
+        join consumer in db.Consumers on l.ConsumerId equals consumer.Id
+        join meter in db.Meters on l.MeterId equals meter.Id
+        orderby l.IntervalStart descending
+        select new
+        {
+            l.Id,
+            consumer.AccountNumber,
+            consumer.Name,
+            meter.MeterNumber,
+            l.IntervalStart,
+            l.IntervalEnd,
+            l.CumulativeKwh,
+            l.IntervalKwh,
+            l.Quality,
+            l.Status,
+            l.ReceivedAt,
+            l.SourceReference,
+        })
+        .Take(500)
+        .ToListAsync();
+
+    return Results.Ok(blocks);
+})
+.WithName("ListLoadSurveyIntervals")
+.RequireAuthorization();
+
 app.MapPost("/api/v1/meter-data/dlp", async (DailyLoadProfileIngestRequest request, IBillingEngineService billingEngine) =>
 {
     var result = await billingEngine.IngestDailyLoadProfileAsync(
@@ -1654,6 +1692,42 @@ app.MapPost("/api/v1/meter-data/dlp", async (DailyLoadProfileIngestRequest reque
     return Results.Ok(result);
 })
 .WithName("IngestDailyLoadProfile")
+.RequireAuthorization();
+
+// Cross-consumer operator visibility into every Daily Load Profile — real, provisional, or
+// billed — never hidden behind the daily settlement result alone.
+app.MapGet("/api/v1/meter-data/dlp", async (Guid? consumerId, PrepaidEngineDbContext db) =>
+{
+    var query = db.DailyLoadProfiles.AsQueryable();
+    if (consumerId.HasValue)
+        query = query.Where(d => d.ConsumerId == consumerId.Value);
+
+    var profiles = await (
+        from d in query
+        join consumer in db.Consumers on d.ConsumerId equals consumer.Id
+        join meter in db.Meters on d.MeterId equals meter.Id
+        orderby d.ProfileDate descending
+        select new
+        {
+            d.Id,
+            consumer.AccountNumber,
+            consumer.Name,
+            meter.MeterNumber,
+            d.ProfileDate,
+            d.GeneratedAt,
+            d.StartCumulativeKwh,
+            d.EndCumulativeKwh,
+            d.TotalKwh,
+            d.Status,
+            d.IsProvisional,
+            d.SourceReference,
+        })
+        .Take(500)
+        .ToListAsync();
+
+    return Results.Ok(profiles);
+})
+.WithName("ListDailyLoadProfiles")
 .RequireAuthorization();
 
 app.MapPost("/api/v1/billing/hourly", async (DateTime hourEndUtc, IBillingEngineService billingEngine) =>

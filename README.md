@@ -483,8 +483,7 @@ adjustment, never a blind full re-debit on top of what the hourly debits already
   provider and delivery-callback dispatcher, a real HES/MDM adapter, late-arriving-data
   correction for an already-closed hour, wallet-mutation row-locking/optimistic-concurrency under
   concurrent workers, a utility timezone configuration (the daily 00:00 boundary uses UTC,
-  matching how every other timestamp in this system is stored), and a holiday calendar. Frontend
-  pages for the LS/DLP data itself (raw interval/profile browsing) were also not built.
+  matching how every other timestamp in this system is stored), and a holiday calendar.
 
 ### Demo console
 
@@ -581,6 +580,8 @@ dotnet tool run dotnet-ef migrations add <Name> \
 | `POST /api/v1/billing/daily/{date}` | HTTP Basic | Runs the daily DLP settlement for every prepaid consumer with an assigned tariff |
 | `POST /api/v1/consumers/{consumerId}/meter-replacement` | HTTP Basic | Records a physical meter swap with the old/new meter audit trail |
 | `GET /api/v1/meter-replacements` | HTTP Basic | Every recorded meter replacement, cross-consumer — backs Meter Replacement History |
+| `GET /api/v1/meter-data/ls` | HTTP Basic | The raw Load Survey stream, cross-consumer, capped at 500 most-recent rows |
+| `GET /api/v1/meter-data/dlp` | HTTP Basic | The raw Daily Load Profile stream, cross-consumer, capped at 500 most-recent rows |
 | `GET /api/v1/consumers/{consumerId}/notifications` | HTTP Basic | A consumer's queued notification history |
 | `GET /api/v1/notifications` | HTTP Basic | Every consumer's queued notification history, cross-consumer — backs Notification History |
 | `GET /api/v1/meter-data/billing-holds` | HTTP Basic | Every `MeterBillingControl` hold (active-only by default, `?activeOnly=false` for full history) |
@@ -722,6 +723,10 @@ Built:
 - **Meter Replacement History** (`/meter-replacements`) — every recorded `MeterAssignment` event
   (real KPIs, a searchable table showing old and new meter numbers side by side with their
   closing/opening readings). Read-only by design — a replacement is a permanent audit record.
+- **Meter Data** (`/meter-data`) — the raw LS (Load Survey) and DLP (Daily Load Profile) streams
+  the billing pipeline runs on, as two separate tabs (real KPIs per tab, a searchable table),
+  never shown as one list — matching the pipeline's own core "LS and DLP are different meter-data
+  products" rule. Read-only by design; both lists are capped at the 500 most-recent rows.
 - **Tariffs & Rules** (`/tariffs`) — the real tariff configuration this engine bills against.
 - **Tariff Detail** (`/tariffs/:id`) — one tariff's slab table, ToD schedule (when configured),
   vend limits, and its recorded **Version History** (mandatory change note + effective date per
