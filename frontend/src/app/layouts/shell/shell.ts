@@ -66,7 +66,7 @@ export class Shell {
       label: 'Meter Data',
       icon: '⏲',
       items: [
-        { label: 'Load Survey / DLP', path: '/meter-data' },
+        { label: 'Daily Load Profile', path: '/meter-data' },
         { label: 'Billing Holds', path: '/billing-holds' },
       ],
     },
@@ -98,7 +98,7 @@ export class Shell {
   protected readonly quickActions = [
     { label: 'Recharge Consumer', path: '/recharge' },
     { label: 'View Consumers', path: '/consumers' },
-    { label: 'Upload Load Survey', path: '/meter-data' },
+    { label: 'View Meter Data', path: '/meter-data' },
     { label: 'Meter Replacement', path: '/meter-replacements' },
     { label: 'Generate Daily Billing', path: '/meter-data' },
   ];

@@ -14,6 +14,12 @@ export enum ConversionConsumerType {
   Other = 5,
 }
 
+/** Mirrors backend ConversionMeterStatus. */
+export enum ConversionMeterStatus {
+  Normal = 0,
+  Faulty = 1,
+}
+
 /** One row of GET /api/v1/conversions. */
 export interface ConversionSummary {
   id: string;
@@ -32,4 +38,18 @@ export interface ConversionSummary {
   requestedAt: string;
   decidedAt: string | null;
   completedAt: string | null;
+  lastReadingDate: string;
+  lastBillingDate: string;
+  temporaryDisconnectionDate: string | null;
+  reconnectionDate: string | null;
+  lastBillFrKwh: number;
+  lastBillFrKvah: number;
+  lastBillMaxDemandKw: number;
+  outstandingAmount: number;
+  meterStatus: ConversionMeterStatus;
+  isPermanentConsumer: boolean;
+  foaAmount: number;
+  diaAmount: number;
+  /** Null until the payment-mode-change command has been acknowledged. */
+  readingAtConversion: number | null;
 }

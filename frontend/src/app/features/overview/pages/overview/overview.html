@@ -7,7 +7,7 @@
     <div class="overview__quick-actions">
       <a routerLink="/recharge" class="btn btn--primary">Recharge Consumer</a>
       <a routerLink="/meter-replacements" class="btn btn--secondary">Meter Replacement</a>
-      <a routerLink="/meter-data" class="btn btn--secondary">Load Survey / DLP</a>
+      <a routerLink="/meter-data" class="btn btn--secondary">Daily Load Profile</a>
     </div>
   </div>
 
@@ -38,32 +38,7 @@
       }
     </section>
 
-    <section class="chart-row">
-      <div class="panel panel--chart">
-        <div class="panel__header">
-          <h2>Hourly Consumption &amp; Wallet Updates</h2>
-          <span class="panel__source">Load Survey (LS)</span>
-        </div>
-        @if (lsLoading()) {
-          <div class="panel__loading">Loading load survey data…</div>
-        } @else if (lsError()) {
-          <div class="panel__unavailable">Data unavailable — could not reach the meter-data API.</div>
-        } @else if (!hasLsData()) {
-          <div class="panel__unavailable">Data unavailable — no Load Survey intervals have been ingested yet.</div>
-        } @else {
-          <div class="bar-chart" role="img" aria-label="Hourly kWh consumption from Load Survey data">
-            @for (bar of hourlyLsChart(); track bar.hourLabel) {
-              <div class="bar-chart__col" [title]="bar.hourLabel + ' — ' + (bar.totalKwh | number:'1.1-2') + ' kWh'">
-                <div class="bar-chart__bar" [style.height.%]="bar.heightPct"></div>
-                @if ($index % 3 === 0) {
-                  <span class="bar-chart__label">{{ bar.hourLabel }}</span>
-                }
-              </div>
-            }
-          </div>
-        }
-      </div>
-
+    <section class="chart-row chart-row--single">
       <div class="panel panel--donut">
         <div class="panel__header">
           <h2>Daily Billing Status</h2>

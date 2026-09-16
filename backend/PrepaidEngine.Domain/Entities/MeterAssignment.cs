@@ -8,10 +8,10 @@ namespace PrepaidEngine.Domain.Entities;
 /// this entity is so that a cumulative reading from the old meter is never subtracted from a
 /// cumulative reading on the new meter to "compute consumption" (see
 /// <see cref="MeterAssignmentEventType.Replaced"/>'s closing/opening readings below).
-/// <see cref="LoadSurveyInterval"/> and <see cref="DailyLoadProfile"/> already scope every reading
-/// to a specific <c>MeterId</c>, so sequence-continuity checks naturally never compare across two
-/// different physical meters as long as this history — not <see cref="Entities.SmartMeter"/>
-/// alone — is treated as the source of truth for "which meter was this consumer's, when".
+/// <see cref="DailyLoadProfile"/> already scopes every reading to a specific <c>MeterId</c>, so
+/// sequence-continuity checks naturally never compare across two different physical meters as
+/// long as this history — not <see cref="Entities.SmartMeter"/> alone — is treated as the source
+/// of truth for "which meter was this consumer's, when".
 /// </summary>
 public class MeterAssignment
 {

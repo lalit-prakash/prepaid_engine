@@ -16,10 +16,9 @@ export interface BulkClearResult {
 
 /** Talks to the real GET /api/v1/meter-data/billing-holds,
  * POST /api/v1/meter-data/{meterId}/billing-hold/clear, and
- * POST /api/v1/meter-data/billing-holds/clear-bulk endpoints — every hold here was auto-raised
- * the moment a real LoadSurveyInterval reported a negative-consumption sequence for that meter,
- * never hand-entered. Clearing one (or several) is a genuine action requiring a mandatory
- * resolution note; actual LS/DLP billing for the meter resumes the moment it clears. */
+ * POST /api/v1/meter-data/billing-holds/clear-bulk endpoints. Clearing one (or several) is a
+ * genuine action requiring a mandatory resolution note; actual DLP billing for the meter resumes
+ * the moment it clears. */
 @Injectable({ providedIn: 'root' })
 export class BillingHoldService {
   private readonly baseUrl = `${environment.apiBaseUrl}/api/v1/meter-data`;

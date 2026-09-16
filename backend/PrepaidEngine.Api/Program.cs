@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Api.Auth;
 using PrepaidEngine.Application.Billing;
 using PrepaidEngine.Application.Connectivity;
+using PrepaidEngine.Application.Conversion;
 using PrepaidEngine.Application.MeterCommands;
 using PrepaidEngine.Application.Rms;
 using PrepaidEngine.Domain;
@@ -9,6 +10,7 @@ using PrepaidEngine.Domain.Entities;
 using PrepaidEngine.Domain.Enums;
 using PrepaidEngine.Infrastructure.Billing;
 using PrepaidEngine.Infrastructure.Connectivity;
+using PrepaidEngine.Infrastructure.Conversion;
 using PrepaidEngine.Infrastructure.MeterCommands;
 using PrepaidEngine.Infrastructure.Persistence;
 using PrepaidEngine.Infrastructure.Persistence.Seed;
@@ -36,12 +38,21 @@ builder.Services.AddSingleton<IMeterCommandClient, MockMeterCommandClient>();
 // MockConnectivityCommandClient registered for local dev / tests until then.
 builder.Services.AddSingleton<IConnectivityCommandClient, MockConnectivityCommandClient>();
 
-// The LS/DLP billing pipeline service — see IBillingEngineService's doc comment. Scoped (not
+// TODO(MDMS/HES integration): swap for a real adapter that actually carries a payment-mode-change
+// command down the MDMS -> HES -> Meter chain; keep MockPaymentModeChangeClient registered for
+// local dev / tests until then.
+builder.Services.AddSingleton<IPaymentModeChangeClient, MockPaymentModeChangeClient>();
+
+// Central emergency-credit disconnect/reconnect policy — see IEmergencyCreditGuard's doc comment.
+// Scoped since it holds a scoped PrepaidEngineDbContext.
+builder.Services.AddScoped<IEmergencyCreditGuard, EmergencyCreditGuard>();
+
+// The DLP billing pipeline service — see IBillingEngineService's doc comment. Scoped (not
 // singleton) since it holds a scoped PrepaidEngineDbContext.
 builder.Services.AddScoped<IBillingEngineService, BillingEngineService>();
 
-// Local/demo background processing for the hourly and daily billing cycles — see the worker's
-// own doc comment for why this is intentionally simple.
+// Local/demo background processing for the daily billing cycle — see the worker's own doc
+// comment for why this is intentionally simple.
 builder.Services.AddHostedService<PrepaidEngine.Api.Billing.BillingProcessingWorker>();
 
 // Basic auth for the demo endpoints only — a stop-gap, not a substitute for real
@@ -834,7 +845,8 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
     RechargeRequest request,
     PrepaidEngineDbContext db,
     IRmsClient rmsClient,
-    IMeterCommandClient meterCommandClient) =>
+    IMeterCommandClient meterCommandClient,
+    IEmergencyCreditGuard emergencyCreditGuard) =>
 {
     if (request.Amount <= 0)
         return Results.BadRequest(new { error = "Amount must be positive." });
@@ -932,6 +944,10 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
                         $"Meter command {meterCommand.Id} timed out waiting for meter acknowledgement.");
                     break;
             }
+
+            // The wallet was credited above regardless of the meter command's own outcome — check
+            // for an auto-reconnect independently of whether the meter command itself succeeded.
+            await emergencyCreditGuard.EvaluateAsync(consumer);
 
             await db.SaveChangesAsync();
             return Results.Ok(new
@@ -1085,17 +1101,21 @@ app.MapPost("/api/v1/meter-commands/{id:guid}/retry", async (
 .WithName("RetryMeterCommand")
 .RequireAuthorization();
 
-// --- Prepaid conversion: RMS pushes a batch of postpaid->prepaid conversion requests, per -----
-// "Prepaid_Integration_Requirement_Document_ProposalFromAMISP_V1.1" section 1. Each item is
-// validated and applied synchronously (the spec's own response is synchronous, per-item
-// Success/Fail — there is no separate approval step in the real flow), but the decision trail
-// (ConversionRequest: Requested -> Approved/Rejected -> Completed) and the actual billing-mode
-// change (Consumer.ConvertToPrepaid(), never a raw property set) stay two explicit calls even
-// though they happen within the same request — mirroring this project's intent/execution split.
-// A NET-meter consumer is always rejected (spec: "If the consumer is NET meter consumer, then
+// --- Prepaid conversion: RMS pushes a batch of postpaid->prepaid conversion requests. ----------
+// Each item is validated and, if accepted, dispatches a PaymentModeChangeCommand down the
+// MDMS -> HES -> Meter chain (mocked — see IPaymentModeChangeClient); only once that command is
+// Acknowledged does this endpoint complete the ConversionRequest, flip the consumer to Prepaid
+// (Consumer.ConvertToPrepaid(), never a raw property set), credit any FOA/DIA amount, post the
+// conversion's opening charge (1st-of-month reading -> the meter's reading at conversion), queue
+// the "you are now prepaid" SMS, and run the emergency-credit guard once for the newly-created
+// wallet. A NET-meter consumer is always rejected ("If the consumer is NET meter consumer, then
 // such meter shall not be converted to prepaid"). One bad item in the batch does not fail the
-// rest — each is independently validated and reported, matching the spec's per-item response.
-app.MapPost("/api/v1/conversions", async (List<ConversionRequestItem>? requests, PrepaidEngineDbContext db) =>
+// rest — each is independently validated and reported.
+app.MapPost("/api/v1/conversions", async (
+    List<ConversionRequestItem>? requests,
+    PrepaidEngineDbContext db,
+    IPaymentModeChangeClient paymentModeChangeClient,
+    IEmergencyCreditGuard emergencyCreditGuard) =>
 {
     if (requests is null || requests.Count == 0)
         return Results.BadRequest(new { error = "At least one conversion request is required." });
@@ -1107,15 +1127,16 @@ app.MapPost("/api/v1/conversions", async (List<ConversionRequestItem>? requests,
         if (string.IsNullOrWhiteSpace(item.TransactionId) || string.IsNullOrWhiteSpace(item.ConsumerNumber))
         {
             responses.Add(new ConversionResponseItem(item.TransactionId ?? string.Empty, item.ConsumerNumber ?? string.Empty,
-                "Fail", "Transaction ID and Consumer Number are required."));
+                "Fail", "Transaction ID and Consumer Number are required.", null));
             continue;
         }
 
-        var consumer = await db.Consumers.FirstOrDefaultAsync(c => c.AccountNumber == item.ConsumerNumber);
+        var consumer = await db.Consumers.Include(c => c.Wallet).ThenInclude(w => w.Transactions)
+            .FirstOrDefaultAsync(c => c.AccountNumber == item.ConsumerNumber);
         if (consumer is null)
         {
             responses.Add(new ConversionResponseItem(item.TransactionId, item.ConsumerNumber,
-                "Fail", $"No consumer found for consumer number {item.ConsumerNumber}."));
+                "Fail", $"No consumer found for consumer number {item.ConsumerNumber}.", null));
             continue;
         }
 
@@ -1125,11 +1146,14 @@ app.MapPost("/api/v1/conversions", async (List<ConversionRequestItem>? requests,
             conversion = new ConversionRequest(
                 Guid.NewGuid(), consumer.Id, item.TransactionId, item.MeterSerialNumber, item.ConsumerNumber,
                 item.ConsumerType, item.InitialReading, item.InitialReadingDateTime, item.ConversionDate,
-                DateTime.UtcNow, item.RequestType ?? "PRE");
+                DateTime.UtcNow, item.LastReadingDate, item.LastBillingDate, item.LastBillFrKwh, item.LastBillFrKvah,
+                item.LastBillMaxDemandKw, item.OutstandingAmount, item.MeterStatus, item.IsPermanentConsumer,
+                item.FoaAmount, item.DiaAmount, item.TemporaryDisconnectionDate, item.ReconnectionDate,
+                item.RequestType ?? "PRE");
         }
         catch (ArgumentException ex)
         {
-            responses.Add(new ConversionResponseItem(item.TransactionId, item.ConsumerNumber, "Fail", ex.Message));
+            responses.Add(new ConversionResponseItem(item.TransactionId, item.ConsumerNumber, "Fail", ex.Message, null));
             continue;
         }
 
@@ -1139,7 +1163,7 @@ app.MapPost("/api/v1/conversions", async (List<ConversionRequestItem>? requests,
         {
             conversion.Reject("NET meter consumers cannot be converted to prepaid.", DateTime.UtcNow);
             Audit(db, nameof(ConversionRequest), conversion.Id.ToString(), "Rejected", "system", details: conversion.DecisionNote);
-            responses.Add(new ConversionResponseItem(item.TransactionId, item.ConsumerNumber, "Fail", conversion.DecisionNote!));
+            responses.Add(new ConversionResponseItem(item.TransactionId, item.ConsumerNumber, "Fail", conversion.DecisionNote!, null));
             continue;
         }
 
@@ -1147,25 +1171,86 @@ app.MapPost("/api/v1/conversions", async (List<ConversionRequestItem>? requests,
         {
             conversion.Reject("Consumer is already billed Prepaid.", DateTime.UtcNow);
             Audit(db, nameof(ConversionRequest), conversion.Id.ToString(), "Rejected", "system", details: conversion.DecisionNote);
-            responses.Add(new ConversionResponseItem(item.TransactionId, item.ConsumerNumber, "Fail", conversion.DecisionNote!));
+            responses.Add(new ConversionResponseItem(item.TransactionId, item.ConsumerNumber, "Fail", conversion.DecisionNote!, null));
             continue;
         }
 
+        // Dispatch the payment-mode-change command: MDMS -> HES -> Meter -> HES -> MDMS. The
+        // request stays Requested (not yet Approved) until the command actually acknowledges —
+        // Reject() only accepts a Requested request, so approving upfront would make a
+        // Failed/TimedOut outcome below throw instead of cleanly rejecting the request.
+        var pmcCommand = new PaymentModeChangeCommand(Guid.NewGuid(), conversion.Id, consumer.Id, DateTime.UtcNow);
+        db.PaymentModeChangeCommands.Add(pmcCommand);
+        pmcCommand.MarkSent(DateTime.UtcNow);
+
+        var pmcResult = await paymentModeChangeClient.ChangePaymentModeAsync(new PaymentModeChangeRequest(
+            consumer.Id, item.MeterSerialNumber, item.TransactionId, item.InitialReading, item.InitialReadingDateTime, item.ConversionDate));
+
+        if (pmcResult.Outcome != PaymentModeChangeOutcome.Acknowledged)
+        {
+            if (pmcResult.Outcome == PaymentModeChangeOutcome.Failed)
+                pmcCommand.MarkFailed(pmcResult.Message ?? "Meter/HES rejected the payment-mode-change command.");
+            else
+                pmcCommand.MarkTimedOut();
+
+            RaiseException(db, OperationalExceptionSourceType.ConnectivityCommand, pmcCommand.Id, consumer.Id,
+                $"Payment-mode-change command {pmcCommand.Id} for conversion {conversion.Id} did not acknowledge: {pmcResult.Message ?? pmcCommand.Status.ToString()}.");
+
+            conversion.Reject($"Payment-mode-change command {pmcCommand.Status}: {pmcResult.Message ?? "no detail"}.", DateTime.UtcNow);
+            Audit(db, nameof(ConversionRequest), conversion.Id.ToString(), "Rejected", "system", details: conversion.DecisionNote);
+            responses.Add(new ConversionResponseItem(item.TransactionId, item.ConsumerNumber, "Fail", conversion.DecisionNote!, pmcCommand.Status.ToString()));
+            continue;
+        }
+
+        pmcCommand.MarkAcknowledged(DateTime.UtcNow, pmcResult.MeterReadingAtConversion!.Value);
         conversion.Approve(DateTime.UtcNow);
+        conversion.RecordReadingAtConversion(pmcResult.MeterReadingAtConversion.Value);
         conversion.Complete(DateTime.UtcNow);
+
         var oldMode = consumer.BillingMode.ToString();
         consumer.ConvertToPrepaid();
 
         Audit(db, nameof(Consumer), consumer.Id.ToString(), "BillingModeChanged", "system",
             oldValue: oldMode, newValue: consumer.BillingMode.ToString(), details: $"Conversion request {conversion.Id} completed");
 
-        // Real SMS delivery ("D/Consumer, your CID ... is now in pre-paid mode...") is not
-        // modeled by this system — this repo has no notification/SMS gateway abstraction, and
-        // per the "no fake success states" rule this endpoint does not report an SMS as sent.
-        // See docs/frontend-scope.md / README for this and the other spec gaps left honestly
-        // unmodeled (holiday calendar, meter cumulative readings, RMS's own shadow-bill calc).
+        // FOA/DIA: credited into the new prepaid wallet as-is (RMS itself zeroes both above the
+        // Rs. 10,000 outstanding threshold — enforced as a validation guard in ConversionRequest's
+        // constructor, not computed here).
+        var foaDiaTotal = conversion.FoaAmount + conversion.DiaAmount;
+        if (foaDiaTotal > 0)
+        {
+            var foaDiaCredit = consumer.Wallet.Credit(foaDiaTotal, WalletTransactionType.ConversionFoaDiaCredit, $"CONV-FOADIA:{conversion.Id}");
+            db.WalletTransactions.Add(foaDiaCredit);
+        }
 
-        responses.Add(new ConversionResponseItem(item.TransactionId, item.ConsumerNumber, "Success", null));
+        // Opening bill: consumption from the 1st of the conversion month up to the moment of
+        // conversion (InitialReading -> ReadingAtConversion), billed at this consumer's tariff —
+        // ongoing prepaid billing (via DLP) starts from the day after the conversion date.
+        var openingConsumption = conversion.OpeningConsumptionKwh!.Value;
+        if (openingConsumption > 0 && consumer.TariffId is not null)
+        {
+            var tariff = await db.Tariffs.FirstOrDefaultAsync(t => t.Id == consumer.TariffId);
+            if (tariff is not null)
+            {
+                var grossEnergyCharge = tariff.CalculateEnergyCharge(openingConsumption);
+                var rebate = grossEnergyCharge * (tariff.PrepaidEnergyRebatePercent / 100m);
+                var openingCharge = Math.Round(grossEnergyCharge - rebate, 2, MidpointRounding.AwayFromZero);
+                if (openingCharge > 0)
+                {
+                    var openingDebit = consumer.Wallet.Debit(openingCharge, WalletTransactionType.ConversionOpeningCharge, $"CONV-OPEN:{conversion.Id}");
+                    db.WalletTransactions.Add(openingDebit);
+                }
+            }
+        }
+
+        db.NotificationEvents.Add(new NotificationEvent(
+            Guid.NewGuid(), consumer.Id, NotificationEventType.PrepaidConversionCompleted,
+            $"Dear Consumer, your account {consumer.AccountNumber} has been converted from postpaid to prepaid billing.",
+            DateTime.UtcNow));
+
+        await emergencyCreditGuard.EvaluateAsync(consumer);
+
+        responses.Add(new ConversionResponseItem(item.TransactionId, item.ConsumerNumber, "Success", null, pmcCommand.Status.ToString()));
     }
 
     await db.SaveChangesAsync();
@@ -1199,6 +1284,19 @@ app.MapGet("/api/v1/conversions", async (PrepaidEngineDbContext db) =>
             cv.RequestedAt,
             cv.DecidedAt,
             cv.CompletedAt,
+            cv.LastReadingDate,
+            cv.LastBillingDate,
+            cv.TemporaryDisconnectionDate,
+            cv.ReconnectionDate,
+            cv.LastBillFrKwh,
+            cv.LastBillFrKvah,
+            cv.LastBillMaxDemandKw,
+            cv.OutstandingAmount,
+            cv.MeterStatus,
+            cv.IsPermanentConsumer,
+            cv.FoaAmount,
+            cv.DiaAmount,
+            cv.ReadingAtConversion,
         })
         .ToListAsync();
 
@@ -1221,6 +1319,8 @@ app.MapGet("/api/v1/conversions/{id:guid}", async (Guid id, PrepaidEngineDbConte
             detail: $"Conversion request {id} references a consumer that no longer exists.");
     }
 
+    var paymentModeChange = await db.PaymentModeChangeCommands.FirstOrDefaultAsync(p => p.ConversionRequestId == conversion.Id);
+
     return Results.Ok(new
     {
         conversion.Id,
@@ -1238,6 +1338,30 @@ app.MapGet("/api/v1/conversions/{id:guid}", async (Guid id, PrepaidEngineDbConte
         conversion.RequestedAt,
         conversion.DecidedAt,
         conversion.CompletedAt,
+        conversion.LastReadingDate,
+        conversion.LastBillingDate,
+        conversion.TemporaryDisconnectionDate,
+        conversion.ReconnectionDate,
+        conversion.LastBillFrKwh,
+        conversion.LastBillFrKvah,
+        conversion.LastBillMaxDemandKw,
+        conversion.OutstandingAmount,
+        conversion.MeterStatus,
+        conversion.IsPermanentConsumer,
+        conversion.FoaAmount,
+        conversion.DiaAmount,
+        conversion.ReadingAtConversion,
+        conversion.OpeningConsumptionKwh,
+        PaymentModeChange = paymentModeChange is null ? null : new
+        {
+            paymentModeChange.Id,
+            paymentModeChange.Status,
+            paymentModeChange.ErrorMessage,
+            paymentModeChange.MeterReadingAtConversion,
+            paymentModeChange.CreatedAt,
+            paymentModeChange.SentAt,
+            paymentModeChange.AcknowledgedAt,
+        },
     });
 })
 .WithName("GetConversionById")
@@ -1247,7 +1371,8 @@ app.MapGet("/api/v1/conversions/{id:guid}", async (Guid id, PrepaidEngineDbConte
 // the consumer's wallet exactly like a recharge, plus the daily billing-data export AMISP needs
 // to give RMS so it can compute its own shadow monthly bill and find any gap in the first place.
 app.MapPost("/api/v1/consumers/{accountNumber}/reconciliation-adjustments", async (
-    string accountNumber, ReconciliationAdjustmentRequest request, PrepaidEngineDbContext db) =>
+    string accountNumber, ReconciliationAdjustmentRequest request, PrepaidEngineDbContext db,
+    IEmergencyCreditGuard emergencyCreditGuard) =>
 {
     if (request.Amount == 0)
         return Results.BadRequest(new { error = "A reconciliation adjustment amount cannot be zero." });
@@ -1263,6 +1388,10 @@ app.MapPost("/api/v1/consumers/{accountNumber}/reconciliation-adjustments", asyn
 
     Audit(db, nameof(ReconciliationAdjustment), adjustment.Id.ToString(), "Applied", "system",
         newValue: adjustment.Amount.ToString("0.00"), details: $"For {consumer.AccountNumber}: {request.Reference}");
+
+    // A reconciliation adjustment can move the balance in either direction — let the guard decide
+    // whether that crossed the emergency-credit line one way or the other.
+    await emergencyCreditGuard.EvaluateAsync(consumer);
 
     await db.SaveChangesAsync();
 
@@ -1628,61 +1757,9 @@ app.MapGet("/api/v1/reports/recharge-failures", async (PrepaidEngineDbContext db
 .WithName("RechargeFailureReport")
 .RequireAuthorization();
 
-// --- LS/DLP billing pipeline: 30-minute Load Survey ingestion, hourly wallet debits, Daily -----
-// Load Profile ingestion, and daily settlement — see IBillingEngineService's doc comment for the
-// core rule this whole section exists to enforce.
-app.MapPost("/api/v1/meter-data/ls", async (LoadSurveyIngestRequest request, IBillingEngineService billingEngine) =>
-{
-    if (request.Blocks is null || request.Blocks.Count == 0)
-        return Results.BadRequest(new { error = "At least one Load Survey block is required." });
-
-    var results = await billingEngine.IngestLoadSurveyAsync(
-        request.Blocks.Select(b => new LoadSurveyBlockRequest(
-            b.ConsumerId, b.MeterId, b.IntervalStart, b.IntervalEnd, b.CumulativeKwh, b.IntervalKwh, b.SourceReference)).ToList());
-
-    return Results.Ok(results);
-})
-.WithName("IngestLoadSurvey")
-.RequireAuthorization();
-
-// Cross-consumer operator visibility into the raw LS stream — every block ever ingested, real
-// data quality and processing status included, never hidden behind the aggregate hourly/daily
-// results alone. Capped at the 500 most recent rows — this project has no pagination anywhere;
-// a real deployment ingesting continuously would need one before this cap becomes a real limit.
-app.MapGet("/api/v1/meter-data/ls", async (Guid? consumerId, PrepaidEngineDbContext db) =>
-{
-    var query = db.LoadSurveyIntervals.AsQueryable();
-    if (consumerId.HasValue)
-        query = query.Where(l => l.ConsumerId == consumerId.Value);
-
-    var blocks = await (
-        from l in query
-        join consumer in db.Consumers on l.ConsumerId equals consumer.Id
-        join meter in db.Meters on l.MeterId equals meter.Id
-        orderby l.IntervalStart descending
-        select new
-        {
-            l.Id,
-            consumer.AccountNumber,
-            consumer.Name,
-            meter.MeterNumber,
-            l.IntervalStart,
-            l.IntervalEnd,
-            l.CumulativeKwh,
-            l.IntervalKwh,
-            l.Quality,
-            l.Status,
-            l.ReceivedAt,
-            l.SourceReference,
-        })
-        .Take(500)
-        .ToListAsync();
-
-    return Results.Ok(blocks);
-})
-.WithName("ListLoadSurveyIntervals")
-.RequireAuthorization();
-
+// --- DLP billing pipeline: Daily Load Profile ingestion and the daily charge — see -------------
+// IBillingEngineService's doc comment. The Load Survey (LS) hourly pipeline that used to also
+// live in this section has been removed; DLP alone drives ongoing prepaid billing now.
 app.MapPost("/api/v1/meter-data/dlp", async (DailyLoadProfileIngestRequest request, IBillingEngineService billingEngine) =>
 {
     var result = await billingEngine.IngestDailyLoadProfileAsync(
@@ -1728,14 +1805,6 @@ app.MapGet("/api/v1/meter-data/dlp", async (Guid? consumerId, PrepaidEngineDbCon
     return Results.Ok(profiles);
 })
 .WithName("ListDailyLoadProfiles")
-.RequireAuthorization();
-
-app.MapPost("/api/v1/billing/hourly", async (DateTime hourEndUtc, IBillingEngineService billingEngine) =>
-{
-    var results = await billingEngine.ProcessCompletedHourAsync(hourEndUtc);
-    return Results.Ok(results);
-})
-.WithName("ProcessHourlyBilling")
 .RequireAuthorization();
 
 app.MapPost("/api/v1/billing/daily/{billingDate}", async (DateOnly billingDate, IBillingEngineService billingEngine) =>
@@ -1994,6 +2063,9 @@ public record ConnectivityRequest(string Reason, string? CorrelationId = null);
 /// <param name="InitialReadingDateTime">Date/time of that initial reading.</param>
 /// <param name="ConversionDate">The day RMS pushed this request.</param>
 /// <param name="RequestType">"PRE" by default per spec.</param>
+/// <summary>RMS's finalized postpaid->prepaid conversion request parameter set, plus the
+/// pre-existing InitialReading/InitialReadingDateTime (the 1st-of-conversion-month opening
+/// reading this project's conversion opening-bill calculation requires).</summary>
 public record ConversionRequestItem(
     string TransactionId,
     string MeterSerialNumber,
@@ -2002,11 +2074,24 @@ public record ConversionRequestItem(
     decimal InitialReading,
     DateTime InitialReadingDateTime,
     DateTime ConversionDate,
+    DateTime LastReadingDate,
+    DateTime LastBillingDate,
+    decimal LastBillFrKwh,
+    decimal LastBillFrKvah,
+    decimal LastBillMaxDemandKw,
+    decimal OutstandingAmount,
+    ConversionMeterStatus MeterStatus,
+    bool IsPermanentConsumer,
+    decimal FoaAmount,
+    decimal DiaAmount,
+    DateTime? TemporaryDisconnectionDate = null,
+    DateTime? ReconnectionDate = null,
     string? RequestType = "PRE");
 
-/// <summary>AMISP's synchronous per-request acknowledgement back to RMS, per spec section 1
-/// ("Transaction ID, Consumer Number, Response code [Success/Fail], Response message").</summary>
-public record ConversionResponseItem(string TransactionId, string ConsumerNumber, string ResponseCode, string? ResponseMessage);
+/// <summary>MDMS's synchronous per-request acknowledgement back to RMS.</summary>
+/// <param name="PaymentModeChangeStatus">The MDMS -> HES -> Meter command's final status, when a
+/// command was actually dispatched (null for requests rejected before dispatch, e.g. a NET meter).</param>
+public record ConversionResponseItem(string TransactionId, string ConsumerNumber, string ResponseCode, string? ResponseMessage, string? PaymentModeChangeStatus);
 
 /// <param name="Note">Required resolution note, mirroring ConnectivityCommand's mandatory Reason pattern.</param>
 public record ResolutionRequest(string Note);
@@ -2027,14 +2112,6 @@ public record ReconciliationAdjustmentRequest(decimal Amount, DateTime Reconcili
 /// <param name="ChangeNote">Required — why the change was made.</param>
 /// <param name="EffectiveDate">When the new value takes effect.</param>
 public record TariffVersionRequest(string FieldName, string OldValue, string NewValue, string ChangeNote, DateTime EffectiveDate);
-
-/// <summary>One 30-minute Load Survey block in a POST /api/v1/meter-data/ls batch.</summary>
-public record LoadSurveyBlockApiRequest(
-    Guid ConsumerId, Guid MeterId, DateTime IntervalStart, DateTime IntervalEnd,
-    decimal CumulativeKwh, decimal IntervalKwh, string? SourceReference = null);
-
-/// <param name="Blocks">Requests arrive as an array — a single block or a batch.</param>
-public record LoadSurveyIngestRequest(List<LoadSurveyBlockApiRequest> Blocks);
 
 /// <summary>POST /api/v1/meter-data/dlp request body.</summary>
 public record DailyLoadProfileIngestRequest(

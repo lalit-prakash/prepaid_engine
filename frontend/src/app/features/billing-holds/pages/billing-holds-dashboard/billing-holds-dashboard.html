@@ -95,8 +95,8 @@
                 <td>{{ h.name }}</td>
                 <td class="mono">
                   {{ h.meterNumber }}
-                  <a [routerLink]="['/meter-data']" [queryParams]="{ tab: 'ls', q: h.meterNumber }" class="row-cross-link">
-                    View LS data →
+                  <a [routerLink]="['/meter-data']" [queryParams]="{ q: h.meterNumber }" class="row-cross-link">
+                    View DLP data →
                   </a>
                 </td>
                 <td class="reason">{{ h.blockReason }}</td>

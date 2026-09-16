@@ -4,7 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { ConsumerService } from '../../../../core/services/consumer.service';
 import { ConnectionStatus, ConsumerSummary } from '../../../../core/models/consumer.model';
 import { MeterDataService } from '../../../../core/services/meter-data.service';
-import { LoadSurveyIntervalSummary, DailyLoadProfileSummary } from '../../../../core/models/meter-data.model';
+import { DailyLoadProfileSummary } from '../../../../core/models/meter-data.model';
 import { NotificationService } from '../../../../core/services/notification.service';
 import { NotificationStatus, NotificationSummary } from '../../../../core/models/notification.model';
 import { RechargeService } from '../../../../core/services/recharge.service';
@@ -13,14 +13,6 @@ import { ConnectivityCommandService } from '../../../../core/services/connectivi
 import { ConnectivityCommandStatus, ConnectivityCommandSummary } from '../../../../core/models/connectivity-command.model';
 import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
-
-/** One bar of the "Hourly Consumption & Wallet Updates" chart — built strictly from Load
- * Survey (LS) interval rows, aggregated by hour-of-day across whatever LS data exists. */
-interface HourlyLsBar {
-  hourLabel: string;
-  totalKwh: number;
-  heightPct: number;
-}
 
 /** One slice of the "Daily Billing Status" donut — built strictly from Daily Load Profile
  * (DLP) rows for the most recent profile date present in the feed. */
@@ -34,9 +26,8 @@ interface DlpStatusSlice {
 /**
  * The top-level operations dashboard. Every card below is either backed by a real endpoint
  * this app already exposes, or explicitly rendered as "Data unavailable" — nothing here is a
- * fabricated number wearing an "Illustrative" label. Load Survey (LS) and Daily Load Profile
- * (DLP) are two distinct meter-data products (see BillingEngineService) and are never
- * conflated into one chart: the hourly chart is LS-only, the billing-status donut is DLP-only.
+ * fabricated number wearing an "Illustrative" label. The billing-status donut is built strictly
+ * from Daily Load Profile (DLP) data — the sole driver of ongoing prepaid billing.
  */
 @Component({
   selector: 'pe-overview',
@@ -48,10 +39,6 @@ export class Overview implements OnInit {
   protected readonly consumers = signal<ConsumerSummary[]>([]);
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
-
-  protected readonly lsIntervals = signal<LoadSurveyIntervalSummary[]>([]);
-  protected readonly lsLoading = signal(true);
-  protected readonly lsError = signal(false);
 
   protected readonly dlpProfiles = signal<DailyLoadProfileSummary[]>([]);
   protected readonly dlpLoading = signal(true);
@@ -98,17 +85,6 @@ export class Overview implements OnInit {
       error: () => {
         this.error.set('Could not load consumer data from the API.');
         this.loading.set(false);
-      },
-    });
-
-    this.meterDataService.listLoadSurvey().subscribe({
-      next: (intervals) => {
-        this.lsIntervals.set(intervals);
-        this.lsLoading.set(false);
-      },
-      error: () => {
-        this.lsError.set(true);
-        this.lsLoading.set(false);
       },
     });
 
@@ -190,28 +166,7 @@ export class Overview implements OnInit {
     return Math.round((billed / rows.length) * 100);
   }
 
-  /** LS intervals aggregated by hour-of-day (0-23) across every interval currently in the
-   * feed — a real aggregation of real rows, not a synthetic curve. */
-  protected readonly hourlyLsChart = computed<HourlyLsBar[]>(() => {
-    const intervals = this.lsIntervals();
-    const totals = new Array(24).fill(0);
-    for (const interval of intervals) {
-      const hour = new Date(interval.intervalStart).getHours();
-      totals[hour] += interval.intervalKwh;
-    }
-    const max = Math.max(...totals, 0.0001);
-    return totals.map((total, hour) => ({
-      hourLabel: `${hour.toString().padStart(2, '0')}:00`,
-      totalKwh: total,
-      heightPct: Math.round((total / max) * 100),
-    }));
-  });
-
-  protected readonly hasLsData = computed(() => this.lsIntervals().length > 0);
-
-  /** DLP status breakdown for the most recent profile date — the donut is entirely DLP-derived,
-   * never LS-derived (LS drives the hourly chart above; conflating the two is exactly the
-   * mislabeling this app must never do). */
+  /** DLP status breakdown for the most recent profile date. */
   protected readonly dlpStatusDonut = computed<DlpStatusSlice[]>(() => {
     const rows = this.todaysDlpProfiles;
     if (rows.length === 0) return [];

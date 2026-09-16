@@ -1,4 +1,4 @@
-import { DatePipe } from '@angular/common';
+import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ConversionService } from '../../../../core/services/conversion.service';
@@ -16,7 +16,7 @@ import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
  */
 @Component({
   selector: 'pe-conversion-dashboard',
-  imports: [StatusBadge, KpiCard, DatePipe, RouterLink],
+  imports: [StatusBadge, KpiCard, DatePipe, DecimalPipe, RouterLink],
   templateUrl: './conversion-dashboard.html',
   styleUrl: './conversion-dashboard.scss',
 })
@@ -72,6 +72,14 @@ export class ConversionDashboard implements OnInit {
   protected get successRate(): string {
     if (this.conversions().length === 0) return '—';
     return `${((this.completedCount / this.conversions().length) * 100).toFixed(1)}%`;
+  }
+
+  /** Total FOA+DIA actually credited into consumers' wallets so far — zero for any conversion
+   * whose outstanding balance exceeded the Rs. 10,000 zeroing threshold, per RMS's own rule. */
+  protected get totalFoaDiaCredited(): number {
+    return this.conversions()
+      .filter((c) => c.status === ConversionStatus.Completed)
+      .reduce((sum, c) => sum + c.foaAmount + c.diaAmount, 0);
   }
 
   protected consumerTypeLabel(type: ConversionConsumerType): string {

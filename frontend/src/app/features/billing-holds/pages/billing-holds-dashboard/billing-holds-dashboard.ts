@@ -9,10 +9,9 @@ import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
 
 /**
  * Real, API-backed Billing Holds dashboard (GET /api/v1/meter-data/billing-holds) — every
- * MeterBillingControl hold, auto-raised the moment a real LoadSurveyInterval reports a
- * negative-consumption sequence for that meter (spec §7-8). Never hand-entered. Clearing one is
- * a genuine action gated behind a mandatory resolution note, matching this project's
- * mandatory-reason discipline — actual LS/DLP billing for the meter resumes the moment it clears.
+ * MeterBillingControl hold. Clearing one is a genuine action gated behind a mandatory resolution
+ * note, matching this project's mandatory-reason discipline — actual DLP billing for the meter
+ * resumes the moment it clears.
  */
 @Component({
   selector: 'pe-billing-holds-dashboard',

@@ -3,10 +3,8 @@ using PrepaidEngine.Application.Billing;
 namespace PrepaidEngine.Api.Billing;
 
 /// <summary>
-/// A local/demo background worker for the LS/DLP billing pipeline (spec §23). Every minute,
-/// checks whether it is within the first ten minutes of a new hour; if so, processes the
-/// previous completed hour, and — if the new hour is midnight — also processes the previous
-/// day's DLP settlement.
+/// A local/demo background worker for the DLP billing pipeline. Every minute, checks whether it
+/// is within the first ten minutes of a new day; if so, processes the previous day's DLP charge.
 ///
 /// Intentionally simple, per the spec's own framing: production should replace this with a
 /// durable scheduler/job framework (with retry guarantees) once operational scale requires it —
@@ -19,7 +17,6 @@ public class BillingProcessingWorker : BackgroundService
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<BillingProcessingWorker> _logger;
-    private DateTime? _lastHourProcessed;
     private DateOnly? _lastDayProcessed;
 
     public BillingProcessingWorker(IServiceScopeFactory scopeFactory, ILogger<BillingProcessingWorker> logger)
@@ -57,16 +54,6 @@ public class BillingProcessingWorker : BackgroundService
         if (now.Minute >= TriggerWindowMinutes)
             return;
 
-        var completedHourEnd = new DateTime(now.Year, now.Month, now.Day, now.Hour, 0, 0, DateTimeKind.Utc);
-        if (_lastHourProcessed != completedHourEnd)
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var billingEngine = scope.ServiceProvider.GetRequiredService<IBillingEngineService>();
-            await billingEngine.ProcessCompletedHourAsync(completedHourEnd, cancellationToken);
-            _lastHourProcessed = completedHourEnd;
-            _logger.LogInformation("Processed completed hour ending {HourEnd}.", completedHourEnd);
-        }
-
         if (now.Hour == 0)
         {
             var previousDay = DateOnly.FromDateTime(now.AddDays(-1));
@@ -76,7 +63,7 @@ public class BillingProcessingWorker : BackgroundService
                 var billingEngine = scope.ServiceProvider.GetRequiredService<IBillingEngineService>();
                 await billingEngine.ProcessDailyAsync(previousDay, cancellationToken);
                 _lastDayProcessed = previousDay;
-                _logger.LogInformation("Processed daily DLP settlement for {BillingDate}.", previousDay);
+                _logger.LogInformation("Processed daily DLP charge for {BillingDate}.", previousDay);
             }
         }
     }

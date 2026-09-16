@@ -68,6 +68,52 @@ public class ConversionRequest
     public DateTime? DecidedAt { get; private set; }
     public DateTime? CompletedAt { get; private set; }
 
+    /// <summary>Outstanding balance (Rs.) above which RMS zeroes <see cref="FoaAmount"/> and
+    /// <see cref="DiaAmount"/> instead of sharing real values — enforced here as a data-quality
+    /// guard on the incoming request, not computed by this project (RMS makes that call itself).</summary>
+    public const decimal FoaDiaZeroingOutstandingThreshold = 10_000m;
+
+    // ---- RMS's finalized conversion-request parameter set (beyond Consumer ID/Meter Serial
+    // Number/Conversion Date/Consumer Type/Request Type above, and InitialReading/
+    // InitialReadingDateTime — the pre-existing 1st-of-month opening reading this project already
+    // required as the baseline for the conversion opening bill). ----
+
+    /// <summary>Date of the last (postpaid) meter reading RMS recorded before conversion.</summary>
+    public DateTime LastReadingDate { get; private set; }
+
+    /// <summary>Date of the consumer's last postpaid bill.</summary>
+    public DateTime LastBillingDate { get; private set; }
+
+    public DateTime? TemporaryDisconnectionDate { get; private set; }
+    public DateTime? ReconnectionDate { get; private set; }
+
+    /// <summary>Final reading (kWh) the last postpaid bill was based on — a historical reference
+    /// from RMS, distinct from <see cref="InitialReading"/> (the 1st-of-conversion-month reading
+    /// this project's opening-bill calculation actually uses; the two coincide only if the last
+    /// billing cycle happened to close on the 1st).</summary>
+    public decimal LastBillFrKwh { get; private set; }
+
+    public decimal LastBillFrKvah { get; private set; }
+    public decimal LastBillMaxDemandKw { get; private set; }
+    public decimal OutstandingAmount { get; private set; }
+    public ConversionMeterStatus MeterStatus { get; private set; }
+    public bool IsPermanentConsumer { get; private set; }
+
+    /// <summary>Fixed/Other Obligation Amount RMS shares as part of this conversion — zero
+    /// whenever <see cref="OutstandingAmount"/> exceeds <see cref="FoaDiaZeroingOutstandingThreshold"/>.</summary>
+    public decimal FoaAmount { get; private set; }
+
+    /// <summary>Deposit/Initial Amount RMS shares as part of this conversion — same zeroing rule
+    /// as <see cref="FoaAmount"/>.</summary>
+    public decimal DiaAmount { get; private set; }
+
+    /// <summary>The meter's cumulative reading (kWh) at the moment the payment-mode-change
+    /// command was acknowledged — set once, by <see cref="RecordReadingAtConversion"/>, from the
+    /// corresponding <see cref="PaymentModeChangeCommand.MeterReadingAtConversion"/>. Together
+    /// with <see cref="InitialReading"/> this gives the opening bill's consumption
+    /// (<c>ReadingAtConversion - InitialReading</c>).</summary>
+    public decimal? ReadingAtConversion { get; private set; }
+
     public ConversionRequest(
         Guid id,
         Guid consumerId,
@@ -79,6 +125,18 @@ public class ConversionRequest
         DateTime initialReadingDateTime,
         DateTime conversionDate,
         DateTime requestedAt,
+        DateTime lastReadingDate,
+        DateTime lastBillingDate,
+        decimal lastBillFrKwh,
+        decimal lastBillFrKvah,
+        decimal lastBillMaxDemandKw,
+        decimal outstandingAmount,
+        ConversionMeterStatus meterStatus,
+        bool isPermanentConsumer,
+        decimal foaAmount,
+        decimal diaAmount,
+        DateTime? temporaryDisconnectionDate = null,
+        DateTime? reconnectionDate = null,
         string requestType = "PRE")
     {
         if (string.IsNullOrWhiteSpace(transactionId))
@@ -91,6 +149,22 @@ public class ConversionRequest
             throw new ArgumentException("A request type is required.", nameof(requestType));
         if (initialReading < 0)
             throw new ArgumentOutOfRangeException(nameof(initialReading), "Initial reading cannot be negative.");
+        if (lastBillFrKwh < 0)
+            throw new ArgumentOutOfRangeException(nameof(lastBillFrKwh), "Last bill FR kWh cannot be negative.");
+        if (lastBillFrKvah < 0)
+            throw new ArgumentOutOfRangeException(nameof(lastBillFrKvah), "Last bill FR kVAh cannot be negative.");
+        if (lastBillMaxDemandKw < 0)
+            throw new ArgumentOutOfRangeException(nameof(lastBillMaxDemandKw), "Last bill maximum demand cannot be negative.");
+        if (foaAmount < 0)
+            throw new ArgumentOutOfRangeException(nameof(foaAmount), "FOA amount cannot be negative.");
+        if (diaAmount < 0)
+            throw new ArgumentOutOfRangeException(nameof(diaAmount), "DIA amount cannot be negative.");
+        if (outstandingAmount > FoaDiaZeroingOutstandingThreshold && (foaAmount != 0 || diaAmount != 0))
+        {
+            throw new ArgumentException(
+                $"Outstanding amount Rs.{outstandingAmount} exceeds Rs.{FoaDiaZeroingOutstandingThreshold} — " +
+                "RMS must zero FOA and DIA above this threshold.", nameof(foaAmount));
+        }
 
         Id = id;
         ConsumerId = consumerId;
@@ -102,6 +176,18 @@ public class ConversionRequest
         InitialReading = initialReading;
         InitialReadingDateTime = initialReadingDateTime;
         ConversionDate = conversionDate;
+        LastReadingDate = lastReadingDate;
+        LastBillingDate = lastBillingDate;
+        LastBillFrKwh = lastBillFrKwh;
+        LastBillFrKvah = lastBillFrKvah;
+        LastBillMaxDemandKw = lastBillMaxDemandKw;
+        OutstandingAmount = outstandingAmount;
+        MeterStatus = meterStatus;
+        IsPermanentConsumer = isPermanentConsumer;
+        FoaAmount = foaAmount;
+        DiaAmount = diaAmount;
+        TemporaryDisconnectionDate = temporaryDisconnectionDate;
+        ReconnectionDate = reconnectionDate;
         Status = ConversionStatus.Requested;
         RequestedAt = requestedAt;
     }
@@ -167,8 +253,30 @@ public class ConversionRequest
     {
         if (Status != ConversionStatus.Approved)
             throw new InvalidOperationException($"Cannot complete a conversion request that is {Status} — only an Approved request can be completed.");
+        if (ReadingAtConversion is null)
+            throw new InvalidOperationException("Cannot complete a conversion request before its payment-mode-change command has been acknowledged.");
 
         Status = ConversionStatus.Completed;
         CompletedAt = completedAt;
     }
+
+    /// <summary>Records the meter's cumulative reading at the moment its payment-mode-change
+    /// command was acknowledged — must run before <see cref="Complete"/>. Set exactly once.</summary>
+    public void RecordReadingAtConversion(decimal readingAtConversion)
+    {
+        if (ReadingAtConversion is not null)
+            throw new InvalidOperationException("The reading at conversion has already been recorded.");
+        if (readingAtConversion < InitialReading)
+        {
+            throw new ArgumentOutOfRangeException(nameof(readingAtConversion),
+                "The meter's reading at conversion cannot be lower than the 1st-of-month opening reading.");
+        }
+
+        ReadingAtConversion = readingAtConversion;
+    }
+
+    /// <summary>Consumption (kWh) from the 1st of the conversion month up to the moment of
+    /// conversion — the opening bill's basis. Only meaningful once
+    /// <see cref="RecordReadingAtConversion"/> has run.</summary>
+    public decimal? OpeningConsumptionKwh => ReadingAtConversion is null ? null : ReadingAtConversion - InitialReading;
 }

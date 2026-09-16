@@ -4,15 +4,15 @@ namespace PrepaidEngine.Domain.Entities;
 
 /// <summary>
 /// A Daily Load Profile (DLP) — the meter's daily consumption profile, created at the 00:00 hrs
-/// boundary, used to compute the authoritative daily charge and settle it against the day's
-/// hourly Load Survey (<see cref="LoadSurveyInterval"/>) debits. Deliberately NOT the 30-minute
-/// LS stream and must never be named or stored as one — see <see cref="LoadSurveyInterval"/>'s
-/// doc comment for the full LS-vs-DLP distinction.
+/// boundary, used to compute the day's direct wallet charge (see
+/// <c>BillingEngineService.ProcessDailyAsync</c>). This is now the sole driver of ongoing prepaid
+/// billing — the 30-minute Load Survey (LS) stream this project used to also bill from, and
+/// settle DLP against, has been removed.
 ///
 /// Unique per <c>ConsumerId + MeterId + ProfileDate</c>. When the DLP for a date is missing at
 /// the daily billing boundary, a provisional profile is created instead (<see cref="IsProvisional"/>)
 /// and later replaced in place by the actual DLP via <see cref="ReplaceWithActual"/> — the
-/// historical provisional wallet transaction is never edited, only settled against.
+/// historical provisional wallet transaction is never edited.
 /// </summary>
 public class DailyLoadProfile
 {

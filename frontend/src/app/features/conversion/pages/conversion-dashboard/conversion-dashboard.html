@@ -17,6 +17,7 @@
       <pe-kpi-card label="Rejected" [value]="rejectedCount" tone="danger" />
       <pe-kpi-card label="Pending" [value]="pendingCount" tone="warning" />
       <pe-kpi-card label="Success Rate" [value]="successRate" tone="info" />
+      <pe-kpi-card label="FOA+DIA Credited" [value]="'₹' + (totalFoaDiaCredited | number:'1.0-2')" tone="success" />
     </section>
 
     <div class="toolbar">
@@ -42,6 +43,9 @@
               <th>Transaction ID</th>
               <th>Conversion Date</th>
               <th>Grace Period Ends</th>
+              <th class="num">Outstanding</th>
+              <th class="num">FOA / DIA</th>
+              <th class="num">Reading @ Conversion</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -55,6 +59,15 @@
                 <td class="mono">{{ c.transactionId }}</td>
                 <td>{{ c.conversionDate | date: 'mediumDate' }}</td>
                 <td>{{ c.gracePeriodEndDate | date: 'mediumDate' }}</td>
+                <td class="num">₹{{ c.outstandingAmount | number: '1.0-2' }}</td>
+                <td class="num">₹{{ c.foaAmount | number: '1.0-2' }} / ₹{{ c.diaAmount | number: '1.0-2' }}</td>
+                <td class="num">
+                  @if (c.readingAtConversion !== null) {
+                    {{ c.readingAtConversion | number: '1.1-3' }} kWh
+                  } @else {
+                    <span class="empty-note">—</span>
+                  }
+                </td>
                 <td>
                   @switch (c.status) {
                     @case (ConversionStatus.Completed) { <pe-status-badge label="Completed" tone="success" /> }

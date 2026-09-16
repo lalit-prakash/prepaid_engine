@@ -8,7 +8,10 @@ public class ConversionRequestTests
 {
     private static ConversionRequest NewRequest(
         DateTime? conversionDate = null,
-        ConversionConsumerType consumerType = ConversionConsumerType.Residential) =>
+        ConversionConsumerType consumerType = ConversionConsumerType.Residential,
+        decimal outstandingAmount = 500m,
+        decimal foaAmount = 100m,
+        decimal diaAmount = 50m) =>
         new(
             Guid.NewGuid(),
             Guid.NewGuid(),
@@ -19,7 +22,17 @@ public class ConversionRequestTests
             initialReading: 1200.5m,
             initialReadingDateTime: new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc),
             conversionDate: conversionDate ?? new DateTime(2026, 9, 10, 0, 0, 0, DateTimeKind.Utc),
-            requestedAt: DateTime.UtcNow);
+            requestedAt: DateTime.UtcNow,
+            lastReadingDate: new DateTime(2026, 8, 25, 0, 0, 0, DateTimeKind.Utc),
+            lastBillingDate: new DateTime(2026, 8, 26, 0, 0, 0, DateTimeKind.Utc),
+            lastBillFrKwh: 1150m,
+            lastBillFrKvah: 1200m,
+            lastBillMaxDemandKw: 3m,
+            outstandingAmount: outstandingAmount,
+            meterStatus: ConversionMeterStatus.Normal,
+            isPermanentConsumer: true,
+            foaAmount: foaAmount,
+            diaAmount: diaAmount);
 
     [Fact]
     public void Constructor_StartsInRequestedStatus()
@@ -60,7 +73,8 @@ public class ConversionRequestTests
     {
         Assert.Throws<ArgumentException>(() => new ConversionRequest(
             Guid.NewGuid(), Guid.NewGuid(), transactionId!, "MTR-1", "DEMO-0001",
-            ConversionConsumerType.Residential, 100m, DateTime.UtcNow, DateTime.UtcNow, DateTime.UtcNow));
+            ConversionConsumerType.Residential, 100m, DateTime.UtcNow, DateTime.UtcNow, DateTime.UtcNow,
+            DateTime.UtcNow, DateTime.UtcNow, 100m, 100m, 3m, 0m, ConversionMeterStatus.Normal, true, 0m, 0m));
     }
 
     [Fact]
@@ -68,7 +82,24 @@ public class ConversionRequestTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new ConversionRequest(
             Guid.NewGuid(), Guid.NewGuid(), "TXN-1", "MTR-1", "DEMO-0001",
-            ConversionConsumerType.Residential, -1m, DateTime.UtcNow, DateTime.UtcNow, DateTime.UtcNow));
+            ConversionConsumerType.Residential, -1m, DateTime.UtcNow, DateTime.UtcNow, DateTime.UtcNow,
+            DateTime.UtcNow, DateTime.UtcNow, 100m, 100m, 3m, 0m, ConversionMeterStatus.Normal, true, 0m, 0m));
+    }
+
+    [Fact]
+    public void Constructor_OutstandingAboveThresholdWithNonZeroFoaOrDia_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => NewRequest(outstandingAmount: 10_001m, foaAmount: 1m, diaAmount: 0m));
+        Assert.Throws<ArgumentException>(() => NewRequest(outstandingAmount: 10_001m, foaAmount: 0m, diaAmount: 1m));
+    }
+
+    [Fact]
+    public void Constructor_OutstandingAboveThresholdWithZeroFoaAndDia_Succeeds()
+    {
+        var request = NewRequest(outstandingAmount: 15_000m, foaAmount: 0m, diaAmount: 0m);
+
+        Assert.Equal(0m, request.FoaAmount);
+        Assert.Equal(0m, request.DiaAmount);
     }
 
     [Fact]
@@ -143,16 +174,28 @@ public class ConversionRequestTests
     }
 
     [Fact]
-    public void Complete_FromApproved_TransitionsToCompleted()
+    public void RecordReadingAtConversion_ThenComplete_TransitionsToCompleted()
     {
         var request = NewRequest();
         request.Approve(DateTime.UtcNow);
+        request.RecordReadingAtConversion(1250m);
         var completedAt = DateTime.UtcNow;
 
         request.Complete(completedAt);
 
         Assert.Equal(ConversionStatus.Completed, request.Status);
         Assert.Equal(completedAt, request.CompletedAt);
+        Assert.Equal(1250m, request.ReadingAtConversion);
+        Assert.Equal(1250m - 1200.5m, request.OpeningConsumptionKwh);
+    }
+
+    [Fact]
+    public void Complete_WithoutRecordingReading_Throws()
+    {
+        var request = NewRequest();
+        request.Approve(DateTime.UtcNow);
+
+        Assert.Throws<InvalidOperationException>(() => request.Complete(DateTime.UtcNow));
     }
 
     [Fact]
@@ -170,5 +213,24 @@ public class ConversionRequestTests
         request.Reject("no", DateTime.UtcNow);
 
         Assert.Throws<InvalidOperationException>(() => request.Complete(DateTime.UtcNow));
+    }
+
+    [Fact]
+    public void RecordReadingAtConversion_BelowInitialReading_Throws()
+    {
+        var request = NewRequest();
+        request.Approve(DateTime.UtcNow);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => request.RecordReadingAtConversion(1000m));
+    }
+
+    [Fact]
+    public void RecordReadingAtConversion_CalledTwice_Throws()
+    {
+        var request = NewRequest();
+        request.Approve(DateTime.UtcNow);
+        request.RecordReadingAtConversion(1250m);
+
+        Assert.Throws<InvalidOperationException>(() => request.RecordReadingAtConversion(1300m));
     }
 }

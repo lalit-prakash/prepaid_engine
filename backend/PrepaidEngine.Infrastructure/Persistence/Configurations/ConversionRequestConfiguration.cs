@@ -23,6 +23,17 @@ public class ConversionRequestConfiguration : IEntityTypeConfiguration<Conversio
         builder.Property(c => c.DecisionNote).HasMaxLength(500);
         builder.Property(c => c.RequestedAt).IsRequired();
 
+        builder.Property(c => c.LastReadingDate).IsRequired();
+        builder.Property(c => c.LastBillingDate).IsRequired();
+        builder.Property(c => c.LastBillFrKwh).HasColumnType("decimal(18,3)").IsRequired();
+        builder.Property(c => c.LastBillFrKvah).HasColumnType("decimal(18,3)").IsRequired();
+        builder.Property(c => c.LastBillMaxDemandKw).HasColumnType("decimal(18,3)").IsRequired();
+        builder.Property(c => c.OutstandingAmount).HasColumnType("decimal(18,2)").IsRequired();
+        builder.Property(c => c.MeterStatus).HasConversion<string>().HasMaxLength(20).IsRequired();
+        builder.Property(c => c.FoaAmount).HasColumnType("decimal(18,2)").IsRequired();
+        builder.Property(c => c.DiaAmount).HasColumnType("decimal(18,2)").IsRequired();
+        builder.Property(c => c.ReadingAtConversion).HasColumnType("decimal(18,3)");
+
         builder.HasIndex(c => c.ConsumerId);
         builder.HasIndex(c => c.TransactionId).IsUnique();
 

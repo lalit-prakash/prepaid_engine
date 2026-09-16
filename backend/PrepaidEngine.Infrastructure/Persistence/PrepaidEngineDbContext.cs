@@ -31,11 +31,11 @@ public class PrepaidEngineDbContext : DbContext
     public DbSet<MeterCommand> MeterCommands => Set<MeterCommand>();
     public DbSet<ConnectivityCommand> ConnectivityCommands => Set<ConnectivityCommand>();
     public DbSet<ConversionRequest> ConversionRequests => Set<ConversionRequest>();
+    public DbSet<PaymentModeChangeCommand> PaymentModeChangeCommands => Set<PaymentModeChangeCommand>();
     public DbSet<ReconciliationAdjustment> ReconciliationAdjustments => Set<ReconciliationAdjustment>();
     public DbSet<OperationalException> OperationalExceptions => Set<OperationalException>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<TariffVersion> TariffVersions => Set<TariffVersion>();
-    public DbSet<LoadSurveyInterval> LoadSurveyIntervals => Set<LoadSurveyInterval>();
     public DbSet<DailyLoadProfile> DailyLoadProfiles => Set<DailyLoadProfile>();
     public DbSet<BillingRun> BillingRuns => Set<BillingRun>();
     public DbSet<MeterAssignment> MeterAssignments => Set<MeterAssignment>();

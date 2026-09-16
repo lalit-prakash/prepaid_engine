@@ -3,15 +3,13 @@ using PrepaidEngine.Domain.Enums;
 namespace PrepaidEngine.Domain.Entities;
 
 /// <summary>
-/// Holds actual (real, meter-driven) billing for one consumer/meter when Load Survey data
-/// quality is unsafe to bill against — created and activated automatically the moment
-/// <see cref="LoadSurveyQuality.NegativeConsumption"/> data is detected for that meter (see the
-/// billing engine's LS ingestion). While <see cref="ActualBillingBlocked"/> is true, both hourly
-/// LS billing and daily DLP billing for the affected meter stop; the consumer continues through
-/// provisional billing where policy permits. Clearing the hold is intentionally NOT modeled here
-/// yet — the spec calls for a dedicated operator API with a mandatory resolution note (mirroring
-/// this project's mandatory-reason discipline elsewhere), which is a documented follow-up, not
-/// built in this phase.
+/// Holds actual (real, meter-driven) billing for one consumer/meter when meter data quality is
+/// unsafe to bill against. While <see cref="ActualBillingBlocked"/> is true, daily DLP billing
+/// for the affected meter stops; the consumer continues through provisional billing where policy
+/// permits. Nothing currently raises this hold automatically (its original trigger — a bad Load
+/// Survey sequence — no longer exists now that the LS pipeline has been removed); it remains a
+/// real, clearable domain entity/API for whenever a DLP-side data-quality trigger is added, and
+/// for any hold raised through other operational means.
 /// </summary>
 public class MeterBillingControl
 {

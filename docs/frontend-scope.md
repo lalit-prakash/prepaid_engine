@@ -22,11 +22,11 @@ Built against the actual `PrepaidEngine.Api` endpoints (`GET /api/v1/consumers`,
 - **Sign-in** (`/login`) — verifies the HTTP Basic credential against a real API call before
   caching it (same approach as the static demo console at `backend/PrepaidEngine.Api/wwwroot/index.html`).
 - **Dashboard** (`/overview`, renamed from "Overview" as part of the UI/UX redesign) — real
-  consumer count, total RMS wallet balance, low-balance and disconnected counts, an
-  hourly-consumption chart from Load Survey (LS) data, a daily-billing-status donut from Daily
-  Load Profile (DLP) data for the latest profile date (LS and DLP are never conflated), recent
-  notifications/recharges/meter-operations feeds, and a system-status panel. Every card is
-  either real or shown as an explicit "Data unavailable" state — this page no longer uses the
+  consumer count, total RMS wallet balance, low-balance and disconnected counts, a
+  daily-billing-status donut from Daily Load Profile (DLP) data for the latest profile date — the
+  sole driver of ongoing prepaid billing now that the Load Survey (LS) pipeline has been removed
+  — recent notifications/recharges/meter-operations feeds, and a system-status panel. Every card
+  is either real or shown as an explicit "Data unavailable" state — this page no longer uses the
   "Illustrative" badge convention described below (see `KpiCard`'s `unavailable` input).
 - **Consumers** (`/consumers`) — the real consumer list with live RMS wallet balances.
 - **Consumer 360** (`/consumers/:accountNumber`) — full real bill breakdown (energy, rebate,

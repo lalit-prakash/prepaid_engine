@@ -1,22 +1,25 @@
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Application.Billing;
+using PrepaidEngine.Application.Connectivity;
 using PrepaidEngine.Domain.Entities;
 using PrepaidEngine.Domain.Enums;
 using PrepaidEngine.Infrastructure.Billing;
+using PrepaidEngine.Infrastructure.Connectivity;
 using PrepaidEngine.Infrastructure.Persistence;
 using Xunit;
 
 namespace PrepaidEngine.Tests.Billing;
 
 /// <summary>
-/// Exercises the LS/DLP billing pipeline's core financial rules (hourly wallet debits, negative-
-/// consumption hold, daily settlement, provisional billing, meter replacement) against a real
-/// (if lightweight) SQLite database — see PrepaidEngineDbContextTests for why SQLite is used here
-/// rather than an in-memory fake.
+/// Exercises the DLP billing pipeline's core financial rules (daily charge, provisional billing,
+/// emergency-credit auto-disconnect, meter replacement) against a real (if lightweight) SQLite
+/// database — see PrepaidEngineDbContextTests for why SQLite is used here rather than an
+/// in-memory fake.
 /// </summary>
 public class BillingEngineServiceTests : IDisposable
 {
@@ -33,16 +36,17 @@ public class BillingEngineServiceTests : IDisposable
         var options = new DbContextOptionsBuilder<PrepaidEngineDbContext>().UseSqlite(_connection).Options;
         _db = new PrepaidEngineDbContext(options);
         _db.Database.EnsureCreated();
-        _service = new BillingEngineService(_db);
+        _service = new BillingEngineService(_db, new EmergencyCreditGuard(_db, new StubConnectivityCommandClient()));
 
         // ₹5/kWh flat slab, no rebate, ₹0 fixed charge — keeps the worked-example math simple.
         _tariff = new Tariff(Guid.NewGuid(), "Flat Test Tariff", ConsumerCategory.Domestic,
             new[] { new TariffSlab(0, null, 5m) }, fixedChargePerUnitPerMonth: 0m, prepaidEnergyRebatePercent: 0m);
         _db.Tariffs.Add(_tariff);
 
-        var meter = new SmartMeter(Guid.NewGuid(), "MTR-LS-1", MeterPhase.SinglePhase);
-        _consumer = new Consumer(Guid.NewGuid(), "ACC-LS-1", "LS Test Consumer", "Test Street", meter, connectedLoadKw: 1m);
+        var meter = new SmartMeter(Guid.NewGuid(), "MTR-DLP-1", MeterPhase.SinglePhase);
+        _consumer = new Consumer(Guid.NewGuid(), "ACC-DLP-1", "DLP Test Consumer", "Test Street", meter, connectedLoadKw: 1m);
         _consumer.AssignTariff(_tariff.Id);
+        _consumer.Wallet.SetEmergencyCreditLimit(200m);
         _consumer.Wallet.Credit(10000m, WalletTransactionType.Recharge, "seed");
         _db.Meters.Add(meter);
         _db.Consumers.Add(_consumer);
@@ -61,206 +65,42 @@ public class BillingEngineServiceTests : IDisposable
         return await fresh.Consumers.Include(c => c.Wallet).ThenInclude(w => w.Transactions).SingleAsync(c => c.Id == _consumer.Id);
     }
 
-    // ------------------------------------------------------------------ LS ingestion
+    // ------------------------------------------------------------------ Daily processing
 
     [Fact]
-    public async Task IngestLoadSurvey_ValidBlock_MarksValidated()
+    public async Task ProcessDaily_RealDlp_DebitsWalletDirectly()
     {
-        var hourStart = new DateTime(2026, 9, 11, 10, 0, 0, DateTimeKind.Utc);
-        var results = await _service.IngestLoadSurveyAsync(new[]
-        {
-            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourStart, hourStart.AddMinutes(30), 10m, 10m),
-        });
+        var billingDate = new DateOnly(2026, 9, 11);
+        var dayStart = billingDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+
+        // 24 kWh @ ₹5/kWh = ₹120, charged in one direct debit.
+        await _service.IngestDailyLoadProfileAsync(new DailyLoadProfileRequest(
+            _consumer.Id, _consumer.Meter.Id, billingDate, dayStart.AddDays(1).AddSeconds(15), 0m, 24m));
+
+        var results = await _service.ProcessDailyAsync(billingDate);
 
         Assert.Single(results);
-        Assert.Equal("Valid", results[0].Quality);
-        Assert.Equal("Validated", results[0].Status);
-    }
-
-    [Fact]
-    public async Task IngestLoadSurvey_DuplicateBlock_IsRejected()
-    {
-        var hourStart = new DateTime(2026, 9, 11, 10, 0, 0, DateTimeKind.Utc);
-        var block = new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourStart, hourStart.AddMinutes(30), 10m, 10m);
-
-        await _service.IngestLoadSurveyAsync(new[] { block });
-        var results = await _service.IngestLoadSurveyAsync(new[] { block });
-
-        Assert.Equal("Duplicate", results[0].Quality);
-        Assert.Equal("Rejected", results[0].Status);
-    }
-
-    [Fact]
-    public async Task IngestLoadSurvey_NegativeConsumption_RejectsAndActivatesBillingHold()
-    {
-        var hourStart = new DateTime(2026, 9, 11, 10, 0, 0, DateTimeKind.Utc);
-        await _service.IngestLoadSurveyAsync(new[]
-        {
-            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourStart, hourStart.AddMinutes(30), 100m, 10m),
-        });
-
-        // Next block's cumulative reading is LOWER than the previous one — a real negative-
-        // consumption sequence, not zero.
-        var results = await _service.IngestLoadSurveyAsync(new[]
-        {
-            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourStart.AddMinutes(30), hourStart.AddMinutes(60), 50m, 0m),
-        });
-
-        Assert.Equal("NegativeConsumption", results[0].Quality);
-        Assert.Equal("Rejected", results[0].Status);
-
-        var control = await _db.MeterBillingControls.SingleAsync(c => c.MeterId == _consumer.Meter.Id);
-        Assert.True(control.ActualBillingBlocked);
-    }
-
-    [Fact]
-    public async Task IngestLoadSurvey_NegativeConsumptionWithinSameBatch_IsDetected()
-    {
-        // Both blocks arrive in ONE call — nothing has been saved to the database yet when the
-        // second block's continuity check runs, so it must compare against the first block still
-        // sitting in this same batch, not just what's already persisted.
-        var hourStart = new DateTime(2026, 9, 11, 10, 0, 0, DateTimeKind.Utc);
-        var results = await _service.IngestLoadSurveyAsync(new[]
-        {
-            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourStart, hourStart.AddMinutes(30), 100m, 10m),
-            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourStart.AddMinutes(30), hourStart.AddMinutes(60), 50m, 0m),
-        });
-
-        Assert.Equal("Valid", results[0].Quality);
-        Assert.Equal("NegativeConsumption", results[1].Quality);
-        Assert.Equal("Rejected", results[1].Status);
-
-        var control = await _db.MeterBillingControls.SingleAsync(c => c.MeterId == _consumer.Meter.Id);
-        Assert.True(control.ActualBillingBlocked);
-    }
-
-    [Fact]
-    public async Task IngestLoadSurvey_DuplicateWithinSameBatch_IsDetected()
-    {
-        var hourStart = new DateTime(2026, 9, 11, 10, 0, 0, DateTimeKind.Utc);
-        var block = new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourStart, hourStart.AddMinutes(30), 10m, 10m);
-
-        var results = await _service.IngestLoadSurveyAsync(new[] { block, block });
-
-        Assert.Equal("Valid", results[0].Quality);
-        Assert.Equal("Duplicate", results[1].Quality);
-        Assert.Equal("Rejected", results[1].Status);
-    }
-
-    // ------------------------------------------------------------------ Hourly processing
-
-    [Fact]
-    public async Task ProcessCompletedHour_TwoValidBlocks_DebitsWalletOnce()
-    {
-        var hourEnd = new DateTime(2026, 9, 11, 11, 0, 0, DateTimeKind.Utc);
-        await _service.IngestLoadSurveyAsync(new[]
-        {
-            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourEnd.AddMinutes(-60), hourEnd.AddMinutes(-30), 10m, 10m),
-            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourEnd.AddMinutes(-30), hourEnd, 15m, 5m),
-        });
-
-        var results = await _service.ProcessCompletedHourAsync(hourEnd);
-
-        Assert.Single(results);
-        Assert.Equal(2, results[0].BlocksProcessed);
-        Assert.Equal(75m, results[0].TotalCharge); // (10+5) kWh * ₹5/kWh
+        Assert.True(results[0].DlpAvailable);
+        Assert.False(results[0].IsProvisional);
+        Assert.Equal(120m, results[0].ChargeAmount);
 
         var reloaded = await ReloadConsumerAsync();
-        Assert.Equal(10000m - 75m, reloaded.Wallet.Balance);
+        Assert.Equal(10000m - 120m, reloaded.Wallet.Balance);
+        Assert.Single(reloaded.Wallet.Transactions.Where(t => t.Type == WalletTransactionType.DailyDlpCharge));
     }
 
     [Fact]
-    public async Task ProcessCompletedHour_RunTwice_DoesNotDoubleDebit()
-    {
-        var hourEnd = new DateTime(2026, 9, 11, 11, 0, 0, DateTimeKind.Utc);
-        await _service.IngestLoadSurveyAsync(new[]
-        {
-            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourEnd.AddMinutes(-60), hourEnd.AddMinutes(-30), 10m, 10m),
-            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourEnd.AddMinutes(-30), hourEnd, 15m, 5m),
-        });
-
-        await _service.ProcessCompletedHourAsync(hourEnd);
-        await _service.ProcessCompletedHourAsync(hourEnd);
-
-        var reloaded = await ReloadConsumerAsync();
-        Assert.Equal(10000m - 75m, reloaded.Wallet.Balance);
-        // One debit per block (2 blocks) — re-running the hour must not add a 3rd/4th.
-        Assert.Equal(2, reloaded.Wallet.Transactions.Count(t => t.Type == WalletTransactionType.LoadSurveyHourlyCharge));
-    }
-
-    [Fact]
-    public async Task ProcessCompletedHour_MeterOnBillingHold_SkipsConsumer()
+    public async Task ProcessDaily_MeterOnBillingHold_SkipsConsumer()
     {
         _db.MeterBillingControls.Add(new MeterBillingControl(Guid.NewGuid(), _consumer.Id, _consumer.Meter.Id, "test hold", DateTime.UtcNow));
         await _db.SaveChangesAsync();
 
-        var hourEnd = new DateTime(2026, 9, 11, 11, 0, 0, DateTimeKind.Utc);
-        await _service.IngestLoadSurveyAsync(new[]
-        {
-            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, hourEnd.AddMinutes(-30), hourEnd, 10m, 10m),
-        });
-
-        var results = await _service.ProcessCompletedHourAsync(hourEnd);
+        var billingDate = new DateOnly(2026, 9, 11);
+        var results = await _service.ProcessDailyAsync(billingDate);
 
         Assert.True(results[0].Skipped);
         var reloaded = await ReloadConsumerAsync();
         Assert.Equal(10000m, reloaded.Wallet.Balance);
-    }
-
-    // ------------------------------------------------------------------ Daily settlement (spec §31 worked example)
-
-    [Fact]
-    public async Task ProcessDaily_AuthoritativeChargeExceedsLsDebits_PostsPositiveSettlement()
-    {
-        var billingDate = new DateOnly(2026, 9, 11);
-        var dayStart = billingDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-
-        // 21.6 kWh of hourly LS debits already posted @ ₹5/kWh = ₹108.
-        await _service.IngestLoadSurveyAsync(new[]
-        {
-            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, dayStart, dayStart.AddMinutes(30), 10.8m, 10.8m),
-            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, dayStart.AddMinutes(30), dayStart.AddHours(1), 21.6m, 10.8m),
-        });
-        await _service.ProcessCompletedHourAsync(dayStart.AddHours(1));
-
-        // Authoritative DLP: 24 kWh @ ₹5/kWh = ₹120.
-        await _service.IngestDailyLoadProfileAsync(new DailyLoadProfileRequest(
-            _consumer.Id, _consumer.Meter.Id, billingDate, dayStart.AddDays(1).AddSeconds(15), 0m, 24m));
-
-        var results = await _service.ProcessDailyAsync(billingDate);
-
-        Assert.Single(results);
-        Assert.Equal(120m, results[0].AuthoritativeCharge);
-        Assert.Equal(108m, results[0].LsDebitTotal);
-        Assert.Equal(12m, results[0].Settlement);
-
-        var reloaded = await ReloadConsumerAsync();
-        Assert.Equal(10000m - 108m - 12m, reloaded.Wallet.Balance);
-    }
-
-    [Fact]
-    public async Task ProcessDaily_LsDebitsExceedAuthoritativeCharge_PostsCreditAdjustment()
-    {
-        var billingDate = new DateOnly(2026, 9, 11);
-        var dayStart = billingDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-
-        // 25 kWh of LS debits @ ₹5/kWh = ₹125.
-        await _service.IngestLoadSurveyAsync(new[]
-        {
-            new LoadSurveyBlockRequest(_consumer.Id, _consumer.Meter.Id, dayStart, dayStart.AddMinutes(30), 25m, 25m),
-        });
-        await _service.ProcessCompletedHourAsync(dayStart.AddMinutes(30));
-
-        // Authoritative DLP: 24 kWh @ ₹5/kWh = ₹120.
-        await _service.IngestDailyLoadProfileAsync(new DailyLoadProfileRequest(
-            _consumer.Id, _consumer.Meter.Id, billingDate, dayStart.AddDays(1).AddSeconds(15), 0m, 24m));
-
-        var results = await _service.ProcessDailyAsync(billingDate);
-
-        Assert.Equal(-5m, results[0].Settlement);
-
-        var reloaded = await ReloadConsumerAsync();
-        Assert.Equal(10000m - 125m + 5m, reloaded.Wallet.Balance);
     }
 
     [Fact]
@@ -271,7 +111,7 @@ public class BillingEngineServiceTests : IDisposable
         var results = await _service.ProcessDailyAsync(billingDate);
 
         Assert.True(results[0].IsProvisional);
-        Assert.Equal(0m, results[0].AuthoritativeCharge); // no history to estimate from -> 0 kWh estimate
+        Assert.Equal(0m, results[0].ChargeAmount); // no history to estimate from -> 0 kWh estimate
 
         var profile = await _db.DailyLoadProfiles.SingleAsync(d => d.ConsumerId == _consumer.Id && d.ProfileDate == billingDate);
         Assert.True(profile.IsProvisional);
@@ -287,6 +127,35 @@ public class BillingEngineServiceTests : IDisposable
 
         Assert.True(second[0].Skipped);
         Assert.Single(await _db.BillingRuns.Where(r => r.BillingDate == billingDate).ToListAsync());
+    }
+
+    [Fact]
+    public async Task ProcessDaily_ChargeCrossesEmergencyCredit_AutoDisconnects()
+    {
+        // Wallet starts near empty so a modest daily charge pushes it below the -200 emergency
+        // credit limit — the guard should auto-dispatch a Disconnect command.
+        var reset = await _db.Consumers.Include(c => c.Wallet).ThenInclude(w => w.Transactions).SingleAsync(c => c.Id == _consumer.Id);
+        var drainTransaction = reset.Wallet.Debit(9900m, WalletTransactionType.Adjustment, "drain-to-100");
+        _db.WalletTransactions.Add(drainTransaction);
+        await _db.SaveChangesAsync();
+
+        var billingDate = new DateOnly(2026, 9, 11);
+        var dayStart = billingDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+
+        // 100 kWh @ ₹5/kWh = ₹500 — balance goes from ₹100 to -₹400, past the ₹200 emergency
+        // credit limit.
+        await _service.IngestDailyLoadProfileAsync(new DailyLoadProfileRequest(
+            _consumer.Id, _consumer.Meter.Id, billingDate, dayStart.AddDays(1).AddSeconds(15), 0m, 100m));
+
+        await _service.ProcessDailyAsync(billingDate);
+
+        var reloaded = await ReloadConsumerAsync();
+        Assert.Equal(ConnectionStatus.Disconnected, reloaded.ConnectionStatus);
+
+        var command = await _db.ConnectivityCommands.SingleAsync(c => c.ConsumerId == _consumer.Id);
+        Assert.Equal(ConnectivityCommandType.Disconnect, command.CommandType);
+        Assert.Equal(ConnectivityCommandStatus.Acknowledged, command.Status);
+        Assert.Equal(EmergencyCreditGuard.AutoDisconnectReason, command.Reason);
     }
 
     // ------------------------------------------------------------------ Meter replacement
@@ -310,5 +179,15 @@ public class BillingEngineServiceTests : IDisposable
         var reloadedConsumer = await _db.Consumers.Include(c => c.Meter).SingleAsync(c => c.Id == _consumer.Id);
         Assert.Equal("MTR-NEW-1", reloadedConsumer.Meter.MeterNumber);
         Assert.NotEqual(assignment.OldMeterId, reloadedConsumer.Meter.Id);
+    }
+
+    /// <summary>Always acknowledges — a minimal stand-in so
+    /// <see cref="EmergencyCreditGuard"/> can be exercised here without pulling in the full mock
+    /// simulator's marker-string conventions this test file has no need of.</summary>
+    private class StubConnectivityCommandClient : IConnectivityCommandClient
+    {
+        public Task<SendConnectivityCommandResult> SendConnectivityCommandAsync(
+            SendConnectivityCommandRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(new SendConnectivityCommandResult(ConnectivityCommandOutcome.Acknowledged, null));
     }
 }
