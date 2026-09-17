@@ -12,22 +12,24 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
   selector: 'pe-kpi-card',
   imports: [Icon],
   template: `
-    <div class="kpi" [class]="'kpi--' + tone()" [class.kpi--clickable]="clickable()">
+    <div class="kpi" [class]="'kpi--' + tone()" [class.kpi--clickable]="clickable()" [class.kpi--horizontal]="horizontal()">
       @if (icon()) {
         <div class="kpi__icon"><pe-icon [name]="icon()!" [size]="17" /></div>
       }
-      <div class="kpi__label">{{ label() }}</div>
-      @if (unavailable()) {
-        <div class="kpi__value kpi__value--unavailable">Data unavailable</div>
-      } @else {
-        <div class="kpi__value num">{{ value() }}</div>
-      }
-      @if (sublabel() && !unavailable()) {
-        <div class="kpi__sublabel">{{ sublabel() }}</div>
-      }
-      @if (illustrative()) {
-        <div class="kpi__illustrative" title="No backend endpoint exists for this yet — illustrative only">Illustrative</div>
-      }
+      <div class="kpi__body">
+        <div class="kpi__label">{{ label() }}</div>
+        @if (unavailable()) {
+          <div class="kpi__value kpi__value--unavailable">Data unavailable</div>
+        } @else {
+          <div class="kpi__value num">{{ value() }}</div>
+        }
+        @if (sublabel() && !unavailable()) {
+          <div class="kpi__sublabel">{{ sublabel() }}</div>
+        }
+        @if (illustrative()) {
+          <div class="kpi__illustrative" title="No backend endpoint exists for this yet — illustrative only">Illustrative</div>
+        }
+      </div>
     </div>
   `,
   styles: [`
@@ -44,6 +46,23 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
     }
     .kpi--clickable { cursor: pointer; transition: box-shadow var(--transition-fast); }
     .kpi--clickable:hover { box-shadow: var(--shadow-md); }
+
+    .kpi--horizontal {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      border-top: none;
+      border-left: 3px solid var(--color-neutral-300);
+    }
+    .kpi--horizontal.kpi--primary { border-left-color: var(--color-primary); }
+    .kpi--horizontal.kpi--success { border-left-color: var(--color-success); }
+    .kpi--horizontal.kpi--warning { border-left-color: var(--color-warning); }
+    .kpi--horizontal.kpi--danger  { border-left-color: var(--color-danger); }
+    .kpi--horizontal.kpi--info    { border-left-color: var(--color-info); }
+    .kpi--horizontal .kpi__icon { margin-bottom: 0; flex-shrink: 0; }
+    .kpi--horizontal .kpi__label { margin-bottom: 2px; }
+    .kpi--horizontal .kpi__value { font-size: var(--font-size-kpi-sm); }
+    .kpi--horizontal .kpi__body { min-width: 0; }
 
     .kpi--primary { border-top-color: var(--color-primary); }
     .kpi--success { border-top-color: var(--color-success); }
@@ -114,6 +133,9 @@ export class KpiCard {
   readonly tone = input<KpiTone>('neutral');
   readonly icon = input<string>();
   readonly clickable = input(false);
+  /** Compact icon-left row layout (used by the Dashboard's KPI strip) instead of the
+   * default icon-on-top stacked card used elsewhere. */
+  readonly horizontal = input(false);
   /** True when this number has no real backend source yet (see docs/frontend-scope.md). */
   readonly illustrative = input(false);
   /** True when the metric is real but genuinely cannot be computed right now (e.g. no rows

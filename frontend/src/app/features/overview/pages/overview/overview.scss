@@ -2,66 +2,39 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-5);
   margin-bottom: var(--space-6);
   flex-wrap: wrap;
-  padding: var(--space-6);
+  padding: var(--space-4) var(--space-6);
   border-radius: var(--radius-lg);
   background:
-    linear-gradient(120deg, rgba(11, 18, 32, 0.88), rgba(29, 78, 216, 0.55) 55%, rgba(47, 111, 237, 0.35)),
-    url('/images/hero-transmission-towers.jpg') center 65% / cover no-repeat;
+    linear-gradient(90deg, rgba(11, 18, 32, 0.92) 0%, rgba(29, 78, 216, 0.6) 45%, rgba(47, 111, 237, 0.25) 100%),
+    url('/images/hero-transmission-towers.jpg') right center / cover no-repeat;
   color: #fff;
 }
 .hero__text h1 {
-  font-size: var(--font-size-page-title);
+  font-size: var(--font-size-section-title);
   color: #fff;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 .hero__subtitle {
   color: rgba(255, 255, 255, 0.85);
-  font-size: var(--font-size-body);
-}
-.hero__clock {
-  color: rgba(255, 255, 255, 0.65);
   font-size: var(--font-size-meta);
-  margin-top: var(--space-1);
 }
-.hero__actions {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-.hero .btn--secondary {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.3);
-  color: #fff;
-}
-.hero .btn--secondary:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: #fff;
-  color: #fff;
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 8px var(--space-4);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-button);
+.hero__tagline {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: var(--font-size-meta);
   font-weight: var(--font-weight-medium);
   white-space: nowrap;
 }
-.btn--primary {
-  background: var(--color-primary);
-  color: var(--text-inverse);
+.hero__clock {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: var(--font-size-meta);
+  white-space: nowrap;
+  text-align: right;
+  border-left: 1px solid rgba(255, 255, 255, 0.25);
+  padding-left: var(--space-4);
 }
-.btn--primary:hover { background: var(--color-primary-dark); text-decoration: none; }
-.btn--secondary {
-  background: var(--surface-card);
-  border: 1px solid var(--border-default);
-  color: var(--text-primary);
-}
-.btn--secondary:hover { border-color: var(--color-primary); color: var(--color-primary-dark); text-decoration: none; }
 
 .kpi-row {
   display: grid;
