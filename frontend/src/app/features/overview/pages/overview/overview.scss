@@ -7,7 +7,9 @@
   flex-wrap: wrap;
   padding: var(--space-6);
   border-radius: var(--radius-lg);
-  background: linear-gradient(120deg, var(--accent-blue-dark), var(--accent-blue) 60%, #4f7bff);
+  background:
+    linear-gradient(120deg, rgba(11, 18, 32, 0.88), rgba(29, 78, 216, 0.55) 55%, rgba(47, 111, 237, 0.35)),
+    url('/images/hero-transmission-towers.jpg') center 65% / cover no-repeat;
   color: #fff;
 }
 .hero__text h1 {
