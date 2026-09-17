@@ -31,6 +31,7 @@ public class PrepaidEngineDbContext : DbContext
     public DbSet<MeterCommand> MeterCommands => Set<MeterCommand>();
     public DbSet<ConnectivityCommand> ConnectivityCommands => Set<ConnectivityCommand>();
     public DbSet<ConversionRequest> ConversionRequests => Set<ConversionRequest>();
+    public DbSet<ReverseConversionRequest> ReverseConversionRequests => Set<ReverseConversionRequest>();
     public DbSet<PaymentModeChangeCommand> PaymentModeChangeCommands => Set<PaymentModeChangeCommand>();
     public DbSet<ReconciliationAdjustment> ReconciliationAdjustments => Set<ReconciliationAdjustment>();
     public DbSet<OperationalException> OperationalExceptions => Set<OperationalException>();

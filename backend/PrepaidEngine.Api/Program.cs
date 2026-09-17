@@ -1374,6 +1374,110 @@ app.MapGet("/api/v1/conversions/{id:guid}", async (Guid id, PrepaidEngineDbConte
 .WithName("GetConversionById")
 .RequireAuthorization();
 
+// --- Prepaid -> Postpaid (reverse conversion) — never RMS-pushed (see ReverseConversionRequest's
+// doc comment), so this completes in one operator-authorized step rather than waiting on an
+// external decision. Conversion-safety checks (spec section 2.11): reject a consumer already
+// Postpaid (duplicate conversion), one with an open billing hold, or one with a still-pending
+// forward conversion request — each is a real, checkable condition, never assumed.
+app.MapPost("/api/v1/conversions/reverse", async (ReverseConversionApiRequest request, PrepaidEngineDbContext db) =>
+{
+    if (string.IsNullOrWhiteSpace(request.ConsumerNumber))
+        return Results.BadRequest(new { error = "Consumer number is required." });
+
+    var consumer = await db.Consumers.Include(c => c.Meter).Include(c => c.Wallet)
+        .FirstOrDefaultAsync(c => c.AccountNumber == request.ConsumerNumber);
+    if (consumer is null)
+        return Results.NotFound(new { error = $"No consumer found for consumer number {request.ConsumerNumber}." });
+
+    ReverseConversionRequest reverseConversion;
+    try
+    {
+        reverseConversion = new ReverseConversionRequest(Guid.NewGuid(), consumer.Id, request.RequestedBy, request.Reason, DateTime.UtcNow);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    db.ReverseConversionRequests.Add(reverseConversion);
+
+    if (consumer.BillingMode == BillingMode.Postpaid)
+    {
+        reverseConversion.Reject("Consumer is already billed Postpaid.", DateTime.UtcNow);
+        Audit(db, nameof(ReverseConversionRequest), reverseConversion.Id.ToString(), "Rejected", request.RequestedBy, details: reverseConversion.DecisionNote);
+        await db.SaveChangesAsync();
+        return Results.BadRequest(new { error = reverseConversion.DecisionNote });
+    }
+
+    var openHold = await db.MeterBillingControls.FirstOrDefaultAsync(m => m.ConsumerId == consumer.Id && m.ActualBillingBlocked);
+    if (openHold is not null)
+    {
+        reverseConversion.Reject($"Consumer has an open billing hold: {openHold.BlockReason}", DateTime.UtcNow);
+        Audit(db, nameof(ReverseConversionRequest), reverseConversion.Id.ToString(), "Rejected", request.RequestedBy, details: reverseConversion.DecisionNote);
+        await db.SaveChangesAsync();
+        return Results.BadRequest(new { error = reverseConversion.DecisionNote });
+    }
+
+    var pendingForwardConversion = await db.ConversionRequests.FirstOrDefaultAsync(
+        cv => cv.ConsumerId == consumer.Id && (cv.Status == ConversionStatus.Requested || cv.Status == ConversionStatus.Approved));
+    if (pendingForwardConversion is not null)
+    {
+        reverseConversion.Reject("Consumer has a pending postpaid-to-prepaid conversion request awaiting completion.", DateTime.UtcNow);
+        Audit(db, nameof(ReverseConversionRequest), reverseConversion.Id.ToString(), "Rejected", request.RequestedBy, details: reverseConversion.DecisionNote);
+        await db.SaveChangesAsync();
+        return Results.BadRequest(new { error = reverseConversion.DecisionNote });
+    }
+
+    var pendingReverseConversion = await db.ReverseConversionRequests.FirstOrDefaultAsync(
+        r => r.ConsumerId == consumer.Id && r.Status == ReverseConversionStatus.Requested && r.Id != reverseConversion.Id);
+    if (pendingReverseConversion is not null)
+    {
+        reverseConversion.Reject("Consumer already has a reverse conversion request in progress.", DateTime.UtcNow);
+        Audit(db, nameof(ReverseConversionRequest), reverseConversion.Id.ToString(), "Rejected", request.RequestedBy, details: reverseConversion.DecisionNote);
+        await db.SaveChangesAsync();
+        return Results.BadRequest(new { error = reverseConversion.DecisionNote });
+    }
+
+    reverseConversion.Complete(consumer.Meter.LastReadingKwh, consumer.Wallet.Balance, DateTime.UtcNow);
+    consumer.ConvertToPostpaid();
+    Audit(db, nameof(ReverseConversionRequest), reverseConversion.Id.ToString(), "Completed", request.RequestedBy,
+        details: $"Final meter reading {reverseConversion.FinalMeterReadingKwh} kWh, final wallet balance {reverseConversion.FinalWalletBalance:C}.");
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new
+    {
+        reverseConversion.Id,
+        consumer.AccountNumber,
+        consumer.BillingMode,
+        reverseConversion.Status,
+        reverseConversion.FinalMeterReadingKwh,
+        reverseConversion.FinalWalletBalance,
+        reverseConversion.CompletedAt,
+    });
+})
+.WithName("ConvertToPostpaid")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/conversions/reverse", async (PrepaidEngineDbContext db) =>
+{
+    var conversions = await (
+        from r in db.ReverseConversionRequests
+        join c in db.Consumers on r.ConsumerId equals c.Id
+        orderby r.RequestedAt descending
+        select new
+        {
+            r.Id, c.AccountNumber, c.Name, r.RequestedBy, r.Reason, r.Status, r.DecisionNote,
+            r.FinalMeterReadingKwh, r.FinalWalletBalance, r.RequestedAt, r.CompletedAt,
+        })
+        .Take(500)
+        .ToListAsync();
+
+    return Results.Ok(conversions);
+})
+.WithName("ListReverseConversions")
+.RequireAuthorization();
+
 // --- Billing reconciliation: RMS-pushed signed adjustments (spec sections 7 & 8) applied to ---
 // the consumer's wallet exactly like a recharge, plus the daily billing-data export AMISP needs
 // to give RMS so it can compute its own shadow monthly bill and find any gap in the first place.
@@ -2406,6 +2510,9 @@ public record DailyLoadProfileIngestRequest(
 public record MeterReplacementApiRequest(
     string NewMeterNumber, MeterPhase Phase, DateTime EffectiveFrom,
     decimal OldMeterClosingReadingKwh, decimal NewMeterOpeningReadingKwh, string Reason);
+
+/// <summary>POST /api/v1/conversions/reverse request body.</summary>
+public record ReverseConversionApiRequest(string ConsumerNumber, string Reason, string RequestedBy);
 
 // --- MDMS data foundation request DTOs (BP/LS/IP/Events/Alarms/energy-validation) -------------
 public record RegisterReadingIngestRequest(Guid ConsumerId, Guid MeterId, DateTime ReadingTimestamp, decimal CumulativeImportKwh, string? SourceReference = null);
