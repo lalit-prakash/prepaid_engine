@@ -4,6 +4,7 @@ using PrepaidEngine.Application.Billing;
 using PrepaidEngine.Application.Connectivity;
 using PrepaidEngine.Application.Conversion;
 using PrepaidEngine.Application.MeterCommands;
+using PrepaidEngine.Application.MeterData;
 using PrepaidEngine.Application.Rms;
 using PrepaidEngine.Domain;
 using PrepaidEngine.Domain.Entities;
@@ -12,6 +13,7 @@ using PrepaidEngine.Infrastructure.Billing;
 using PrepaidEngine.Infrastructure.Connectivity;
 using PrepaidEngine.Infrastructure.Conversion;
 using PrepaidEngine.Infrastructure.MeterCommands;
+using PrepaidEngine.Infrastructure.MeterData;
 using PrepaidEngine.Infrastructure.Persistence;
 using PrepaidEngine.Infrastructure.Persistence.Seed;
 using PrepaidEngine.Infrastructure.Rms;
@@ -50,6 +52,11 @@ builder.Services.AddScoped<IEmergencyCreditGuard, EmergencyCreditGuard>();
 // The DLP billing pipeline service — see IBillingEngineService's doc comment. Scoped (not
 // singleton) since it holds a scoped PrepaidEngineDbContext.
 builder.Services.AddScoped<IBillingEngineService, BillingEngineService>();
+
+// BP/LS/IP/Events ingestion + cross-source energy validation — see IMeterDataIngestionService's
+// doc comment. Never bills anything; DLP billing stays entirely in IBillingEngineService above.
+builder.Services.Configure<EnergyValidationOptions>(builder.Configuration.GetSection(EnergyValidationOptions.SectionName));
+builder.Services.AddScoped<IMeterDataIngestionService, MeterDataIngestionService>();
 
 // Local/demo background processing for the daily billing cycle — see the worker's own doc
 // comment for why this is intentionally simple.
@@ -1808,6 +1815,266 @@ app.MapGet("/api/v1/meter-data/dlp", async (Guid? consumerId, PrepaidEngineDbCon
 .WithName("ListDailyLoadProfiles")
 .RequireAuthorization();
 
+// --- MDMS data foundation: BP (register validation), LS (consumption intelligence), IP
+// (instantaneous meter health), Events/Alarms, and cross-source energy validation. None of these
+// bill anything — DLP above remains the sole daily billing driver. See
+// IMeterDataIngestionService's doc comment for each source's role.
+
+app.MapPost("/api/v1/meter-data/bp", async (RegisterReadingIngestRequest request, IMeterDataIngestionService meterData) =>
+{
+    var result = await meterData.IngestRegisterReadingAsync(
+        new RegisterReadingRequest(request.ConsumerId, request.MeterId, request.ReadingTimestamp, request.CumulativeImportKwh, request.SourceReference));
+    return Results.Ok(result);
+})
+.WithName("IngestRegisterReading")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/meter-data/bp", async (Guid? consumerId, Guid? meterId, PrepaidEngineDbContext db) =>
+{
+    var query = db.RegisterReadings.AsQueryable();
+    if (consumerId.HasValue) query = query.Where(r => r.ConsumerId == consumerId.Value);
+    if (meterId.HasValue) query = query.Where(r => r.MeterId == meterId.Value);
+
+    var readings = await (
+        from r in query
+        join consumer in db.Consumers on r.ConsumerId equals consumer.Id
+        join meter in db.Meters on r.MeterId equals meter.Id
+        orderby r.ReadingTimestamp descending
+        select new { r.Id, consumer.AccountNumber, consumer.Name, meter.MeterNumber, r.ReadingTimestamp, r.CumulativeImportKwh, r.Status, r.ReceivedAt, r.SourceReference })
+        .Take(500)
+        .ToListAsync();
+
+    return Results.Ok(readings);
+})
+.WithName("ListRegisterReadings")
+.RequireAuthorization();
+
+app.MapPost("/api/v1/meter-data/ls", async (LoadSurveyIntervalIngestRequest request, IMeterDataIngestionService meterData) =>
+{
+    var result = await meterData.IngestLoadSurveyIntervalAsync(
+        new LoadSurveyIntervalRequest(request.ConsumerId, request.MeterId, request.IntervalStart, request.IntervalEnd, request.ImportKwh, request.SourceReference));
+    return Results.Ok(result);
+})
+.WithName("IngestLoadSurveyInterval")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/meter-data/ls", async (Guid? consumerId, Guid? meterId, DateTime? from, DateTime? to, PrepaidEngineDbContext db) =>
+{
+    var query = db.LoadSurveyIntervals.AsQueryable();
+    if (consumerId.HasValue) query = query.Where(l => l.ConsumerId == consumerId.Value);
+    if (meterId.HasValue) query = query.Where(l => l.MeterId == meterId.Value);
+    if (from.HasValue) query = query.Where(l => l.IntervalStart >= from.Value);
+    if (to.HasValue) query = query.Where(l => l.IntervalStart < to.Value);
+
+    var intervals = await (
+        from l in query
+        join consumer in db.Consumers on l.ConsumerId equals consumer.Id
+        join meter in db.Meters on l.MeterId equals meter.Id
+        orderby l.IntervalStart descending
+        select new { l.Id, consumer.AccountNumber, consumer.Name, meter.MeterNumber, l.IntervalStart, l.IntervalEnd, l.ImportKwh, l.SourceReference })
+        .Take(1000)
+        .ToListAsync();
+
+    return Results.Ok(intervals);
+})
+.WithName("ListLoadSurveyIntervals")
+.RequireAuthorization();
+
+app.MapPost("/api/v1/meter-data/ip", async (InstantaneousReadingIngestRequest request, IMeterDataIngestionService meterData) =>
+{
+    var result = await meterData.IngestInstantaneousReadingAsync(
+        new InstantaneousReadingRequest(request.ConsumerId, request.MeterId, request.Timestamp, request.VoltageVolts,
+            request.CurrentAmps, request.PowerKw, request.PowerFactor, request.FrequencyHz, request.RelayStatus, request.SourceReference));
+    return Results.Ok(result);
+})
+.WithName("IngestInstantaneousReading")
+.RequireAuthorization();
+
+// Latest IP reading per meter — meter-health snapshot, never a daily-billing input. The
+// group-by-then-take-first step is done as its own query (translates cleanly against the base
+// entity), then joined against Consumers/Meters in memory — EF Core's SQL translator cannot
+// express a three-way join combined with "first row per group" in a single query.
+app.MapGet("/api/v1/meter-data/ip/latest", async (Guid? consumerId, Guid? meterId, PrepaidEngineDbContext db) =>
+{
+    var query = db.InstantaneousReadings.AsQueryable();
+    if (consumerId.HasValue) query = query.Where(i => i.ConsumerId == consumerId.Value);
+    if (meterId.HasValue) query = query.Where(i => i.MeterId == meterId.Value);
+
+    var latestReadings = await query
+        .GroupBy(i => i.MeterId)
+        .Select(g => g.OrderByDescending(i => i.Timestamp).First())
+        .ToListAsync();
+
+    var consumerIds = latestReadings.Select(r => r.ConsumerId).ToHashSet();
+    var meterIds = latestReadings.Select(r => r.MeterId).ToHashSet();
+    var consumers = await db.Consumers.Where(c => consumerIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id);
+    var meters = await db.Meters.Where(m => meterIds.Contains(m.Id)).ToDictionaryAsync(m => m.Id);
+
+    var latestByMeter = latestReadings.Select(i => new
+    {
+        i.Id,
+        AccountNumber = consumers[i.ConsumerId].AccountNumber,
+        consumers[i.ConsumerId].Name,
+        MeterNumber = meters[i.MeterId].MeterNumber,
+        i.Timestamp,
+        i.VoltageVolts, i.CurrentAmps, i.PowerKw, i.PowerFactor, i.FrequencyHz, i.RelayStatus,
+    });
+
+    return Results.Ok(latestByMeter);
+})
+.WithName("GetLatestInstantaneousReadings")
+.RequireAuthorization();
+
+app.MapPost("/api/v1/meter-data/events", async (MeterEventIngestRequest request, IMeterDataIngestionService meterData) =>
+{
+    var result = await meterData.IngestMeterEventAsync(
+        new MeterEventRequest(request.ConsumerId, request.MeterId, request.EventCode, request.EventTimestamp, request.Description, request.SourceReference));
+    return Results.Ok(result);
+})
+.WithName("IngestMeterEvent")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/meter-data/events", async (Guid? consumerId, Guid? meterId, PrepaidEngineDbContext db) =>
+{
+    var query = db.MeterEvents.AsQueryable();
+    if (consumerId.HasValue) query = query.Where(e => e.ConsumerId == consumerId.Value);
+    if (meterId.HasValue) query = query.Where(e => e.MeterId == meterId.Value);
+
+    var events = await (
+        from e in query
+        join consumer in db.Consumers on e.ConsumerId equals consumer.Id
+        join meter in db.Meters on e.MeterId equals meter.Id
+        orderby e.EventTimestamp descending
+        select new { e.Id, consumer.AccountNumber, consumer.Name, meter.MeterNumber, e.EventCode, e.EventTimestamp, e.Description, e.Status })
+        .Take(500)
+        .ToListAsync();
+
+    return Results.Ok(events);
+})
+.WithName("ListMeterEvents")
+.RequireAuthorization();
+
+app.MapPost("/api/v1/meter-data/alarms", async (MeterAlarmIngestRequest request, IMeterDataIngestionService meterData) =>
+{
+    var result = await meterData.IngestMeterAlarmAsync(
+        new MeterAlarmRequest(request.ConsumerId, request.MeterId, request.AlarmCode, request.Severity, request.RaisedAt, request.SourceReference));
+    return Results.Ok(result);
+})
+.WithName("IngestMeterAlarm")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/meter-data/alarms", async (Guid? consumerId, Guid? meterId, MeterAlarmStatus? status, PrepaidEngineDbContext db) =>
+{
+    var query = db.MeterAlarms.AsQueryable();
+    if (consumerId.HasValue) query = query.Where(a => a.ConsumerId == consumerId.Value);
+    if (meterId.HasValue) query = query.Where(a => a.MeterId == meterId.Value);
+    if (status.HasValue) query = query.Where(a => a.Status == status.Value);
+
+    var alarms = await (
+        from a in query
+        join consumer in db.Consumers on a.ConsumerId equals consumer.Id
+        join meter in db.Meters on a.MeterId equals meter.Id
+        orderby a.RaisedAt descending
+        select new
+        {
+            a.Id, consumer.AccountNumber, consumer.Name, meter.MeterNumber, a.AlarmCode, a.Severity, a.RaisedAt,
+            a.Status, a.AcknowledgedAt, a.AcknowledgedBy, a.ResolvedAt, a.ResolutionNote,
+        })
+        .Take(500)
+        .ToListAsync();
+
+    return Results.Ok(alarms);
+})
+.WithName("ListMeterAlarms")
+.RequireAuthorization();
+
+app.MapPost("/api/v1/meter-data/alarms/{id:guid}/acknowledge", async (Guid id, AcknowledgeAlarmRequest request, PrepaidEngineDbContext db) =>
+{
+    var alarm = await db.MeterAlarms.FirstOrDefaultAsync(a => a.Id == id);
+    if (alarm is null) return Results.NotFound();
+
+    try
+    {
+        alarm.Acknowledge(request.AcknowledgedBy, DateTime.UtcNow);
+    }
+    catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    await db.SaveChangesAsync();
+    return Results.Ok(new { alarm.Id, alarm.Status, alarm.AcknowledgedAt, alarm.AcknowledgedBy });
+})
+.WithName("AcknowledgeMeterAlarm")
+.RequireAuthorization();
+
+app.MapPost("/api/v1/meter-data/alarms/{id:guid}/resolve", async (Guid id, ResolveAlarmRequest request, PrepaidEngineDbContext db) =>
+{
+    var alarm = await db.MeterAlarms.FirstOrDefaultAsync(a => a.Id == id);
+    if (alarm is null) return Results.NotFound();
+
+    try
+    {
+        alarm.Resolve(request.ResolutionNote, DateTime.UtcNow);
+    }
+    catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    await db.SaveChangesAsync();
+    return Results.Ok(new { alarm.Id, alarm.Status, alarm.ResolvedAt, alarm.ResolutionNote });
+})
+.WithName("ResolveMeterAlarm")
+.RequireAuthorization();
+
+// DLP completeness for a given date across every active prepaid consumer — see
+// DlpCompletenessStatus's doc comment for what each status means and how it should influence
+// billing (surfaced operationally; this endpoint itself never blocks or triggers billing).
+app.MapGet("/api/v1/meter-data/dlp-completeness", async (DateOnly date, IMeterDataIngestionService meterData) =>
+{
+    var rows = await meterData.GetDlpCompletenessAsync(date);
+    return Results.Ok(rows);
+})
+.WithName("GetDlpCompleteness")
+.RequireAuthorization();
+
+// Cross-source energy validation (BP vs DLP, LS vs DLP, BP vs LS) for one consumer/meter/day —
+// see IMeterDataIngestionService.EvaluateEnergyValidationAsync's doc comment. Evaluated on demand
+// here rather than continuously, since it only makes sense once the day's DLP/BP/LS have arrived.
+app.MapPost("/api/v1/meter-data/energy-validation", async (EvaluateEnergyValidationRequest request, IMeterDataIngestionService meterData) =>
+{
+    var outcomes = await meterData.EvaluateEnergyValidationAsync(request.ConsumerId, request.MeterId, request.ValidationDate);
+    return Results.Ok(outcomes);
+})
+.WithName("EvaluateEnergyValidation")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/meter-data/energy-validation", async (Guid? consumerId, Guid? meterId, EnergyValidationStatus? status, PrepaidEngineDbContext db) =>
+{
+    var query = db.EnergyValidationResults.AsQueryable();
+    if (consumerId.HasValue) query = query.Where(v => v.ConsumerId == consumerId.Value);
+    if (meterId.HasValue) query = query.Where(v => v.MeterId == meterId.Value);
+    if (status.HasValue) query = query.Where(v => v.Status == status.Value);
+
+    var results = await (
+        from v in query
+        join consumer in db.Consumers on v.ConsumerId equals consumer.Id
+        join meter in db.Meters on v.MeterId equals meter.Id
+        orderby v.ValidationDate descending
+        select new
+        {
+            v.Id, consumer.AccountNumber, consumer.Name, meter.MeterNumber, v.ValidationDate, v.Rule,
+            v.ExpectedValueKwh, v.ActualValueKwh, v.VarianceKwh, v.VariancePct, v.Status, v.Reason, v.EvaluatedAt,
+        })
+        .Take(500)
+        .ToListAsync();
+
+    return Results.Ok(results);
+})
+.WithName("ListEnergyValidationResults")
+.RequireAuthorization();
+
 // Two-stage daily DLP billing, dispatched automatically by BillingProcessingWorker within its
 // two windows (8:30-9:30 AM / 12:30-1:30 PM); exposed here too so the demo can trigger either
 // stage manually without waiting for the clock. `cutoff` lets a manual/demo call specify exactly
@@ -2139,6 +2406,25 @@ public record DailyLoadProfileIngestRequest(
 public record MeterReplacementApiRequest(
     string NewMeterNumber, MeterPhase Phase, DateTime EffectiveFrom,
     decimal OldMeterClosingReadingKwh, decimal NewMeterOpeningReadingKwh, string Reason);
+
+// --- MDMS data foundation request DTOs (BP/LS/IP/Events/Alarms/energy-validation) -------------
+public record RegisterReadingIngestRequest(Guid ConsumerId, Guid MeterId, DateTime ReadingTimestamp, decimal CumulativeImportKwh, string? SourceReference = null);
+
+public record LoadSurveyIntervalIngestRequest(Guid ConsumerId, Guid MeterId, DateTime IntervalStart, DateTime IntervalEnd, decimal ImportKwh, string? SourceReference = null);
+
+public record InstantaneousReadingIngestRequest(
+    Guid ConsumerId, Guid MeterId, DateTime Timestamp, decimal VoltageVolts, decimal CurrentAmps,
+    decimal PowerKw, decimal PowerFactor, decimal FrequencyHz, MeterRelayStatus RelayStatus, string? SourceReference = null);
+
+public record MeterEventIngestRequest(Guid ConsumerId, Guid MeterId, MeterEventCode EventCode, DateTime EventTimestamp, string? Description = null, string? SourceReference = null);
+
+public record MeterAlarmIngestRequest(Guid ConsumerId, Guid MeterId, MeterAlarmCode AlarmCode, MeterAlarmSeverity Severity, DateTime RaisedAt, string? SourceReference = null);
+
+public record AcknowledgeAlarmRequest(string AcknowledgedBy);
+
+public record ResolveAlarmRequest(string ResolutionNote);
+
+public record EvaluateEnergyValidationRequest(Guid ConsumerId, Guid MeterId, DateOnly ValidationDate);
 
 // Exposed so WebApplicationFactory-based integration tests can bootstrap this Api project.
 public partial class Program { }

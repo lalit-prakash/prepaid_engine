@@ -450,6 +450,57 @@ Report once one is built.
   `GET /api/v1/meter-data/billing-holds`,
   `POST /api/v1/meter-data/{meterId}/billing-hold/clear`.
 
+### MDMS data foundation (BP / LS / IP / Events / Alarms / energy validation)
+
+**Phase 1 of a 4-phase enterprise hardening effort** (`phase-1-data-foundation`). DLP above
+remains the **sole** daily billing driver — none of what follows bills anything. Each MDMS profile
+type has one job:
+
+| Source | Entity | Role | Never used for |
+|---|---|---|---|
+| DLP | `DailyLoadProfile` | Sole daily billing driver | — |
+| BP | `RegisterReading` | Register/billing validation — cross-checks DLP against the meter's actual cumulative register | Billing |
+| LS | `LoadSurveyInterval` | Consumption intelligence (load pattern, peak demand, depletion forecasting) — re-introduced *strictly non-billing* after the old hourly-LS-billing pipeline was removed earlier | Billing |
+| IP | `InstantaneousReading` | Meter health (voltage/current/power/PF/frequency/relay) | Billing, consumption |
+| Events | `MeterEvent` | Informational history (power/comm fail-restore, relay, clock) | Requires no acknowledgement |
+| Alarms | `MeterAlarm` | Tamper/cover-open/reverse-energy/abnormality — always severity + acknowledge/resolve workflow | Kept in its own table, deliberately never merged with Events |
+
+- **Ingestion is push-based**, matching the existing DLP convention — MDMS (or, until a real MDMS
+  integration exists, any caller) `POST`s each profile type; there is no outbound adapter to build
+  since this engine never calls out to MDMS. Every ingest endpoint is **idempotent**: a duplicate
+  key (`ConsumerId+MeterId+Timestamp` for BP/LS, `MeterId+Timestamp` for IP,
+  `MeterId+Code+Timestamp` for Events/Alarms) is detected before insert and reported back as
+  `"Duplicate"` rather than silently re-processed or erroring.
+- **Meter-swap boundary respected implicitly**: every one of these entities scopes readings to a
+  specific `MeterId` (never derives "the consumer's meter" from a mutable pointer), the same
+  pattern `DailyLoadProfile` already uses — a reading from a since-replaced physical meter can
+  never be pulled into another meter's comparison. `MeterAssignment` remains the source of truth
+  for meter-identity history.
+- **Energy validation framework** (`EnergyValidationResult`, `IMeterDataIngestionService.
+  EvaluateEnergyValidationAsync`): cross-checks whichever of BP/DLP/LS have data for a given
+  consumer/meter/day (`BpVsDlp`, `LsVsDlp`, `BpVsLs`), scoring `Pass`/`Warning`/`Fail` against
+  **configurable** tolerances (`appsettings.json` → `EnergyValidation:WarningTolerancePct` /
+  `FailTolerancePct`, default 2%/5% — never hard-coded in the comparison logic itself).
+  Re-evaluating the same consumer/meter/date/rule updates that row in place rather than
+  duplicating it. This endpoint only *records* the comparison — a `Fail` becomes a candidate
+  `MeterBillingControl` hold reason for the billing pipeline to act on explicitly, not an automatic
+  hold by itself (that wiring is Phase 2 scope).
+- **DLP completeness** (`GetDlpCompletenessAsync`, `GET /api/v1/meter-data/dlp-completeness?date=`):
+  computed on demand (never stored) across every active prepaid consumer for a given date —
+  `Complete` / `Provisional` / `Invalid` (Rejected) / `Duplicate` (more than one DLP row) /
+  `Missing` (none at all).
+- Endpoints: `POST`/`GET /api/v1/meter-data/bp`, `POST`/`GET /api/v1/meter-data/ls`,
+  `POST /api/v1/meter-data/ip`, `GET /api/v1/meter-data/ip/latest`,
+  `POST`/`GET /api/v1/meter-data/events`, `POST`/`GET /api/v1/meter-data/alarms`,
+  `POST /api/v1/meter-data/alarms/{id}/acknowledge`, `POST /api/v1/meter-data/alarms/{id}/resolve`,
+  `GET /api/v1/meter-data/dlp-completeness`, `POST`/`GET /api/v1/meter-data/energy-validation`.
+- Tests: `PrepaidEngine.Tests/MeterData/MeterDataIngestionServiceTests.cs` — duplicate/idempotent
+  ingest for BP/LS/Events, negative-reading rejection, interval-order rejection, alarm
+  acknowledge→resolve lifecycle (and its guard against an empty resolution note), DLP completeness
+  (Missing/Complete), energy validation (Pass/Fail/no-data-yet/re-evaluation-updates-in-place), and
+  the meter-swap boundary (a reading under a different `MeterId` is never pulled into a
+  comparison).
+
 ### Postpaid → Prepaid conversion (MDMS/HES flow)
 
 RMS pushes a batch of conversion requests carrying its finalized parameter set — Consumer ID,
