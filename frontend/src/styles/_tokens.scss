@@ -63,6 +63,7 @@
   // color rather than the app's own teal --color-primary, so every other
   // already-built page keeps its teal identity unchanged.
   --surface-app-bg: #eef2f9;
+  --surface-app-bg-image: url('/images/background.png') center / cover no-repeat fixed, #eef2f9;
   --surface-card: var(--color-neutral-0);
   --surface-sidebar: #0b1220;
   --surface-sidebar-hover: rgba(255, 255, 255, 0.06);

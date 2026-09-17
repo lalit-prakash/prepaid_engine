@@ -168,5 +168,8 @@ export class Shell implements OnInit {
 
   signOut(): void {
     this.auth.signOut();
+    // replaceUrl so the signed-out shell route doesn't remain in history —
+    // pressing back afterwards lands on login again, not the stale page.
+    this.router.navigateByUrl('/login', { replaceUrl: true });
   }
 }
