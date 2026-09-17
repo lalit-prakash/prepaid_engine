@@ -501,6 +501,30 @@ type has one job:
   the meter-swap boundary (a reading under a different `MeterId` is never pulled into a
   comparison).
 
+### Prepaid → Postpaid conversion (reverse flow)
+
+**Phase 2 of the 4-phase enterprise hardening effort** (`phase-2-prepaid-core`). The forward
+Postpaid→Prepaid flow below was already real; this closes the gap the domain model had left open
+since `Consumer.ConvertToPostpaid()` existed but nothing ever called it in production code.
+
+- Unlike the forward direction, **RMS never pushes this** — there is no external system decision
+  to wait on, so `ReverseConversionRequest` completes in one operator-authorized step (a mandatory
+  `Reason` + `RequestedBy`) rather than the forward flow's Requested→Approved→Completed chain.
+- **Conversion safety** (mirroring spec §2.11 for the forward direction): rejects a consumer
+  already billed Postpaid (duplicate conversion), one with an open `MeterBillingControl` hold
+  (open billing issue), one with a still-pending forward `ConversionRequest`
+  (Requested/Approved — a conflicting in-flight conversion), or one with another reverse request
+  already in progress. Each rejection is itself recorded (as a Rejected `ReverseConversionRequest`
+  with a `DecisionNote`) and audited — never a silent no-op.
+- Captures the meter's cumulative reading and the wallet's balance at the moment of conversion —
+  the last two real facts about the consumer's prepaid life before RMS's postpaid billing cycle
+  and this project's own DLP/wallet billing stop applying to them.
+- Endpoints: `POST /api/v1/conversions/reverse`, `GET /api/v1/conversions/reverse`.
+- Tests: `PrepaidEngine.Tests/Domain/ReverseConversionRequestTests.cs` — construction validation,
+  completion, and the guards against completing/rejecting twice or rejecting without a note.
+  Verified live end-to-end against the real dev database, including both successful conversion and
+  the "already Postpaid" rejection on retry.
+
 ### Postpaid → Prepaid conversion (MDMS/HES flow)
 
 RMS pushes a batch of conversion requests carrying its finalized parameter set — Consumer ID,
