@@ -8,10 +8,7 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-6);
-  background:
-    radial-gradient(1100px 500px at 15% 0%, #dbe6ff 0%, transparent 60%),
-    radial-gradient(900px 500px at 100% 100%, #eef1ff 0%, transparent 55%),
-    #eef2fb;
+  background: url('/images/background.png') center / cover no-repeat;
   font-family: var(--font-family-base);
 }
 
