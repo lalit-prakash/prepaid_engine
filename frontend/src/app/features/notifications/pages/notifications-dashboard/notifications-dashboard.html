@@ -2,7 +2,7 @@
   <div class="page-header">
     <h1>Notification History</h1>
     <p class="page-header__subtitle">
-      {{ notifications().length }} notification(s), queued automatically during LS/DLP billing processing
+      {{ notifications().length }} notification(s), queued automatically during billing, conversion, and recharge processing
     </p>
   </div>
 
@@ -38,6 +38,9 @@
         <option [value]="NotificationEventType.EmergencyCredit">Emergency Credit</option>
         <option [value]="NotificationEventType.DisconnectionEligible">Disconnection Eligible</option>
         <option [value]="NotificationEventType.BillingProvisional">Billing Provisional</option>
+        <option [value]="NotificationEventType.PrepaidConversionCompleted">Prepaid Conversion Completed</option>
+        <option [value]="NotificationEventType.AutoDisconnected">Auto-Disconnected</option>
+        <option [value]="NotificationEventType.AutoReconnected">Auto-Reconnected</option>
       </select>
     </div>
 

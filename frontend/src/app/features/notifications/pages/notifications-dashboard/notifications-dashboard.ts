@@ -8,11 +8,12 @@ import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
 
 /**
  * Real, API-backed Notification History dashboard (GET /api/v1/notifications) — every consumer
- * notification queued automatically during hourly/daily LS/DLP billing processing (low balance,
- * emergency credit, disconnection eligibility, provisional-billing data-quality hold). Never
- * hand-entered. This project has no real SMS gateway — a `Sent` status here means "a real
- * dispatcher would pick this up next", never that an SMS actually left this system. Read-only by
- * design: there is no action to take on a notification from this page.
+ * notification queued automatically during daily DLP billing, conversion, recharge, and
+ * reconciliation processing (low balance, emergency credit, disconnection eligibility,
+ * provisional-billing data-quality hold, prepaid conversion completed, auto-disconnect/
+ * auto-reconnect). Never hand-entered. This project has no real SMS gateway — a `Sent` status
+ * here means "a real dispatcher would pick this up next", never that an SMS actually left this
+ * system. Read-only by design: there is no action to take on a notification from this page.
  */
 @Component({
   selector: 'pe-notifications-dashboard',
@@ -78,6 +79,9 @@ export class NotificationsDashboard implements OnInit {
       case NotificationEventType.EmergencyCredit: return 'Emergency Credit';
       case NotificationEventType.DisconnectionEligible: return 'Disconnection Eligible';
       case NotificationEventType.BillingProvisional: return 'Billing Provisional';
+      case NotificationEventType.PrepaidConversionCompleted: return 'Prepaid Conversion Completed';
+      case NotificationEventType.AutoDisconnected: return 'Auto-Disconnected';
+      case NotificationEventType.AutoReconnected: return 'Auto-Reconnected';
       default: return 'Unknown';
     }
   }

@@ -3,6 +3,14 @@ export enum NotificationEventType {
   EmergencyCredit = 1,
   DisconnectionEligible = 2,
   BillingProvisional = 3,
+  /** Postpaid→prepaid conversion completed — "you are now in prepaid mode". */
+  PrepaidConversionCompleted = 4,
+  /** Auto-dispatched by the emergency-credit guard when the wallet falls to/below the
+   * emergency-credit limit. */
+  AutoDisconnected = 5,
+  /** Auto-dispatched by the emergency-credit guard when a recharge/adjustment brings the wallet
+   * back to a positive balance. */
+  AutoReconnected = 6,
 }
 
 export enum NotificationStatus {

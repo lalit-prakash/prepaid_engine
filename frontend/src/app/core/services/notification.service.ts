@@ -5,10 +5,11 @@ import { environment } from '../../../environments/environment';
 import { NotificationSummary } from '../models/notification.model';
 
 /** Talks to the real GET /api/v1/notifications endpoint — every notification here was queued
- * automatically during hourly/daily LS/DLP billing processing (low balance, emergency credit,
- * disconnection eligibility, provisional billing), never hand-entered. This project has no real
- * SMS gateway, so a notification's Status reflects whether a real dispatcher would pick it up
- * next, never that an SMS actually left this system. Read-only by design. */
+ * automatically during daily DLP billing, conversion, recharge, and reconciliation processing
+ * (low balance, emergency credit, disconnection eligibility, provisional billing, prepaid
+ * conversion completed, auto-disconnect/auto-reconnect), never hand-entered. This project has no
+ * real SMS gateway, so a notification's Status reflects whether a real dispatcher would pick it
+ * up next, never that an SMS actually left this system. Read-only by design. */
 @Injectable({ providedIn: 'root' })
 export class NotificationService {
   private readonly baseUrl = `${environment.apiBaseUrl}/api/v1/notifications`;
