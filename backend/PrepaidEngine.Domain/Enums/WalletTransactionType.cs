@@ -18,7 +18,8 @@ public enum WalletTransactionType
     /// <summary>The daily prepaid charge computed directly from that day's Daily Load Profile
     /// (DLP) total kWh and the consumer's tariff — the sole driver of ongoing prepaid billing
     /// now that the hourly Load Survey (LS) pipeline has been removed (see
-    /// <see cref="Entities.DailyLoadProfile"/> and <c>BillingEngineService.ProcessDailyAsync</c>).
+    /// <see cref="Entities.DailyLoadProfile"/> and <c>BillingEngineService.ProcessDailyStage1Async</c>/
+    /// <c>ProcessDailyStage2Async</c>).
     /// Reference is always <c>DLP:&lt;profile-id&gt;</c> (or <c>DLP-PROV:&lt;profile-id&gt;</c>
     /// for a provisional estimate posted when the day's DLP has not arrived yet).</summary>
     DailyDlpCharge,

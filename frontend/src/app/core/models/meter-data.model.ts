@@ -15,6 +15,9 @@ export interface DailyLoadProfileSummary {
   meterNumber: string;
   profileDate: string;
   generatedAt: string;
+  /** When MDMS actually ingested this profile — determines which of the two daily billing
+   * stages (8:30-9:30 AM / 12:30-1:30 PM) it was billed in. */
+  receivedAt: string;
   startCumulativeKwh: number;
   endCumulativeKwh: number;
   totalKwh: number;

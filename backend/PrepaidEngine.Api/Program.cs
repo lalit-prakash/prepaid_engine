@@ -1792,6 +1792,7 @@ app.MapGet("/api/v1/meter-data/dlp", async (Guid? consumerId, PrepaidEngineDbCon
             meter.MeterNumber,
             d.ProfileDate,
             d.GeneratedAt,
+            d.ReceivedAt,
             d.StartCumulativeKwh,
             d.EndCumulativeKwh,
             d.TotalKwh,
@@ -1807,12 +1808,28 @@ app.MapGet("/api/v1/meter-data/dlp", async (Guid? consumerId, PrepaidEngineDbCon
 .WithName("ListDailyLoadProfiles")
 .RequireAuthorization();
 
-app.MapPost("/api/v1/billing/daily/{billingDate}", async (DateOnly billingDate, IBillingEngineService billingEngine) =>
+// Two-stage daily DLP billing, dispatched automatically by BillingProcessingWorker within its
+// two windows (8:30-9:30 AM / 12:30-1:30 PM); exposed here too so the demo can trigger either
+// stage manually without waiting for the clock. `cutoff` lets a manual/demo call specify exactly
+// which receipt-time boundary to bill against (defaults to 8:00 AM / 12:00 PM of `billingDate`'s
+// following day, matching the worker's own real cutoffs) — see IBillingEngineService's doc
+// comment for the full stage-1-vs-stage-2 rule.
+app.MapPost("/api/v1/billing/daily/{billingDate}/stage1", async (DateOnly billingDate, DateTime? cutoff, IBillingEngineService billingEngine) =>
 {
-    var results = await billingEngine.ProcessDailyAsync(billingDate);
+    var stage1Cutoff = cutoff ?? billingDate.AddDays(1).ToDateTime(new TimeOnly(8, 0), DateTimeKind.Utc);
+    var results = await billingEngine.ProcessDailyStage1Async(billingDate, stage1Cutoff);
     return Results.Ok(results);
 })
-.WithName("ProcessDailyBilling")
+.WithName("ProcessDailyBillingStage1")
+.RequireAuthorization();
+
+app.MapPost("/api/v1/billing/daily/{billingDate}/stage2", async (DateOnly billingDate, DateTime? cutoff, IBillingEngineService billingEngine) =>
+{
+    var stage2Cutoff = cutoff ?? billingDate.AddDays(1).ToDateTime(new TimeOnly(12, 0), DateTimeKind.Utc);
+    var results = await billingEngine.ProcessDailyStage2Async(billingDate, stage2Cutoff);
+    return Results.Ok(results);
+})
+.WithName("ProcessDailyBillingStage2")
 .RequireAuthorization();
 
 app.MapPost("/api/v1/consumers/{consumerId:guid}/meter-replacement", async (

@@ -16,10 +16,10 @@ using Xunit;
 namespace PrepaidEngine.Tests.Billing;
 
 /// <summary>
-/// Exercises the DLP billing pipeline's core financial rules (daily charge, provisional billing,
-/// emergency-credit auto-disconnect, meter replacement) against a real (if lightweight) SQLite
-/// database — see PrepaidEngineDbContextTests for why SQLite is used here rather than an
-/// in-memory fake.
+/// Exercises the two-stage DLP billing pipeline's core financial rules (Stage 1/Stage 2 receipt-
+/// time splitting, provisional billing, negative-consumption validation on ingest, emergency-
+/// credit auto-disconnect, meter replacement) against a real (if lightweight) SQLite database —
+/// see PrepaidEngineDbContextTests for why SQLite is used here rather than an in-memory fake.
 /// </summary>
 public class BillingEngineServiceTests : IDisposable
 {
@@ -65,51 +65,125 @@ public class BillingEngineServiceTests : IDisposable
         return await fresh.Consumers.Include(c => c.Wallet).ThenInclude(w => w.Transactions).SingleAsync(c => c.Id == _consumer.Id);
     }
 
-    // ------------------------------------------------------------------ Daily processing
+    // ------------------------------------------------------------------ Ingest validation
 
     [Fact]
-    public async Task ProcessDaily_RealDlp_DebitsWalletDirectly()
+    public async Task Ingest_ValidBlock_MarksReceived()
+    {
+        var day = new DateOnly(2026, 9, 10);
+        var result = await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, day, DateTime.UtcNow, 1000m, 1024m));
+
+        Assert.Equal("Validated", result.Status);
+        Assert.Null(result.Message);
+    }
+
+    [Fact]
+    public async Task Ingest_StartBelowPreviousDaysClosingReading_RejectsAndActivatesBillingHold()
+    {
+        var day1 = new DateOnly(2026, 9, 10);
+        var day2 = new DateOnly(2026, 9, 11);
+
+        await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, day1, DateTime.UtcNow, 1000m, 1024m));
+
+        // Day 2's starting reading (1010) is lower than day 1's closing reading (1024) — a
+        // negative-consumption sequence across the day boundary.
+        var result = await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, day2, DateTime.UtcNow, 1010m, 1030m));
+
+        Assert.Equal("Rejected", result.Status);
+        Assert.Contains("Negative consumption", result.Message);
+
+        var control = await _db.MeterBillingControls.SingleAsync(c => c.MeterId == _consumer.Meter.Id);
+        Assert.True(control.ActualBillingBlocked);
+    }
+
+    [Fact]
+    public async Task Ingest_StartAtOrAbovePreviousDaysClosingReading_Accepted()
+    {
+        var day1 = new DateOnly(2026, 9, 10);
+        var day2 = new DateOnly(2026, 9, 11);
+
+        await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, day1, DateTime.UtcNow, 1000m, 1024m));
+
+        var result = await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, day2, DateTime.UtcNow, 1024m, 1050m));
+
+        Assert.Equal("Validated", result.Status);
+        Assert.Empty(await _db.MeterBillingControls.ToListAsync());
+    }
+
+    // ------------------------------------------------------------------ Stage 1 / Stage 2 split
+
+    [Fact]
+    public async Task Stage1_DlpReceivedBeforeCutoff_BillsDirectly()
     {
         var billingDate = new DateOnly(2026, 9, 11);
-        var dayStart = billingDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
 
-        // 24 kWh @ ₹5/kWh = ₹120, charged in one direct debit.
-        await _service.IngestDailyLoadProfileAsync(new DailyLoadProfileRequest(
-            _consumer.Id, _consumer.Meter.Id, billingDate, dayStart.AddDays(1).AddSeconds(15), 0m, 24m));
+        // 24 kWh @ ₹5/kWh = ₹120.
+        await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, billingDate, DateTime.UtcNow, 0m, 24m));
 
-        var results = await _service.ProcessDailyAsync(billingDate);
+        var cutoff = DateTime.UtcNow.AddHours(1); // ingest already happened before this cutoff
+        var results = await _service.ProcessDailyStage1Async(billingDate, cutoff);
 
         Assert.Single(results);
-        Assert.True(results[0].DlpAvailable);
-        Assert.False(results[0].IsProvisional);
+        Assert.Equal("Stage1", results[0].Stage);
         Assert.Equal(120m, results[0].ChargeAmount);
 
         var reloaded = await ReloadConsumerAsync();
         Assert.Equal(10000m - 120m, reloaded.Wallet.Balance);
-        Assert.Single(reloaded.Wallet.Transactions.Where(t => t.Type == WalletTransactionType.DailyDlpCharge));
     }
 
     [Fact]
-    public async Task ProcessDaily_MeterOnBillingHold_SkipsConsumer()
+    public async Task Stage1_DlpReceivedAfterCutoff_IsNotBilled()
     {
-        _db.MeterBillingControls.Add(new MeterBillingControl(Guid.NewGuid(), _consumer.Id, _consumer.Meter.Id, "test hold", DateTime.UtcNow));
-        await _db.SaveChangesAsync();
-
         var billingDate = new DateOnly(2026, 9, 11);
-        var results = await _service.ProcessDailyAsync(billingDate);
 
-        Assert.True(results[0].Skipped);
+        await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, billingDate, DateTime.UtcNow, 0m, 24m));
+
+        var cutoffBeforeIngest = DateTime.UtcNow.AddHours(-1); // ingest happened after this cutoff
+        var results = await _service.ProcessDailyStage1Async(billingDate, cutoffBeforeIngest);
+
+        Assert.Empty(results); // nothing to bill yet in Stage 1
+
         var reloaded = await ReloadConsumerAsync();
         Assert.Equal(10000m, reloaded.Wallet.Balance);
     }
 
     [Fact]
-    public async Task ProcessDaily_MissingDlp_CreatesProvisionalAndDebitsEstimate()
+    public async Task Stage2_DlpMissedStage1Cutoff_BillsInStage2()
     {
         var billingDate = new DateOnly(2026, 9, 11);
 
-        var results = await _service.ProcessDailyAsync(billingDate);
+        await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, billingDate, DateTime.UtcNow, 0m, 24m));
 
+        // Stage 1 misses it (cutoff before ingest)...
+        await _service.ProcessDailyStage1Async(billingDate, DateTime.UtcNow.AddHours(-1));
+        // ...Stage 2 catches it (cutoff after ingest).
+        var results = await _service.ProcessDailyStage2Async(billingDate, DateTime.UtcNow.AddHours(1));
+
+        Assert.Single(results);
+        Assert.Equal("Stage2", results[0].Stage);
+        Assert.Equal(120m, results[0].ChargeAmount);
+
+        var reloaded = await ReloadConsumerAsync();
+        Assert.Equal(10000m - 120m, reloaded.Wallet.Balance);
+    }
+
+    [Fact]
+    public async Task Stage2_NoDlpByCutoff_CreatesProvisionalCharge()
+    {
+        var billingDate = new DateOnly(2026, 9, 11);
+
+        var results = await _service.ProcessDailyStage2Async(billingDate, DateTime.UtcNow);
+
+        Assert.Single(results);
+        Assert.Equal("Stage2Provisional", results[0].Stage);
         Assert.True(results[0].IsProvisional);
         Assert.Equal(0m, results[0].ChargeAmount); // no history to estimate from -> 0 kWh estimate
 
@@ -118,19 +192,96 @@ public class BillingEngineServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ProcessDaily_SameDateTwice_SecondRunIsSkipped()
+    public async Task Stage2_RejectedDlpWithHoldSinceCleared_DoesNotCollideOnProvisionalCreate()
     {
+        // Reproduces a real bug found in review: a Rejected DLP already occupies the
+        // Consumer+Meter+ProfileDate slot (unique-indexed). If its MeterBillingControl hold is
+        // cleared before a corrected DLP is re-ingested, Stage 2 must not try to create a second
+        // (provisional) DailyLoadProfile row for that same slot — that would violate the unique
+        // index and crash the whole batch's SaveChangesAsync.
+        var day1 = new DateOnly(2026, 9, 10);
         var billingDate = new DateOnly(2026, 9, 11);
 
-        await _service.ProcessDailyAsync(billingDate);
-        var second = await _service.ProcessDailyAsync(billingDate);
+        await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, day1, DateTime.UtcNow, 1000m, 1024m));
+        await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, billingDate, DateTime.UtcNow, 1010m, 1030m)); // rejected: 1010 < 1024
 
-        Assert.True(second[0].Skipped);
-        Assert.Single(await _db.BillingRuns.Where(r => r.BillingDate == billingDate).ToListAsync());
+        var control = await _db.MeterBillingControls.SingleAsync(c => c.MeterId == _consumer.Meter.Id);
+        control.Clear(DateTime.UtcNow);
+        await _db.SaveChangesAsync();
+
+        var results = await _service.ProcessDailyStage2Async(billingDate, DateTime.UtcNow);
+
+        Assert.True(results[0].Skipped);
+        Assert.Contains("rejected", results[0].SkipReason, StringComparison.OrdinalIgnoreCase);
+        // Only the one (Rejected) DLP row exists for this date — no colliding second row was created.
+        Assert.Single(await _db.DailyLoadProfiles.Where(d => d.ProfileDate == billingDate).ToListAsync());
     }
 
     [Fact]
-    public async Task ProcessDaily_ChargeCrossesEmergencyCredit_AutoDisconnects()
+    public async Task Ingest_PreviousDayWasRejected_DoesNotUseItAsBaseline()
+    {
+        // A Rejected profile's readings are untrustworthy — using one as the "previous day"
+        // baseline could produce a false rejection (or false acceptance) for the next day.
+        var day1 = new DateOnly(2026, 9, 9);
+        var day2 = new DateOnly(2026, 9, 10);
+        var day3 = new DateOnly(2026, 9, 11);
+
+        await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, day1, DateTime.UtcNow, 1000m, 1024m));
+        // day2 rejected (its End of 1030 is untrustworthy - should never be used as a baseline).
+        await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, day2, DateTime.UtcNow, 1010m, 1030m));
+
+        // day3's start (1024) matches day1's real closing reading exactly — must be accepted,
+        // not compared against day2's (rejected, untrustworthy) 1030 closing reading.
+        var result = await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, day3, DateTime.UtcNow, 1024m, 1048m));
+
+        Assert.Equal("Validated", result.Status);
+    }
+
+    [Fact]
+    public async Task Stage2_MeterOnBillingHold_SkipsConsumer()
+    {
+        _db.MeterBillingControls.Add(new MeterBillingControl(Guid.NewGuid(), _consumer.Id, _consumer.Meter.Id, "test hold", DateTime.UtcNow));
+        await _db.SaveChangesAsync();
+
+        var billingDate = new DateOnly(2026, 9, 11);
+        var results = await _service.ProcessDailyStage2Async(billingDate, DateTime.UtcNow);
+
+        Assert.True(results[0].Skipped);
+        var reloaded = await ReloadConsumerAsync();
+        Assert.Equal(10000m, reloaded.Wallet.Balance);
+    }
+
+    [Fact]
+    public async Task Stage1_SameDateTwice_SecondRunIsSkipped()
+    {
+        var billingDate = new DateOnly(2026, 9, 11);
+
+        await _service.ProcessDailyStage1Async(billingDate, DateTime.UtcNow);
+        var second = await _service.ProcessDailyStage1Async(billingDate, DateTime.UtcNow);
+
+        Assert.True(second[0].Skipped);
+        Assert.Single(await _db.BillingRuns.Where(r => r.RunType == BillingRun.DlpStage1RunType && r.BillingDate == billingDate).ToListAsync());
+    }
+
+    [Fact]
+    public async Task Stage2_SameDateTwice_SecondRunIsSkipped()
+    {
+        var billingDate = new DateOnly(2026, 9, 11);
+
+        await _service.ProcessDailyStage2Async(billingDate, DateTime.UtcNow);
+        var second = await _service.ProcessDailyStage2Async(billingDate, DateTime.UtcNow);
+
+        Assert.True(second[0].Skipped);
+        Assert.Single(await _db.BillingRuns.Where(r => r.RunType == BillingRun.DlpStage2RunType && r.BillingDate == billingDate).ToListAsync());
+    }
+
+    [Fact]
+    public async Task Stage2_ChargeCrossesEmergencyCredit_AutoDisconnects()
     {
         // Wallet starts near empty so a modest daily charge pushes it below the -200 emergency
         // credit limit — the guard should auto-dispatch a Disconnect command.
@@ -140,14 +291,13 @@ public class BillingEngineServiceTests : IDisposable
         await _db.SaveChangesAsync();
 
         var billingDate = new DateOnly(2026, 9, 11);
-        var dayStart = billingDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
 
         // 100 kWh @ ₹5/kWh = ₹500 — balance goes from ₹100 to -₹400, past the ₹200 emergency
         // credit limit.
-        await _service.IngestDailyLoadProfileAsync(new DailyLoadProfileRequest(
-            _consumer.Id, _consumer.Meter.Id, billingDate, dayStart.AddDays(1).AddSeconds(15), 0m, 100m));
+        await _service.IngestDailyLoadProfileAsync(
+            new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, billingDate, DateTime.UtcNow, 0m, 100m));
 
-        await _service.ProcessDailyAsync(billingDate);
+        await _service.ProcessDailyStage1Async(billingDate, DateTime.UtcNow.AddHours(1));
 
         var reloaded = await ReloadConsumerAsync();
         Assert.Equal(ConnectionStatus.Disconnected, reloaded.ConnectionStatus);

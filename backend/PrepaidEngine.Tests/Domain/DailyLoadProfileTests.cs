@@ -9,7 +9,7 @@ public class DailyLoadProfileTests
 {
     private static DailyLoadProfile NewProfile(bool provisional = false) =>
         new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 9, 10), DateTime.UtcNow,
-            1000m, 1042.5m, isProvisional: provisional);
+            1000m, 1042.5m, DateTime.UtcNow, isProvisional: provisional);
 
     [Fact]
     public void Constructor_ComputesTotalKwh()
@@ -20,10 +20,24 @@ public class DailyLoadProfileTests
     }
 
     [Fact]
+    public void Constructor_RecordsReceivedAtSeparatelyFromGeneratedAt()
+    {
+        var generatedAt = new DateTime(2026, 9, 10, 0, 5, 0, DateTimeKind.Utc);
+        var receivedAt = new DateTime(2026, 9, 10, 6, 30, 0, DateTimeKind.Utc);
+
+        var profile = new DailyLoadProfile(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 9, 9), generatedAt,
+            1000m, 1042.5m, receivedAt);
+
+        Assert.Equal(generatedAt, profile.GeneratedAt);
+        Assert.Equal(receivedAt, profile.ReceivedAt);
+    }
+
+    [Fact]
     public void Constructor_EndBelowStart_Throws()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new DailyLoadProfile(
-            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 9, 10), DateTime.UtcNow, 100m, 50m));
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 9, 10), DateTime.UtcNow, 100m, 50m, DateTime.UtcNow));
     }
 
     [Fact]
@@ -45,22 +59,34 @@ public class DailyLoadProfileTests
     }
 
     [Fact]
+    public void MarkRejected_SetsRejectedStatus()
+    {
+        var profile = NewProfile();
+
+        profile.MarkRejected();
+
+        Assert.Equal(DailyProfileStatus.Rejected, profile.Status);
+    }
+
+    [Fact]
     public void ReplaceWithActual_OnNonProvisionalProfile_Throws()
     {
         var profile = NewProfile(provisional: false);
 
-        Assert.Throws<InvalidOperationException>(() => profile.ReplaceWithActual(0m, 20m, DateTime.UtcNow, null));
+        Assert.Throws<InvalidOperationException>(() => profile.ReplaceWithActual(0m, 20m, DateTime.UtcNow, DateTime.UtcNow, null));
     }
 
     [Fact]
     public void ReplaceWithActual_OnProvisionalProfile_UpdatesDataAndClearsProvisionalFlag()
     {
         var profile = NewProfile(provisional: true);
+        var receivedAt = DateTime.UtcNow;
 
-        profile.ReplaceWithActual(1000m, 1050m, DateTime.UtcNow, "HES-DLP-1");
+        profile.ReplaceWithActual(1000m, 1050m, DateTime.UtcNow, receivedAt, "HES-DLP-1");
 
         Assert.False(profile.IsProvisional);
         Assert.Equal(50m, profile.TotalKwh);
         Assert.Equal(DailyProfileStatus.Validated, profile.Status);
+        Assert.Equal(receivedAt, profile.ReceivedAt);
     }
 }

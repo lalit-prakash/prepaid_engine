@@ -3,13 +3,23 @@ using PrepaidEngine.Domain.Enums;
 namespace PrepaidEngine.Domain.Entities;
 
 /// <summary>
-/// An operational record of one batch billing run (currently only "DLP_DAILY" — the daily
-/// settlement pass). Unique per <c>RunType + BillingDate</c>, preventing two daily runs from
-/// being accidentally created for the same date.
+/// An operational record of one batch billing run. Daily DLP billing runs in two stages per
+/// calendar date, each tracked as its own <see cref="BillingRun"/> row — unique per
+/// <c>RunType + BillingDate</c>, so a stage cannot be accidentally run twice for the same date,
+/// and both stages can coexist for the same date without colliding.
 /// </summary>
 public class BillingRun
 {
+    /// <summary>Historical run type from before the two-stage split — no longer created, kept so
+    /// existing rows still deserialize.</summary>
     public const string DlpDailyRunType = "DLP_DAILY";
+
+    /// <summary>8:30-9:30 AM: bills every consumer whose DLP was received by 8:00 AM.</summary>
+    public const string DlpStage1RunType = "DLP_STAGE1";
+
+    /// <summary>12:30-1:30 PM: bills every consumer whose DLP arrived between 8:00 AM and
+    /// 12:00 PM, plus a provisional charge for every consumer with no DLP by then.</summary>
+    public const string DlpStage2RunType = "DLP_STAGE2";
 
     public Guid Id { get; private set; }
     public string RunType { get; private set; }

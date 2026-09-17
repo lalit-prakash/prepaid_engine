@@ -3,28 +3,42 @@ using PrepaidEngine.Domain.Entities;
 namespace PrepaidEngine.Application.Billing;
 
 /// <summary>
-/// The DLP billing pipeline's core operations. Daily Load Profile (DLP, created at the 00:00
-/// boundary) is the sole driver of ongoing prepaid billing — the hourly Load Survey (LS) pipeline
-/// that used to also debit the wallet, and reconcile against DLP via a settlement adjustment, has
-/// been removed: DLP alone now posts one direct daily charge per consumer.
+/// The DLP billing pipeline's core operations. Daily Load Profile (DLP) is the sole driver of
+/// ongoing prepaid billing, split across two daily stages by when each meter's DLP was actually
+/// received (see <see cref="DailyLoadProfile.ReceivedAt"/>):
+///
+/// <list type="bullet">
+/// <item><description><b>Stage 1</b> (8:30-9:30 AM): bills every consumer whose DLP for the
+/// previous day was received by 8:00 AM that morning.</description></item>
+/// <item><description><b>Stage 2</b> (12:30-1:30 PM): bills every consumer whose DLP arrived
+/// between 8:00 AM and 12:00 PM (missed Stage 1's cutoff), plus a <b>provisional</b> charge for
+/// every consumer who still has no DLP for the previous day by the 12:00 PM cutoff.</description></item>
+/// </list>
 /// </summary>
 public interface IBillingEngineService
 {
     /// <summary>Ingests one Daily Load Profile — replaces an existing provisional profile for the
-    /// same Consumer+Meter+Date if one exists, otherwise creates a new (real) profile.</summary>
+    /// same Consumer+Meter+Date if one exists, otherwise creates a new (real) profile. Validates
+    /// the reading against the meter's previous day's closing reading before accepting it (see
+    /// <see cref="DailyLoadProfileIngestResult"/>'s doc comment) — never billing a negative
+    /// consumption sequence.</summary>
     Task<DailyLoadProfileIngestResult> IngestDailyLoadProfileAsync(
         DailyLoadProfileRequest request, CancellationToken cancellationToken = default);
 
-    /// <summary>Processes the daily DLP charge for <paramref name="billingDate"/> across every
-    /// prepaid consumer with an assigned tariff: computes the day's charge from the DLP's total
-    /// kWh (or creates+charges a provisional profile estimated from recent history if none
-    /// arrived), and posts one direct wallet debit. Tracked under one <see cref="BillingRun"/>
-    /// (unique per RunType+BillingDate). After each consumer's charge is posted, evaluates
-    /// whether their wallet has crossed the emergency-credit threshold and auto-dispatches a
-    /// disconnect (or reconnect, on the recharge side) accordingly — see
-    /// <see cref="Connectivity.IEmergencyCreditGuard"/>.</summary>
-    Task<IReadOnlyList<DailyProcessingResult>> ProcessDailyAsync(
-        DateOnly billingDate, CancellationToken cancellationToken = default);
+    /// <summary>Stage 1 of the daily DLP charge for <paramref name="billingDate"/> (normally the
+    /// previous calendar day): bills every prepaid consumer with an assigned tariff whose DLP for
+    /// that date was received by 8:00 AM. Tracked under one <see cref="BillingRun"/>
+    /// (<see cref="BillingRun.DlpStage1RunType"/>, unique per BillingDate).</summary>
+    Task<IReadOnlyList<DailyProcessingResult>> ProcessDailyStage1Async(
+        DateOnly billingDate, DateTime stage1CutoffUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>Stage 2 of the daily DLP charge for <paramref name="billingDate"/>: bills every
+    /// remaining prepaid consumer whose DLP arrived between the Stage 1 cutoff and 12:00 PM, then
+    /// posts a provisional charge (estimated from recent history) for every consumer who still has
+    /// no DLP for that date at all. Tracked under one <see cref="BillingRun"/>
+    /// (<see cref="BillingRun.DlpStage2RunType"/>, unique per BillingDate).</summary>
+    Task<IReadOnlyList<DailyProcessingResult>> ProcessDailyStage2Async(
+        DateOnly billingDate, DateTime stage2CutoffUtc, CancellationToken cancellationToken = default);
 
     /// <summary>Records a physical meter replacement for a consumer: creates the new
     /// <see cref="Domain.Entities.SmartMeter"/>, swaps it onto the consumer, and writes the

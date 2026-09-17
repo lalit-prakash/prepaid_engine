@@ -44,7 +44,8 @@
               <th>Meter</th>
               <th class="num">Total kWh</th>
               <th>Status</th>
-              <th>Generated</th>
+              <th>Received</th>
+              <th>Billing Stage</th>
             </tr>
           </thead>
           <tbody>
@@ -67,7 +68,8 @@
                     }
                   }
                 </td>
-                <td>{{ p.generatedAt | date: 'medium' }}</td>
+                <td>{{ p.receivedAt | date: 'medium' }}</td>
+                <td>{{ p.isProvisional ? '—' : receivedStageLabel(p.receivedAt) }}</td>
               </tr>
             }
           </tbody>

@@ -6,10 +6,12 @@ namespace PrepaidEngine.Domain.Entities;
 /// Holds actual (real, meter-driven) billing for one consumer/meter when meter data quality is
 /// unsafe to bill against. While <see cref="ActualBillingBlocked"/> is true, daily DLP billing
 /// for the affected meter stops; the consumer continues through provisional billing where policy
-/// permits. Nothing currently raises this hold automatically (its original trigger — a bad Load
-/// Survey sequence — no longer exists now that the LS pipeline has been removed); it remains a
-/// real, clearable domain entity/API for whenever a DLP-side data-quality trigger is added, and
-/// for any hold raised through other operational means.
+/// permits. Raised/reactivated automatically by <c>BillingEngineService.IngestDailyLoadProfileAsync</c>
+/// the moment an incoming DLP's starting reading is lower than that same meter's own previous
+/// day's closing reading — the DLP pipeline's negative-consumption guard (the LS pipeline's
+/// equivalent guard has been removed along with LS itself). Cleared only via the operator API
+/// with a mandatory resolution note, matching this project's mandatory-reason discipline
+/// elsewhere.
 /// </summary>
 public class MeterBillingControl
 {

@@ -67,4 +67,15 @@ export class MeterDataDashboard implements OnInit {
   protected get billedCount(): number {
     return this.profiles().filter((p) => p.status === DailyProfileStatus.Billed).length;
   }
+
+  /** Which of the two daily billing stages this profile's receipt time would have qualified
+   * for — 8:30-9:30 AM bills anything received by 8:00 AM, 12:30-1:30 PM bills anything received
+   * between 8:00 AM and 12:00 PM (plus provisional billing for what's still missing by then). A
+   * display-only classification of the real `receivedAt` timestamp, not a separate field. */
+  protected receivedStageLabel(receivedAt: string): string {
+    const hour = new Date(receivedAt).getHours() + new Date(receivedAt).getMinutes() / 60;
+    if (hour < 8) return 'Stage 1 (8:30-9:30 AM)';
+    if (hour < 12) return 'Stage 2 (12:30-1:30 PM)';
+    return 'After 12 PM cutoff';
+  }
 }

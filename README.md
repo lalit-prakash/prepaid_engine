@@ -66,7 +66,7 @@ explicit "not yet backed" stub rather than invented data — see
 | `AuditEntry` | An immutable, append-only log entry for a tracked operational/config change (RC/DC dispatch, conversion completion, reconciliation adjustment, tariff version) |
 | `TariffVersion` | A recorded parameter change against a `Tariff`, with a mandatory change note and effective date — enables a future Tariff Change Report even though `Tariff` itself has no update endpoint yet |
 | `DailyLoadProfile` | The meter's daily consumption profile, created at the 00:00 hrs boundary — the sole driver of ongoing prepaid billing (see [DLP billing pipeline](#dlp-billing-pipeline-daily-load-profile) below) |
-| `MeterBillingControl` | A real, clearable hold blocking actual (real, meter-driven) billing for one consumer/meter — currently unwired (its original LS-based trigger was removed), kept for a future DLP-side trigger |
+| `MeterBillingControl` | A real, clearable hold blocking actual (real, meter-driven) billing for one consumer/meter — raised/reactivated automatically when an incoming DLP's reading is lower than that meter's own previous-day closing reading (see [DLP billing pipeline](#dlp-billing-pipeline-daily-load-profile) below) |
 | `PaymentModeChangeCommand` | The MDMS → HES → Meter → HES → MDMS command that actually switches a meter to prepaid mode during conversion — see [Postpaid → Prepaid conversion](#postpaid--prepaid-conversion-mdmshes-flow) below |
 | `BillingRun` | An operational record of one daily DLP settlement batch, unique per `RunType + BillingDate` |
 | `MeterAssignment` | An audit record of a physical meter replacement — the boundary that guarantees an old meter's cumulative reading is never compared against a new meter's |
@@ -402,18 +402,34 @@ Report once one is built.
 > Profile via a signed settlement adjustment). **The LS half has since been removed** at the
 > user's explicit request, in favor of the MDMS/HES-driven conversion flow described in
 > [Postpaid → Prepaid conversion](#postpaid--prepaid-conversion-mdmshes-flow) below. DLP is now
-> the **sole** driver of ongoing prepaid billing: each day's DLP total kWh posts one direct wallet
-> debit — no more hourly debits, no more settlement math.
+> the **sole** driver of ongoing prepaid billing, split across **two daily stages** by receipt
+> time — no more hourly debits, no more settlement math.
 
-- `DailyLoadProfile` — unique per `ConsumerId + MeterId + ProfileDate`. If none arrives by the
-  daily billing run, a **provisional** profile is created instead (demo estimation: average of up
-  to the previous 7 valid DLPs, `0` if none exist — never treating a missing day as zero
-  consumption without saying so) and a provisional debit is posted directly.
+- **Validation on ingest, before anything is billed**: every incoming DLP's starting cumulative
+  reading is checked against the *same meter's* previous day's closing reading. If it's lower —
+  a negative-consumption sequence across the day boundary — the profile is rejected
+  (`DailyProfileStatus.Rejected`) and a `MeterBillingControl` hold is raised/reactivated for that
+  meter, blocking further DLP billing until an operator clears it
+  (`POST /api/v1/meter-data/{meterId}/billing-hold/clear`, mandatory resolution note). A
+  previous-day profile that was itself Rejected is never used as the baseline — its reading isn't
+  trustworthy either. This is the DLP pipeline's own version of the old LS pipeline's negative-
+  consumption guard, now the only thing standing between bad meter data and a negative bill.
+- **Two-stage billing**, both tracked under their own `BillingRun` (`DlpStage1RunType`/
+  `DlpStage2RunType`, unique per `BillingDate`, so neither stage can double-run for the same date):
+  - **Stage 1 (8:30-9:30 AM)**: bills every prepaid consumer whose DLP for the previous day was
+    received by 8:00 AM that morning — a direct real charge, no waiting.
+  - **Stage 2 (12:30-1:30 PM)**: bills every consumer whose DLP arrived between 8:00 AM and
+    12:00 PM (missed Stage 1's cutoff) — still a real charge — then posts a **provisional** charge
+    (demo estimation: average of up to the previous 7 valid DLPs, `0` if none exist — never
+    treating a missing day as zero consumption without saying so) for every consumer who still has
+    no usable DLP for that date by the 12:00 PM cutoff. A Rejected DLP counts as "no usable DLP"
+    for provisional purposes, but never gets a second (colliding) profile row created for the same
+    `ConsumerId + MeterId + ProfileDate` — it waits for a real corrected re-ingest instead.
+  - `DailyLoadProfile.ReceivedAt` (server-set at ingest, distinct from the meter/head-end's own
+    `GeneratedAt`) is what the two stages actually bucket by.
 - **Daily charge**: `ChargeAmount = tariff.CalculateEnergyCharge(DLP total kWh) − prepaid rebate +
-  daily fixed charge`, debited once per day as a `WalletTransactionType.DailyDlpCharge` (reference
-  `DLP:<profile-id>`, or `DLP-PROV:<profile-id>` for a provisional estimate). Tracked under one
-  `BillingRun` per date (`RunType + BillingDate` unique), so a run cannot be accidentally
-  duplicated for the same day.
+  daily fixed charge`, debited once as a `WalletTransactionType.DailyDlpCharge` (reference
+  `DLP:<profile-id>`, or `DLP-PROV:<profile-id>` for a provisional estimate).
 - `MeterAssignment` records a physical meter replacement (old/new meter id, closing/opening
   readings, reason) — the point of this audit trail is that an old meter's cumulative reading is
   **never** compared against a new meter's cumulative reading (they're different physical
@@ -423,16 +439,12 @@ Report once one is built.
   automatically during daily processing, conversion, recharge, and reconciliation. This project
   has no real SMS gateway; marking one "Sent" would only ever mean "a real dispatcher would pick
   this up next", so it stays `Pending` here rather than faking delivery.
-- `MeterBillingControl` — a real, clearable "actual billing on hold for this meter" record and
-  API (`GET /api/v1/meter-data/billing-holds`, `POST /api/v1/meter-data/{meterId}/billing-hold/clear`,
-  `POST /api/v1/meter-data/billing-holds/clear-bulk`, all requiring a mandatory resolution note).
-  Nothing currently raises one automatically — its original trigger (a bad Load Survey sequence)
-  no longer exists — but the entity/API remain for a future DLP-side data-quality trigger, and for
-  holds raised through other operational means.
-- A minimal `BillingProcessingWorker` background service polls once a minute and processes the
-  previous day's DLP charge at midnight — intentionally simple; a durable scheduler/retry-
-  guaranteed job framework is a documented production follow-up, not attempted here.
-- Endpoints: `POST /api/v1/meter-data/dlp`, `POST /api/v1/billing/daily/{date}`,
+- A minimal `BillingProcessingWorker` background service polls once a minute and dispatches each
+  stage within its own window — intentionally simple; a durable scheduler/retry-guaranteed job
+  framework is a documented production follow-up, not attempted here.
+- Endpoints: `POST /api/v1/meter-data/dlp`, `POST /api/v1/billing/daily/{date}/stage1`,
+  `POST /api/v1/billing/daily/{date}/stage2` (both accept an optional `?cutoff=` to trigger
+  manually/for the demo without waiting for the clock),
   `POST /api/v1/consumers/{consumerId}/meter-replacement`,
   `GET /api/v1/consumers/{consumerId}/notifications`,
   `GET /api/v1/meter-data/billing-holds`,
@@ -579,7 +591,8 @@ dotnet tool run dotnet-ef migrations add <Name> \
 | `GET /api/v1/tariffs/{id}` | HTTP Basic | One tariff's slabs, ToD periods, and vend limits — backs Tariff Detail |
 | `POST /api/v1/calculation-workbench/simulate` | HTTP Basic | SIMULATION-ONLY charge preview for an arbitrary tariff/consumption/load — backs the Calculation Workbench |
 | `POST /api/v1/meter-data/dlp` | HTTP Basic | Ingests one Daily Load Profile (replaces a provisional profile if one exists) |
-| `POST /api/v1/billing/daily/{date}` | HTTP Basic | Runs the daily DLP charge for every prepaid consumer with an assigned tariff |
+| `POST /api/v1/billing/daily/{date}/stage1` | HTTP Basic | Stage 1: bills every prepaid consumer whose DLP was received by 8:00 AM |
+| `POST /api/v1/billing/daily/{date}/stage2` | HTTP Basic | Stage 2: bills every consumer whose DLP arrived by 12:00 PM, plus provisional billing for the rest |
 | `POST /api/v1/consumers/{consumerId}/meter-replacement` | HTTP Basic | Records a physical meter swap with the old/new meter audit trail |
 | `GET /api/v1/meter-replacements` | HTTP Basic | Every recorded meter replacement, cross-consumer — backs Meter Replacement History |
 | `GET /api/v1/meter-data/dlp` | HTTP Basic | The raw Daily Load Profile stream, cross-consumer, capped at 500 most-recent rows |
@@ -640,10 +653,10 @@ dotnet test PrepaidEngine.sln
 | `OperationalExceptionTests` | 11 | `Open`→`Resolved` lifecycle, mandatory resolution note, every `OperationalExceptionSourceType` |
 | `AuditEntryTests` | 14 | Immutable append-only construction, mandatory fields, optional old/new value and details recording |
 | `TariffVersionTests` | 7 | Mandatory change note and field name, old/new value recording, effective-date tracking |
-| `DailyLoadProfileTests` | 6 | Total-kWh computation, provisional-profile creation, `ReplaceWithActual` replacing a provisional profile's data and clearing the flag |
+| `DailyLoadProfileTests` | 8 | Total-kWh computation, `ReceivedAt` recorded separately from `GeneratedAt`, provisional-profile creation, `MarkRejected`, `ReplaceWithActual` replacing a provisional profile's data (and its `ReceivedAt`) and clearing the flag |
 | `MeterBillingControlTests` | 7 | Blocked-by-default construction, mandatory block reason, `Clear`/`Reactivate` lifecycle |
 | `PaymentModeChangeCommandTests` | 10 | `Queued`→`Sent`→`Acknowledged`/`Failed`/`TimedOut` lifecycle, mandatory reading-at-acknowledgement |
-| `BillingEngineServiceTests` | 13 | End-to-end against a real SQLite-backed `PrepaidEngineDbContext`: LS ingestion (valid/duplicate/negative-consumption-triggers-hold, including both within one ingestion batch — a real bug regression), hourly processing (debits once per block, idempotent re-run, skips a billing-held meter), daily settlement matching both of the spec's own worked examples (positive and negative settlement), missing-DLP provisional estimation, one-run-per-date enforcement, and meter replacement never comparing old/new cumulative readings |
+| `BillingEngineServiceTests` | 14 | End-to-end against a real SQLite-backed `PrepaidEngineDbContext`: DLP ingest validation (accepts a reading at/above the previous day's closing reading, rejects and raises a billing hold below it, never uses a Rejected profile as the baseline), Stage 1/Stage 2 receipt-time splitting (bills before its cutoff, defers a late arrival to Stage 2, provisional billing when nothing arrives by noon, a Rejected profile's cleared hold never collides with a new provisional row — a real bug regression), one-run-per-stage-per-date enforcement, emergency-credit auto-disconnect, and meter replacement never comparing old/new cumulative readings |
 
 Every number in `TariffGoldenDataTests`, `BplTariffTests`, and `DhtTariffDiscrepancyTests` is
 taken verbatim from MePDCL's tariff book or reference workbooks, not invented — a failure there
@@ -752,9 +765,11 @@ Built:
   (real KPIs, a searchable table showing old and new meter numbers side by side with their
   closing/opening readings). Read-only by design — a replacement is a permanent audit record.
 - **Meter Data** (`/meter-data`) — the raw Daily Load Profile (DLP) stream the billing pipeline
-  runs on (real KPIs, a searchable table). Read-only by design; capped at the 500 most-recent
-  rows. Carries a header cross-link to Billing Holds, and accepts `?q=...` to land pre-filtered on
-  a search term (used by the Billing Holds cross-link above).
+  runs on (real KPIs, a searchable table), including each row's real `Received` timestamp and a
+  derived "Billing Stage" label (Stage 1 / Stage 2 / after the 12 PM cutoff) showing which of the
+  two daily billing windows that receipt time would have qualified for. Read-only by design;
+  capped at the 500 most-recent rows. Carries a header cross-link to Billing Holds, and accepts
+  `?q=...` to land pre-filtered on a search term (used by the Billing Holds cross-link above).
 - **Tariffs & Rules** (`/tariffs`) — the real tariff configuration this engine bills against.
 - **Tariff Detail** (`/tariffs/:id`) — one tariff's slab table, ToD schedule (when configured),
   vend limits, and its recorded **Version History** (mandatory change note + effective date per

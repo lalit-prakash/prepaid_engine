@@ -13,6 +13,7 @@ public class DailyLoadProfileConfiguration : IEntityTypeConfiguration<DailyLoadP
 
         builder.Property(d => d.ProfileDate).IsRequired();
         builder.Property(d => d.GeneratedAt).IsRequired();
+        builder.Property(d => d.ReceivedAt).IsRequired();
         builder.Property(d => d.StartCumulativeKwh).HasColumnType("decimal(18,3)").IsRequired();
         builder.Property(d => d.EndCumulativeKwh).HasColumnType("decimal(18,3)").IsRequired();
         builder.Property(d => d.TotalKwh).HasColumnType("decimal(18,3)").IsRequired();

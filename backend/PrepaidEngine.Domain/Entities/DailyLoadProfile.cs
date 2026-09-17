@@ -4,15 +4,15 @@ namespace PrepaidEngine.Domain.Entities;
 
 /// <summary>
 /// A Daily Load Profile (DLP) — the meter's daily consumption profile, created at the 00:00 hrs
-/// boundary, used to compute the day's direct wallet charge (see
-/// <c>BillingEngineService.ProcessDailyAsync</c>). This is now the sole driver of ongoing prepaid
-/// billing — the 30-minute Load Survey (LS) stream this project used to also bill from, and
-/// settle DLP against, has been removed.
+/// boundary, used to compute the day's direct wallet charge across two daily billing stages (see
+/// <c>BillingEngineService.ProcessDailyStage1Async</c>/<c>ProcessDailyStage2Async</c>). This is
+/// the sole driver of ongoing prepaid billing — the 30-minute Load Survey (LS) stream this
+/// project used to also bill from has been removed.
 ///
-/// Unique per <c>ConsumerId + MeterId + ProfileDate</c>. When the DLP for a date is missing at
-/// the daily billing boundary, a provisional profile is created instead (<see cref="IsProvisional"/>)
-/// and later replaced in place by the actual DLP via <see cref="ReplaceWithActual"/> — the
-/// historical provisional wallet transaction is never edited.
+/// Unique per <c>ConsumerId + MeterId + ProfileDate</c>. When the DLP for a date is still missing
+/// by the second daily billing stage, a provisional profile is created instead
+/// (<see cref="IsProvisional"/>) and later replaced in place by the actual DLP via
+/// <see cref="ReplaceWithActual"/> — the historical provisional wallet transaction is never edited.
 /// </summary>
 public class DailyLoadProfile
 {
@@ -21,6 +21,15 @@ public class DailyLoadProfile
     public Guid MeterId { get; private set; }
     public DateOnly ProfileDate { get; private set; }
     public DateTime GeneratedAt { get; private set; }
+
+    /// <summary>When MDMS actually ingested this profile (server-set, never caller-supplied) —
+    /// distinct from <see cref="GeneratedAt"/> (the meter/head-end's own generation timestamp).
+    /// This is what the two daily billing stages bucket by: a profile received by 8:00 AM bills
+    /// in the first stage (8:30-9:30 AM), one received between 8:00 AM and 12:00 PM bills in the
+    /// second stage (12:30-1:30 PM) alongside provisional billing for meters that still haven't
+    /// reported by then.</summary>
+    public DateTime ReceivedAt { get; private set; }
+
     public decimal StartCumulativeKwh { get; private set; }
     public decimal EndCumulativeKwh { get; private set; }
     public decimal TotalKwh { get; private set; }
@@ -36,6 +45,7 @@ public class DailyLoadProfile
         DateTime generatedAt,
         decimal startCumulativeKwh,
         decimal endCumulativeKwh,
+        DateTime receivedAt,
         bool isProvisional = false,
         string? sourceReference = null)
     {
@@ -47,6 +57,7 @@ public class DailyLoadProfile
         MeterId = meterId;
         ProfileDate = profileDate;
         GeneratedAt = generatedAt;
+        ReceivedAt = receivedAt;
         StartCumulativeKwh = startCumulativeKwh;
         EndCumulativeKwh = endCumulativeKwh;
         TotalKwh = endCumulativeKwh - startCumulativeKwh;
@@ -64,7 +75,7 @@ public class DailyLoadProfile
         if (estimatedKwh < 0)
             throw new ArgumentOutOfRangeException(nameof(estimatedKwh), "Estimated consumption cannot be negative.");
 
-        return new DailyLoadProfile(id, consumerId, meterId, profileDate, generatedAt, 0m, estimatedKwh, isProvisional: true);
+        return new DailyLoadProfile(id, consumerId, meterId, profileDate, generatedAt, 0m, estimatedKwh, generatedAt, isProvisional: true);
     }
 
     // EF Core / serialization
@@ -93,7 +104,7 @@ public class DailyLoadProfile
     /// <summary>Replaces a provisional profile's data with the actual meter profile once it
     /// arrives — the historical provisional wallet transaction is untouched; only the daily
     /// settlement calculation (run again) accounts for the corrected total.</summary>
-    public void ReplaceWithActual(decimal startCumulativeKwh, decimal endCumulativeKwh, DateTime generatedAt, string? sourceReference)
+    public void ReplaceWithActual(decimal startCumulativeKwh, decimal endCumulativeKwh, DateTime generatedAt, DateTime receivedAt, string? sourceReference)
     {
         if (!IsProvisional)
             throw new InvalidOperationException("Only a provisional profile can be replaced with actual data.");
@@ -104,6 +115,7 @@ public class DailyLoadProfile
         EndCumulativeKwh = endCumulativeKwh;
         TotalKwh = endCumulativeKwh - startCumulativeKwh;
         GeneratedAt = generatedAt;
+        ReceivedAt = receivedAt;
         SourceReference = sourceReference;
         IsProvisional = false;
         Status = DailyProfileStatus.Validated;
