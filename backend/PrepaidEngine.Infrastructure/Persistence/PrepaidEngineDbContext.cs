@@ -42,6 +42,16 @@ public class PrepaidEngineDbContext : DbContext
     public DbSet<NotificationEvent> NotificationEvents => Set<NotificationEvent>();
     public DbSet<MeterBillingControl> MeterBillingControls => Set<MeterBillingControl>();
 
+    // --- MDMS data foundation: BP (register validation), LS (consumption intelligence), IP
+    // (instantaneous meter health), Events/Alarms, and cross-source energy validation. DLP above
+    // remains the sole daily billing driver — see each entity's own doc comment for its role.
+    public DbSet<RegisterReading> RegisterReadings => Set<RegisterReading>();
+    public DbSet<LoadSurveyInterval> LoadSurveyIntervals => Set<LoadSurveyInterval>();
+    public DbSet<InstantaneousReading> InstantaneousReadings => Set<InstantaneousReading>();
+    public DbSet<MeterEvent> MeterEvents => Set<MeterEvent>();
+    public DbSet<MeterAlarm> MeterAlarms => Set<MeterAlarm>();
+    public DbSet<EnergyValidationResult> EnergyValidationResults => Set<EnergyValidationResult>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(PrepaidEngineDbContext).Assembly);
