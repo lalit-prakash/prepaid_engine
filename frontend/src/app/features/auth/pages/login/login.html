@@ -1,22 +1,213 @@
 <div class="login">
   <div class="login__card">
-    <div class="login__brand">⚡ PREPAID ENGINE</div>
-    <p class="login__subtitle">Electricity Prepaid Operations</p>
 
-    <form (ngSubmit)="submit()">
-      <label for="username">Username</label>
-      <input id="username" name="username" type="text" [(ngModel)]="username" autocomplete="username" />
+    <!-- ============================================================ Hero -->
+    <div class="hero">
+      <svg class="hero__scene" viewBox="0 0 700 900" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+        <defs>
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#0b1830" />
+            <stop offset="45%" stop-color="#132846" />
+            <stop offset="68%" stop-color="#4a3a55" />
+            <stop offset="82%" stop-color="#c9713f" />
+            <stop offset="100%" stop-color="#e0975a" />
+          </linearGradient>
+          <radialGradient id="sun" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#ffe3b0" stop-opacity="0.95" />
+            <stop offset="55%" stop-color="#f6b06a" stop-opacity="0.55" />
+            <stop offset="100%" stop-color="#f6b06a" stop-opacity="0" />
+          </radialGradient>
+          <linearGradient id="wire" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#7fd8ff" stop-opacity="0" />
+            <stop offset="50%" stop-color="#bfeeff" stop-opacity="0.95" />
+            <stop offset="100%" stop-color="#7fd8ff" stop-opacity="0" />
+          </linearGradient>
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
 
-      <label for="password">Password</label>
-      <input id="password" name="password" type="password" [(ngModel)]="password" autocomplete="current-password" />
+        <rect width="700" height="900" fill="url(#sky)" />
+        <circle cx="470" cy="640" r="150" fill="url(#sun)" />
+        <circle cx="470" cy="640" r="26" fill="#ffe6c2" opacity="0.9" />
 
-      <button type="submit" [disabled]="checking()">
-        {{ checking() ? 'Signing in…' : 'Sign in' }}
-      </button>
+        <!-- distant hills -->
+        <path d="M0,700 Q120,650 260,690 T520,660 T700,690 L700,900 L0,900 Z" fill="#22233a" opacity="0.85" />
+        <path d="M0,760 Q160,720 340,750 T700,740 L700,900 L0,900 Z" fill="#161726" />
 
-      @if (errorMessage()) {
-        <p class="login__error">{{ errorMessage() }}</p>
-      }
-    </form>
+        <!-- city glow -->
+        <g opacity="0.8">
+          <circle cx="90" cy="800" r="3" fill="#ffb15c" />
+          <circle cx="140" cy="815" r="2.4" fill="#ffb15c" />
+          <circle cx="200" cy="795" r="2.8" fill="#ffcf8a" />
+          <circle cx="260" cy="820" r="2.2" fill="#ffb15c" />
+          <circle cx="330" cy="805" r="3" fill="#ffcf8a" />
+          <circle cx="400" cy="825" r="2.4" fill="#ffb15c" />
+          <circle cx="60" cy="830" r="2" fill="#ffb15c" />
+          <circle cx="240" cy="835" r="2" fill="#ffb15c" />
+        </g>
+
+        <!-- glowing transmission lines -->
+        <path d="M -20,520 C 180,470 320,540 700,430" fill="none" stroke="url(#wire)" stroke-width="3" filter="url(#glow)" />
+        <path d="M -20,555 C 180,505 320,575 700,465" fill="none" stroke="url(#wire)" stroke-width="2" filter="url(#glow)" opacity="0.8" />
+
+        <!-- pylons -->
+        <g stroke="#0b0f1c" stroke-width="4" fill="none" stroke-linejoin="round">
+          <!-- main tower -->
+          <g transform="translate(430,430)">
+            <path d="M0,0 L-16,300 M0,0 L16,300 M-16,300 L16,300" />
+            <path d="M-40,60 L40,60 M-32,120 L32,120 M-26,180 L26,180 M-20,240 L20,240" />
+            <path d="M-70,20 L0,0 L70,20 M-16,20 L16,20" />
+            <path d="M-60,50 L0,30 L60,50" />
+            <path d="M-16,300 L-16,320 M16,300 L16,320" stroke-width="5" />
+            <circle cx="-70" cy="20" r="3" fill="#0b0f1c" />
+            <circle cx="70" cy="20" r="3" fill="#0b0f1c" />
+          </g>
+          <!-- distant towers -->
+          <g transform="translate(120,520) scale(0.55)" opacity="0.75">
+            <path d="M0,0 L-16,300 M0,0 L16,300 M-16,300 L16,300" />
+            <path d="M-40,60 L40,60 M-32,120 L32,120 M-26,180 L26,180" />
+            <path d="M-70,20 L0,0 L70,20" />
+          </g>
+          <g transform="translate(230,555) scale(0.4)" opacity="0.6">
+            <path d="M0,0 L-16,300 M0,0 L16,300 M-16,300 L16,300" />
+            <path d="M-40,60 L40,60 M-32,120 L32,120" />
+            <path d="M-70,20 L0,0 L70,20" />
+          </g>
+        </g>
+
+        <!-- foreground treeline -->
+        <path d="M0,860 Q100,830 200,855 T400,845 T700,860 L700,900 L0,900 Z" fill="#0a0c14" />
+      </svg>
+
+      <div class="hero__scrim"></div>
+
+      <div class="hero__content">
+        <div class="hero__top">
+          <div class="hero__brand">
+            <span class="hero__mark">⚡</span>
+            <span>
+              <span class="hero__brand-name">Prepaid Engine</span>
+              <span class="hero__brand-tag">Smart Metering&nbsp;|&nbsp;Smarter Utilities</span>
+            </span>
+          </div>
+          <span class="hero__pill">Empowering a Smarter Tomorrow</span>
+        </div>
+
+        <div class="hero__middle">
+          <h1 class="hero__headline">
+            Prepaid<br />
+            for a Brighter<br />
+            <span class="hero__headline-accent">Tomorrow</span>
+          </h1>
+          <p class="hero__subhead">Efficient. Transparent. Connected.</p>
+          <span class="hero__rule"></span>
+
+          <ul class="hero__features">
+            <li>
+              <span class="hero__feature-icon">📈</span>
+              <span>
+                <strong>Real-time Monitoring</strong>
+                <small>Daily Load Profile tracked automatically</small>
+              </span>
+            </li>
+            <li>
+              <span class="hero__feature-icon">🛡️</span>
+              <span>
+                <strong>Revenue Protection</strong>
+                <small>Meter data validated before every bill</small>
+              </span>
+            </li>
+            <li>
+              <span class="hero__feature-icon">👥</span>
+              <span>
+                <strong>Consumer Empowerment</strong>
+                <small>Prepay, recharge, and stay in control</small>
+              </span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="hero__bottom">
+          <span class="hero__rule hero__rule--small"></span>
+          <span>Powering Sustainable Communities</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ Form -->
+    <div class="panel">
+      <div class="panel__top">
+        <span class="panel__locale">🇮🇳 EN</span>
+      </div>
+
+      <div class="panel__body">
+        <h2 class="panel__title">Welcome Back</h2>
+        <p class="panel__subtitle">Login to your Prepaid Engine account</p>
+
+        <form (ngSubmit)="submit()" autocomplete="on">
+          <label class="field">
+            <span class="field__icon" aria-hidden="true">✉</span>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              placeholder="Username"
+              [(ngModel)]="username"
+              autocomplete="username"
+              required
+            />
+          </label>
+
+          <label class="field">
+            <span class="field__icon" aria-hidden="true">🔒</span>
+            <input
+              id="password"
+              name="password"
+              [type]="passwordVisible() ? 'text' : 'password'"
+              placeholder="Password"
+              [(ngModel)]="password"
+              autocomplete="current-password"
+              required
+            />
+            <button
+              type="button"
+              class="field__toggle"
+              (click)="togglePasswordVisibility()"
+              [attr.aria-label]="passwordVisible() ? 'Hide password' : 'Show password'"
+            >
+              {{ passwordVisible() ? '🙈' : '👁' }}
+            </button>
+          </label>
+
+          <div class="panel__row">
+            <span class="panel__hint">Demo credential — username <code>demo</code></span>
+            <span class="panel__forgot">Contact your administrator to reset your password</span>
+          </div>
+
+          <button type="submit" class="panel__submit" [disabled]="checking()">
+            {{ checking() ? 'Signing in…' : 'Login' }}
+            @if (!checking()) { <span aria-hidden="true">→</span> }
+          </button>
+
+          @if (errorMessage()) {
+            <p class="panel__error" role="alert">{{ errorMessage() }}</p>
+          }
+        </form>
+
+        <div class="panel__divider"></div>
+        <p class="panel__note">Access is provisioned by your utility's operations team.</p>
+      </div>
+
+      <div class="panel__footer">
+        <span>© 2026 Prepaid Engine. All rights reserved.</span>
+        <span class="panel__footer-links">Privacy &nbsp;·&nbsp; Terms &nbsp;·&nbsp; Support</span>
+      </div>
+    </div>
+
   </div>
 </div>

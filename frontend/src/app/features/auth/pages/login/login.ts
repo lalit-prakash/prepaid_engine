@@ -23,12 +23,17 @@ export class Login {
   protected password = '';
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly checking = signal(false);
+  protected readonly passwordVisible = signal(false);
 
   constructor(
     private readonly http: HttpClient,
     private readonly auth: AuthService,
     private readonly router: Router,
   ) {}
+
+  togglePasswordVisibility(): void {
+    this.passwordVisible.update((v) => !v);
+  }
 
   submit(): void {
     if (!this.username || !this.password) {
