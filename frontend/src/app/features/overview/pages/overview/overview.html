@@ -1,10 +1,11 @@
 <div class="overview">
-  <div class="overview__header">
-    <div>
-      <h1>Dashboard</h1>
-      <p class="overview__subtitle">Prepaid operation health — MePDCL demo environment</p>
+  <div class="hero">
+    <div class="hero__text">
+      <h1>{{ greeting }}, Operator!</h1>
+      <p class="hero__subtitle">Prepaid operation health — MePDCL demo environment</p>
+      <p class="hero__clock">{{ formattedDateTime }}</p>
     </div>
-    <div class="overview__quick-actions">
+    <div class="hero__actions">
       <a routerLink="/recharge" class="btn btn--primary">Recharge Consumer</a>
       <a routerLink="/meter-replacements" class="btn btn--secondary">Meter Replacement</a>
       <a routerLink="/meter-data" class="btn btn--secondary">Daily Load Profile</a>
@@ -24,17 +25,23 @@
     </div>
   } @else {
     <section class="kpi-row" aria-label="Key performance indicators">
-      <pe-kpi-card label="Total Prepaid Consumers" [value]="consumers().length" tone="primary"
+      <pe-kpi-card label="Total Prepaid Consumers" [value]="consumers().length" tone="primary" icon="👥"
         [clickable]="true" (click)="goToConsumers()" />
-      <pe-kpi-card label="Total RMS Wallet Balance" [value]="'₹' + (totalWalletBalance | number:'1.0-0')" tone="info" />
-      <pe-kpi-card label="Low Balance Consumers" [value]="lowBalanceCount" tone="warning"
+      <pe-kpi-card label="Total RMS Wallet Balance" [value]="'₹' + (totalWalletBalance | number:'1.0-0')" tone="info" icon="💰" />
+      @if (healthyMetersAvailable) {
+        <pe-kpi-card label="Healthy Meters" [value]="healthyMetersPct + '%'" icon="📶"
+          sublabel="Consumers with an active connection" tone="success" />
+      } @else {
+        <pe-kpi-card label="Healthy Meters" value="" [unavailable]="true" tone="neutral" icon="📶" />
+      }
+      <pe-kpi-card label="Low Balance Consumers" [value]="lowBalanceCount" tone="warning" icon="⚠️"
         [clickable]="true" (click)="goToConsumers()" />
-      <pe-kpi-card label="Disconnected Consumers" [value]="disconnectedCount" tone="danger" />
+      <pe-kpi-card label="Disconnected Consumers" [value]="disconnectedCount" tone="danger" icon="🔌" />
       @if (billingProgressAvailable) {
-        <pe-kpi-card label="Today's Billing Progress" [value]="billingProgressPct + '%'"
+        <pe-kpi-card label="Today's Billing Progress" [value]="billingProgressPct + '%'" icon="🧾"
           sublabel="Consumers billed from today's DLP" tone="success" />
       } @else {
-        <pe-kpi-card label="Today's Billing Progress" value="" [unavailable]="true" tone="neutral" />
+        <pe-kpi-card label="Today's Billing Progress" value="" [unavailable]="true" tone="neutral" icon="🧾" />
       }
     </section>
 

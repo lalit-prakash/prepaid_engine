@@ -1,7 +1,9 @@
-import { Component, HostListener, signal, ViewChild, ElementRef } from '@angular/core';
+import { Component, HostListener, OnInit, signal, ViewChild, ElementRef } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
+import { NotificationService } from '../../core/services/notification.service';
+import { NotificationStatus } from '../../core/models/notification.model';
 
 interface NavItem {
   label: string;
@@ -17,12 +19,18 @@ interface NavGroup {
 }
 
 /**
- * The application shell: a light SaaS-style sidebar (grouped, collapsible
- * sections rather than one long flat list of 19 top-level links) + a header
- * with a real global search (reuses Consumer List's own search via a query
- * param — never a fabricated omniscient search endpoint) + routed content.
- * Every feature module renders inside this shell so the app reads as one
- * product rather than disconnected pages.
+ * The application shell: a dark-sidebar console-style layout (grouped,
+ * collapsible sections) + a header with a real global search (reuses
+ * Consumer List's own search via a query param — never a fabricated
+ * omniscient search endpoint) + routed content. Every feature module renders
+ * inside this shell so the app reads as one product rather than disconnected
+ * pages.
+ *
+ * Nav groups are shaped to match a provided visual reference; every group
+ * leads with the reference's own item names (routed to a real page where one
+ * exists, or an honest module-stub where it doesn't — never a fabricated
+ * dashboard), then keeps every pre-existing real module reachable afterward
+ * so nothing this app already built is ever removed from navigation.
  */
 @Component({
   selector: 'pe-shell',
@@ -30,12 +38,13 @@ interface NavGroup {
   templateUrl: './shell.html',
   styleUrl: './shell.scss',
 })
-export class Shell {
+export class Shell implements OnInit {
   @ViewChild('searchInput') searchInputRef?: ElementRef<HTMLInputElement>;
 
   protected readonly collapsed = signal(false);
   protected readonly userMenuOpen = signal(false);
   protected readonly quickActionsOpen = signal(false);
+  protected readonly pendingNotificationCount = signal(0);
 
   /** Only one group's items are visible at a time (accordion), matching the
    * "only the selected group should visually expand" requirement — starts
@@ -48,47 +57,46 @@ export class Shell {
       icon: '◱',
       items: [
         { label: 'Consumers', path: '/consumers' },
-        { label: 'Billing', path: '/billing' },
-        { label: 'Recharges', path: '/recharge' },
-        { label: 'Meter Credit', path: '/meter-credit' },
-        { label: 'RC / DC', path: '/rc-dc' },
+        { label: 'Recharge', path: '/recharge' },
+        { label: 'Meter Operations', path: '/meter-credit' },
+        { label: 'Disconnect / Reconnect', path: '/rc-dc' },
+        { label: 'Service Requests', path: '/service-requests', stub: true },
         { label: 'Meter Replacements', path: '/meter-replacements' },
         { label: 'Conversion', path: '/conversion' },
         { label: 'Exceptions', path: '/exceptions' },
       ],
     },
     {
-      label: 'Finance',
-      icon: '₹',
-      items: [{ label: 'Reconciliation', path: '/reconciliation' }],
-    },
-    {
-      label: 'Meter Data',
+      label: 'Data & Analytics',
       icon: '⏲',
       items: [
-        { label: 'Daily Load Profile', path: '/meter-data' },
+        { label: 'Meter Data', path: '/meter-data' },
+        { label: 'Billing', path: '/billing' },
+        { label: 'Analytics', path: '/analytics', stub: true },
+        { label: 'Reports', path: '/reports' },
+        { label: 'SLA Monitoring', path: '/sla-monitoring', stub: true },
         { label: 'Billing Holds', path: '/billing-holds' },
+        { label: 'Reconciliation', path: '/reconciliation' },
       ],
     },
     {
       label: 'Configuration',
       icon: '§',
       items: [
-        { label: 'Tariffs & Rules', path: '/tariffs' },
+        { label: 'Tariff & Parameters', path: '/tariffs' },
+        { label: 'User Management', path: '/user-management', stub: true },
+        { label: 'Roles & Permissions', path: '/roles-permissions', stub: true },
+        { label: 'Integrations', path: '/integrations', stub: true },
         { label: 'Calculation Workbench', path: '/calculation-workbench' },
       ],
-    },
-    {
-      label: 'Reporting',
-      icon: '▤',
-      items: [{ label: 'Reports', path: '/reports' }],
     },
     {
       label: 'Administration',
       icon: '⚙',
       items: [
+        { label: 'Audit Logs', path: '/audit' },
+        { label: 'System Settings', path: '/system-settings', stub: true },
         { label: 'Notifications', path: '/notifications' },
-        { label: 'Audit Activity', path: '/audit' },
         { label: 'System Health', path: '/system-health', stub: true },
         { label: 'Automation Center', path: '/automation', stub: true },
       ],
@@ -105,6 +113,7 @@ export class Shell {
 
   constructor(
     private readonly auth: AuthService,
+    private readonly notificationService: NotificationService,
     private readonly router: Router,
   ) {
     // Auto-expand the group containing the current route so a deep link or
@@ -112,6 +121,20 @@ export class Shell {
     this.expandGroupForUrl(router.url);
     router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe((e) => {
       this.expandGroupForUrl((e as NavigationEnd).urlAfterRedirects);
+    });
+  }
+
+  ngOnInit(): void {
+    // Real pending-notification count for the header bell badge — never a
+    // fabricated number; if the call fails, the badge simply stays at 0
+    // rather than showing something invented.
+    this.notificationService.list().subscribe({
+      next: (notifications) => {
+        this.pendingNotificationCount.set(
+          notifications.filter((n) => n.status === NotificationStatus.Pending).length,
+        );
+      },
+      error: () => this.pendingNotificationCount.set(0),
     });
   }
 

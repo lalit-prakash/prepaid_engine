@@ -56,17 +56,26 @@
   --color-neutral-900: #182222;
 
   // ---- Surfaces --------------------------------------------------------------
-  // Light SaaS shell (see layouts/shell): white sidebar/header on a soft
-  // neutral app background, teal used for the active nav state and accents
-  // rather than as a dark sidebar fill — matches a modern fintech/ops-console
-  // reference rather than a dark enterprise-admin sidebar.
-  --surface-app-bg: var(--color-neutral-50);
+  // Dark sidebar shell (see layouts/shell): a near-navy sidebar/header accent
+  // against a soft light-blue app background — matches the enterprise NOC/
+  // ops-console reference this shell was rebuilt against. The shell/dashboard
+  // use the dedicated --accent-blue-* tokens below for their active/primary
+  // color rather than the app's own teal --color-primary, so every other
+  // already-built page keeps its teal identity unchanged.
+  --surface-app-bg: #eef2f9;
   --surface-card: var(--color-neutral-0);
-  --surface-sidebar: var(--color-neutral-0);
-  --surface-sidebar-hover: var(--color-neutral-100);
-  --surface-sidebar-active: var(--color-primary-lighter);
+  --surface-sidebar: #0b1220;
+  --surface-sidebar-hover: rgba(255, 255, 255, 0.06);
+  --surface-sidebar-active: var(--accent-blue);
   --surface-header: var(--color-neutral-0);
   --surface-drawer: var(--color-neutral-0);
+
+  // ---- Shell/Dashboard accent (blue) ------------------------------------------
+  // Scoped to layouts/shell and features/overview only — every other feature
+  // page keeps using --color-primary (teal) for its own accents/buttons.
+  --accent-blue: #2f6fed;
+  --accent-blue-dark: #1d4ed8;
+  --accent-blue-light: #e8f0ff;
 
   // ---- Text -------------------------------------------------------------------
   --text-primary: var(--color-neutral-900);

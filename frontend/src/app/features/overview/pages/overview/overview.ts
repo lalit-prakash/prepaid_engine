@@ -1,5 +1,5 @@
 import { DecimalPipe } from '@angular/common';
-import { Component, OnInit, computed, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { ConsumerService } from '../../../../core/services/consumer.service';
 import { ConnectionStatus, ConsumerSummary } from '../../../../core/models/consumer.model';
@@ -35,7 +35,11 @@ interface DlpStatusSlice {
   templateUrl: './overview.html',
   styleUrl: './overview.scss',
 })
-export class Overview implements OnInit {
+export class Overview implements OnInit, OnDestroy {
+  /** Real, client-computed wall-clock time — never a fabricated/stale timestamp. */
+  protected readonly now = signal(new Date());
+  private clockTimer?: ReturnType<typeof setInterval>;
+
   protected readonly consumers = signal<ConsumerSummary[]>([]);
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
@@ -77,6 +81,8 @@ export class Overview implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    this.clockTimer = setInterval(() => this.now.set(new Date()), 30_000);
+
     this.consumerService.list().subscribe({
       next: (consumers) => {
         this.consumers.set(consumers);
@@ -131,6 +137,40 @@ export class Overview implements OnInit {
         this.connectivityLoading.set(false);
       },
     });
+  }
+
+  ngOnDestroy(): void {
+    if (this.clockTimer) clearInterval(this.clockTimer);
+  }
+
+  protected get greeting(): string {
+    const hour = this.now().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  protected get formattedDateTime(): string {
+    return this.now().toLocaleString('en-IN', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  /** Share of consumers with an Active connection status — a real, derivable proxy
+   * for "healthy meters" from actual consumer data. Never a fabricated percentage. */
+  protected get healthyMetersAvailable(): boolean {
+    return !this.loading() && !this.error() && this.consumers().length > 0;
+  }
+
+  protected get healthyMetersPct(): number {
+    const rows = this.consumers();
+    if (rows.length === 0) return 0;
+    const healthy = rows.filter((c) => c.connectionStatus === ConnectionStatus.Active).length;
+    return Math.round((healthy / rows.length) * 100);
   }
 
   protected get totalWalletBalance(): number {

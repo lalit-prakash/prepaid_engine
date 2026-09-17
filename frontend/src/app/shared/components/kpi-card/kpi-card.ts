@@ -11,6 +11,9 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
   selector: 'pe-kpi-card',
   template: `
     <div class="kpi" [class]="'kpi--' + tone()" [class.kpi--clickable]="clickable()">
+      @if (icon()) {
+        <div class="kpi__icon">{{ icon() }}</div>
+      }
       <div class="kpi__label">{{ label() }}</div>
       @if (unavailable()) {
         <div class="kpi__value kpi__value--unavailable">Data unavailable</div>
@@ -45,6 +48,23 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
     .kpi--warning { border-top-color: var(--color-warning); }
     .kpi--danger  { border-top-color: var(--color-danger); }
     .kpi--info    { border-top-color: var(--color-info); }
+
+    .kpi__icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      margin-bottom: var(--space-2);
+      background: var(--color-neutral-100);
+    }
+    .kpi--primary .kpi__icon { background: var(--color-primary-lighter); }
+    .kpi--success .kpi__icon { background: var(--color-success-light); }
+    .kpi--warning .kpi__icon { background: var(--color-warning-light); }
+    .kpi--danger  .kpi__icon { background: var(--color-danger-light); }
+    .kpi--info    .kpi__icon { background: var(--color-info-light); }
 
     .kpi__label {
       font-size: var(--font-size-meta);
@@ -90,6 +110,7 @@ export class KpiCard {
   readonly value = input.required<string | number>();
   readonly sublabel = input<string>();
   readonly tone = input<KpiTone>('neutral');
+  readonly icon = input<string>();
   readonly clickable = input(false);
   /** True when this number has no real backend source yet (see docs/frontend-scope.md). */
   readonly illustrative = input(false);

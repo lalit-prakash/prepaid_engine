@@ -1,23 +1,43 @@
-.overview__header {
+.hero {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
   margin-bottom: var(--space-6);
   flex-wrap: wrap;
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(120deg, var(--accent-blue-dark), var(--accent-blue) 60%, #4f7bff);
+  color: #fff;
 }
-.overview__header h1 {
+.hero__text h1 {
   font-size: var(--font-size-page-title);
+  color: #fff;
+  margin-bottom: 4px;
 }
-.overview__subtitle {
-  color: var(--text-secondary);
+.hero__subtitle {
+  color: rgba(255, 255, 255, 0.85);
   font-size: var(--font-size-body);
-  margin-top: 4px;
 }
-.overview__quick-actions {
+.hero__clock {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: var(--font-size-meta);
+  margin-top: var(--space-1);
+}
+.hero__actions {
   display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+.hero .btn--secondary {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+.hero .btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: #fff;
+  color: #fff;
 }
 
 .btn {
