@@ -29,6 +29,9 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
         @if (illustrative()) {
           <div class="kpi__illustrative" title="No backend endpoint exists for this yet — illustrative only">Illustrative</div>
         }
+        @if (progressPct() !== undefined && !unavailable()) {
+          <div class="kpi__progress-track"><div class="kpi__progress-fill" [style.width.%]="progressPct()"></div></div>
+        }
       </div>
     </div>
   `,
@@ -141,6 +144,19 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
       padding: 1px 6px;
       border-radius: var(--radius-sm);
     }
+    .kpi__progress-track {
+      margin-top: var(--space-2);
+      height: 5px;
+      border-radius: var(--radius-pill);
+      background: var(--color-neutral-100);
+      overflow: hidden;
+    }
+    .kpi__progress-fill {
+      height: 100%;
+      background: var(--color-success);
+      border-radius: var(--radius-pill);
+      transition: width var(--transition-base);
+    }
   `],
 })
 export class KpiCard {
@@ -158,4 +174,7 @@ export class KpiCard {
   /** True when the metric is real but genuinely cannot be computed right now (e.g. no rows
    * for today yet) — shows "Data unavailable" instead of a fabricated or stale value. */
   readonly unavailable = input(false);
+  /** Optional 0-100 progress bar rendered under the value — used by the Dashboard's
+   * "Today's Billing" card to show real percent-processed progress. */
+  readonly progressPct = input<number>();
 }
