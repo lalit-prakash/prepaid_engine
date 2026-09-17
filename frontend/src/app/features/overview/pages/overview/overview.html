@@ -25,23 +25,23 @@
     </div>
   } @else {
     <section class="kpi-row" aria-label="Key performance indicators">
-      <pe-kpi-card label="Total Prepaid Consumers" [value]="consumers().length" tone="primary" icon="👥"
+      <pe-kpi-card label="Total Prepaid Consumers" [value]="consumers().length" tone="primary" icon="users"
         [clickable]="true" (click)="goToConsumers()" />
-      <pe-kpi-card label="Total RMS Wallet Balance" [value]="'₹' + (totalWalletBalance | number:'1.0-0')" tone="info" icon="💰" />
+      <pe-kpi-card label="Total RMS Wallet Balance" [value]="'₹' + (totalWalletBalance | number:'1.0-0')" tone="info" icon="wallet" />
       @if (healthyMetersAvailable) {
-        <pe-kpi-card label="Healthy Meters" [value]="healthyMetersPct + '%'" icon="📶"
+        <pe-kpi-card label="Healthy Meters" [value]="healthyMetersPct + '%'" icon="signal"
           sublabel="Consumers with an active connection" tone="success" />
       } @else {
-        <pe-kpi-card label="Healthy Meters" value="" [unavailable]="true" tone="neutral" icon="📶" />
+        <pe-kpi-card label="Healthy Meters" value="" [unavailable]="true" tone="neutral" icon="signal" />
       }
-      <pe-kpi-card label="Low Balance Consumers" [value]="lowBalanceCount" tone="warning" icon="⚠️"
+      <pe-kpi-card label="Low Balance Consumers" [value]="lowBalanceCount" tone="warning" icon="alert"
         [clickable]="true" (click)="goToConsumers()" />
-      <pe-kpi-card label="Disconnected Consumers" [value]="disconnectedCount" tone="danger" icon="🔌" />
+      <pe-kpi-card label="Disconnected Consumers" [value]="disconnectedCount" tone="danger" icon="plug" />
       @if (billingProgressAvailable) {
-        <pe-kpi-card label="Today's Billing Progress" [value]="billingProgressPct + '%'" icon="🧾"
+        <pe-kpi-card label="Today's Billing Progress" [value]="billingProgressPct + '%'" icon="receipt"
           sublabel="Consumers billed from today's DLP" tone="success" />
       } @else {
-        <pe-kpi-card label="Today's Billing Progress" value="" [unavailable]="true" tone="neutral" icon="🧾" />
+        <pe-kpi-card label="Today's Billing Progress" value="" [unavailable]="true" tone="neutral" icon="receipt" />
       }
     </section>
 

@@ -1,4 +1,5 @@
 import { Component, input } from '@angular/core';
+import { Icon } from '../icon/icon';
 
 export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 
@@ -9,10 +10,11 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
  */
 @Component({
   selector: 'pe-kpi-card',
+  imports: [Icon],
   template: `
     <div class="kpi" [class]="'kpi--' + tone()" [class.kpi--clickable]="clickable()">
       @if (icon()) {
-        <div class="kpi__icon">{{ icon() }}</div>
+        <div class="kpi__icon"><pe-icon [name]="icon()!" [size]="17" /></div>
       }
       <div class="kpi__label">{{ label() }}</div>
       @if (unavailable()) {

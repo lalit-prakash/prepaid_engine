@@ -17,7 +17,7 @@
         routerLinkActive="sidebar__link--active"
         [title]="collapsed() ? 'Dashboard' : ''"
       >
-        <span class="sidebar__icon" aria-hidden="true">⌂</span>
+        <span class="sidebar__icon"><pe-icon name="home" /></span>
         @if (!collapsed()) { <span class="sidebar__label">Dashboard</span> }
       </a>
 
@@ -34,7 +34,7 @@
                 routerLinkActive="sidebar__link--active"
                 [title]="item.label + (item.stub ? ' (not yet implemented)' : '')"
               >
-                <span class="sidebar__icon" aria-hidden="true">{{ item.icon }}</span>
+                <span class="sidebar__icon"><pe-icon [name]="item.icon" /></span>
                 @if (!collapsed()) {
                   <span class="sidebar__label">{{ item.label }}</span>
                   @if (item.stub) { <span class="sidebar__soon">Soon</span> }
@@ -62,7 +62,7 @@
   <div class="shell__main">
     <header class="header">
       <div class="header__search">
-        <span class="header__search-icon" aria-hidden="true">⌕</span>
+        <span class="header__search-icon"><pe-icon name="search" [size]="15" /></span>
         <input
           #searchInput
           type="search"
@@ -74,11 +74,11 @@
       </div>
 
       <div class="header__context" (click)="$event.stopPropagation()">
-        <span class="header__env">🏢 MePDCL · Demo</span>
+        <span class="header__env"><pe-icon name="building" [size]="14" /> MePDCL · Demo</span>
 
         <div class="header__menu">
           <button type="button" class="header__quick-actions-btn" (click)="toggleQuickActions()">
-            + Quick Actions <span aria-hidden="true">▾</span>
+            <pe-icon name="plus" [size]="14" /> Quick Actions <pe-icon name="chevronDown" [size]="13" />
           </button>
           @if (quickActionsOpen()) {
             <div class="header__dropdown">
@@ -90,15 +90,15 @@
         </div>
 
         <a routerLink="/notifications" class="header__icon-btn" title="Notifications" aria-label="Notifications">
-          🔔
+          <pe-icon name="bell" [size]="16" />
           @if (pendingNotificationCount() > 0) {
             <span class="header__badge">{{ pendingNotificationCount() }}</span>
           }
         </a>
 
-        <a routerLink="/system-health" class="header__icon-btn" title="Help &amp; System Status" aria-label="Help">?</a>
+        <a routerLink="/system-health" class="header__icon-btn" title="Help &amp; System Status" aria-label="Help"><pe-icon name="help" [size]="16" /></a>
 
-        <a routerLink="/system-settings" class="header__icon-btn" title="Settings" aria-label="Settings">⚙</a>
+        <a routerLink="/system-settings" class="header__icon-btn" title="Settings" aria-label="Settings"><pe-icon name="gear" [size]="16" /></a>
 
         <div class="header__menu">
           <button type="button" class="header__user" (click)="toggleUserMenu()">
@@ -107,7 +107,7 @@
               <span class="header__user-name">System Operator</span>
               <span class="header__user-role">Operator</span>
             </span>
-            <span aria-hidden="true">▾</span>
+            <pe-icon name="chevronDown" [size]="13" />
           </button>
           @if (userMenuOpen()) {
             <div class="header__dropdown header__dropdown--right">

@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { environment } from '../../../../../environments/environment';
 import { AuthService } from '../../../../core/services/auth.service';
+import { Icon } from '../../../../shared/components/icon/icon';
 
 /**
  * Sign-in gate for the demo API's stop-gap HTTP Basic auth (see
@@ -14,7 +15,7 @@ import { AuthService } from '../../../../core/services/auth.service';
  */
 @Component({
   selector: 'pe-login',
-  imports: [FormsModule],
+  imports: [FormsModule, Icon],
   templateUrl: './login.html',
   styleUrl: './login.scss',
 })

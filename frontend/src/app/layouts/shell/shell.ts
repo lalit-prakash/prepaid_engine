@@ -3,6 +3,7 @@ import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/rou
 import { AuthService } from '../../core/services/auth.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { NotificationStatus } from '../../core/models/notification.model';
+import { Icon } from '../../shared/components/icon/icon';
 
 interface NavItem {
   label: string;
@@ -33,7 +34,7 @@ interface NavGroup {
  */
 @Component({
   selector: 'pe-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Icon],
   templateUrl: './shell.html',
   styleUrl: './shell.scss',
 })
@@ -49,46 +50,46 @@ export class Shell implements OnInit {
     {
       label: 'Operations',
       items: [
-        { label: 'Consumers', path: '/consumers', icon: '👤' },
-        { label: 'Recharge', path: '/recharge', icon: '⚡' },
-        { label: 'Meter Operations', path: '/meter-credit', icon: '🔌' },
-        { label: 'Disconnect / Reconnect', path: '/rc-dc', icon: '🔄' },
-        { label: 'Service Requests', path: '/service-requests', icon: '🛠', stub: true },
-        { label: 'Meter Replacements', path: '/meter-replacements', icon: '🧰' },
-        { label: 'Conversion', path: '/conversion', icon: '🔁' },
-        { label: 'Exceptions', path: '/exceptions', icon: '❗' },
+        { label: 'Consumers', path: '/consumers', icon: 'users' },
+        { label: 'Recharge', path: '/recharge', icon: 'bolt' },
+        { label: 'Meter Operations', path: '/meter-credit', icon: 'plug' },
+        { label: 'Disconnect / Reconnect', path: '/rc-dc', icon: 'refresh' },
+        { label: 'Service Requests', path: '/service-requests', icon: 'wrench', stub: true },
+        { label: 'Meter Replacements', path: '/meter-replacements', icon: 'toolbox' },
+        { label: 'Conversion', path: '/conversion', icon: 'repeat' },
+        { label: 'Exceptions', path: '/exceptions', icon: 'alert' },
       ],
     },
     {
       label: 'Data & Analytics',
       items: [
-        { label: 'Meter Data', path: '/meter-data', icon: '📈' },
-        { label: 'Billing', path: '/billing', icon: '🧾' },
-        { label: 'Analytics', path: '/analytics', icon: '📊', stub: true },
-        { label: 'Reports', path: '/reports', icon: '📄' },
-        { label: 'SLA Monitoring', path: '/sla-monitoring', icon: '⏱', stub: true },
-        { label: 'Billing Holds', path: '/billing-holds', icon: '⏸' },
-        { label: 'Reconciliation', path: '/reconciliation', icon: '🧮' },
+        { label: 'Meter Data', path: '/meter-data', icon: 'trend' },
+        { label: 'Billing', path: '/billing', icon: 'receipt' },
+        { label: 'Analytics', path: '/analytics', icon: 'chart', stub: true },
+        { label: 'Reports', path: '/reports', icon: 'document' },
+        { label: 'SLA Monitoring', path: '/sla-monitoring', icon: 'clock', stub: true },
+        { label: 'Billing Holds', path: '/billing-holds', icon: 'pause' },
+        { label: 'Reconciliation', path: '/reconciliation', icon: 'calculator' },
       ],
     },
     {
       label: 'Configuration',
       items: [
-        { label: 'Tariff & Parameters', path: '/tariffs', icon: '⚙️' },
-        { label: 'User Management', path: '/user-management', icon: '👥', stub: true },
-        { label: 'Roles & Permissions', path: '/roles-permissions', icon: '🔐', stub: true },
-        { label: 'Integrations', path: '/integrations', icon: '🔗', stub: true },
-        { label: 'Calculation Workbench', path: '/calculation-workbench', icon: '🧪' },
+        { label: 'Tariff & Parameters', path: '/tariffs', icon: 'gear' },
+        { label: 'User Management', path: '/user-management', icon: 'users', stub: true },
+        { label: 'Roles & Permissions', path: '/roles-permissions', icon: 'lock', stub: true },
+        { label: 'Integrations', path: '/integrations', icon: 'link', stub: true },
+        { label: 'Calculation Workbench', path: '/calculation-workbench', icon: 'flask' },
       ],
     },
     {
       label: 'Administration',
       items: [
-        { label: 'Audit Logs', path: '/audit', icon: '📜' },
-        { label: 'System Settings', path: '/system-settings', icon: '🛠️', stub: true },
-        { label: 'Notifications', path: '/notifications', icon: '🔔' },
-        { label: 'System Health', path: '/system-health', icon: '💚', stub: true },
-        { label: 'Automation Center', path: '/automation', icon: '🤖', stub: true },
+        { label: 'Audit Logs', path: '/audit', icon: 'scroll' },
+        { label: 'System Settings', path: '/system-settings', icon: 'gear', stub: true },
+        { label: 'Notifications', path: '/notifications', icon: 'bell' },
+        { label: 'System Health', path: '/system-health', icon: 'signal', stub: true },
+        { label: 'Automation Center', path: '/automation', icon: 'robot', stub: true },
       ],
     },
   ];
