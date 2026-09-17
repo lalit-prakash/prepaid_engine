@@ -50,7 +50,8 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
     .kpi--horizontal {
       display: flex;
       align-items: center;
-      gap: var(--space-3);
+      gap: var(--space-2);
+      padding: var(--space-3) var(--space-3);
       border-top: none;
       border-left: 3px solid var(--color-neutral-300);
     }
@@ -59,10 +60,26 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
     .kpi--horizontal.kpi--warning { border-left-color: var(--color-warning); }
     .kpi--horizontal.kpi--danger  { border-left-color: var(--color-danger); }
     .kpi--horizontal.kpi--info    { border-left-color: var(--color-info); }
-    .kpi--horizontal .kpi__icon { margin-bottom: 0; flex-shrink: 0; }
-    .kpi--horizontal .kpi__label { margin-bottom: 2px; }
-    .kpi--horizontal .kpi__value { font-size: var(--font-size-kpi-sm); }
-    .kpi--horizontal .kpi__body { min-width: 0; }
+    .kpi--horizontal .kpi__icon {
+      margin-bottom: 0;
+      flex-shrink: 0;
+      width: 30px;
+      height: 30px;
+    }
+    .kpi--horizontal .kpi__label {
+      margin-bottom: 1px;
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .kpi--horizontal .kpi__value { font-size: 20px; }
+    .kpi--horizontal .kpi__sublabel {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .kpi--horizontal .kpi__body { min-width: 0; flex: 1; }
 
     .kpi--primary { border-top-color: var(--color-primary); }
     .kpi--success { border-top-color: var(--color-success); }
