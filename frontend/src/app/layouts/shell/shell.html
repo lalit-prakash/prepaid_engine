@@ -23,36 +23,25 @@
 
       @for (group of navGroups; track group.label) {
         <div class="sidebar__group">
-          <button
-            type="button"
-            class="sidebar__group-header"
-            [class.sidebar__group-header--expanded]="isGroupExpanded(group.label)"
-            (click)="toggleGroup(group.label)"
-            [title]="collapsed() ? group.label : ''"
-          >
-            @if (!collapsed()) {
-              <span class="sidebar__label">{{ group.label }}</span>
-              <span class="sidebar__chevron" aria-hidden="true">{{ isGroupExpanded(group.label) ? '▾' : '▸' }}</span>
-            } @else {
-              <span class="sidebar__icon" aria-hidden="true">{{ group.icon }}</span>
-            }
-          </button>
-
-          @if (isGroupExpanded(group.label) && !collapsed()) {
-            <div class="sidebar__group-items">
-              @for (item of group.items; track item.path) {
-                <a
-                  class="sidebar__link sidebar__link--nested"
-                  [routerLink]="item.path"
-                  routerLinkActive="sidebar__link--active"
-                  [title]="item.label + (item.stub ? ' (not yet implemented)' : '')"
-                >
+          @if (!collapsed()) {
+            <div class="sidebar__group-header">{{ group.label }}</div>
+          }
+          <div class="sidebar__group-items">
+            @for (item of group.items; track item.path) {
+              <a
+                class="sidebar__link"
+                [routerLink]="item.path"
+                routerLinkActive="sidebar__link--active"
+                [title]="item.label + (item.stub ? ' (not yet implemented)' : '')"
+              >
+                <span class="sidebar__icon" aria-hidden="true">{{ item.icon }}</span>
+                @if (!collapsed()) {
                   <span class="sidebar__label">{{ item.label }}</span>
                   @if (item.stub) { <span class="sidebar__soon">Soon</span> }
-                </a>
-              }
-            </div>
-          }
+                }
+              </a>
+            }
+          </div>
         </div>
       }
     </nav>
