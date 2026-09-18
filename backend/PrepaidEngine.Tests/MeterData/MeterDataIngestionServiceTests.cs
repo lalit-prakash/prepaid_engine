@@ -206,6 +206,39 @@ public class MeterDataIngestionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task EvaluateEnergyValidation_Fail_RaisesOperationalException()
+    {
+        var date = new DateOnly(2026, 9, 16);
+        var dayStart = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        _db.DailyLoadProfiles.Add(new DailyLoadProfile(Guid.NewGuid(), _consumer.Id, _meter.Id, date, DateTime.UtcNow, 3000m, 3100m, DateTime.UtcNow)); // DLP total = 100
+        _db.RegisterReadings.Add(new RegisterReading(Guid.NewGuid(), _consumer.Id, _meter.Id, dayStart, 3000m, DateTime.UtcNow));
+        _db.RegisterReadings.Add(new RegisterReading(Guid.NewGuid(), _consumer.Id, _meter.Id, dayStart.AddDays(1), 3137m, DateTime.UtcNow)); // 37% variance -> Fail
+        await _db.SaveChangesAsync();
+
+        await _service.EvaluateEnergyValidationAsync(_consumer.Id, _meter.Id, date);
+
+        var exception = Assert.Single(_db.OperationalExceptions);
+        Assert.Equal(OperationalExceptionSourceType.EnergyValidation, exception.SourceType);
+        Assert.Equal(OperationalExceptionStatus.Open, exception.Status);
+    }
+
+    [Fact]
+    public async Task EvaluateEnergyValidation_FailReevaluatedWhileStillOpen_DoesNotDuplicateException()
+    {
+        var date = new DateOnly(2026, 9, 17);
+        var dayStart = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        _db.DailyLoadProfiles.Add(new DailyLoadProfile(Guid.NewGuid(), _consumer.Id, _meter.Id, date, DateTime.UtcNow, 4000m, 4100m, DateTime.UtcNow)); // DLP total = 100
+        _db.RegisterReadings.Add(new RegisterReading(Guid.NewGuid(), _consumer.Id, _meter.Id, dayStart, 4000m, DateTime.UtcNow));
+        _db.RegisterReadings.Add(new RegisterReading(Guid.NewGuid(), _consumer.Id, _meter.Id, dayStart.AddDays(1), 4137m, DateTime.UtcNow)); // 37% variance -> Fail
+        await _db.SaveChangesAsync();
+
+        await _service.EvaluateEnergyValidationAsync(_consumer.Id, _meter.Id, date);
+        await _service.EvaluateEnergyValidationAsync(_consumer.Id, _meter.Id, date);
+
+        Assert.Single(_db.OperationalExceptions);
+    }
+
+    [Fact]
     public async Task EvaluateEnergyValidation_NoBpOrLsData_ReturnsEmpty()
     {
         var date = new DateOnly(2026, 9, 12);

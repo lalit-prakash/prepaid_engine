@@ -6,4 +6,9 @@ public enum OperationalExceptionSourceType
 {
     MeterCommand,
     ConnectivityCommand,
+
+    /// <summary>Raised automatically when an <see cref="Entities.EnergyValidationResult"/>
+    /// evaluates to <see cref="EnergyValidationStatus.Fail"/> — see
+    /// <c>MeterDataIngestionService.EvaluateEnergyValidationAsync</c>.</summary>
+    EnergyValidation,
 }
