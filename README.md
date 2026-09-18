@@ -501,6 +501,32 @@ type has one job:
   the meter-swap boundary (a reading under a different `MeterId` is never pulled into a
   comparison).
 
+### Phase 4 UI: Meter Data BP/LS/IP/Events/Alarms tabs, real SLA Monitoring page
+
+**Phase 4 of the 4-phase enterprise hardening effort** (`phase-4-ui-hardening`, in progress —
+scoped incrementally rather than attempted as one wholesale rewrite). Audited the frontend first:
+the dashboard/shell were already rebuilt earlier this session with real data throughout, and most
+feature dashboards were already real. Two genuine gaps stood out — Phase 1's BP/LS/IP/Events/Alarms
+endpoints had no UI surface at all, and Phase 3's SLA/risk-indicator endpoints were sitting behind
+an unbuilt stub route — so this increment closes exactly those two gaps:
+
+- **Meter Data page redesigned as six tabs** (DLP/BP/LS/IP/Events/Alarms) instead of DLP alone —
+  each tab loads its data lazily on first activation (never five API calls for tabs an operator
+  never opens). Alarms supports the real Acknowledge → Resolve workflow (mandatory operator
+  identity / resolution note, matching this project's mandatory-reason discipline elsewhere),
+  wired to the real `POST .../alarms/{id}/acknowledge` and `.../resolve` endpoints.
+- **SLA Monitoring is now a real page** (`sla-monitoring` route, previously a stub) — pulls
+  `GET /api/v1/sla` and `GET /api/v1/risk-indicators` directly; a metric with zero samples shows
+  "Unavailable", never a fabricated percentage, and risk indicators are real counts only (no
+  invented ₹ figure).
+- Verified live: all six Meter Data tabs render real rows from the dev database, and a
+  freshly-created test alarm was acknowledged through the real UI end-to-end against the running
+  API (then cleaned up).
+
+Remaining Phase 4 scope (Consumer 360 rebuild, Billing/Recharge/Reconciliation/Exceptions UI
+redesign, Reports Center card redesign, Audit UI, RBAC, accessibility pass) is tracked as
+follow-up work, not attempted in this increment.
+
 ### SLA monitoring, risk indicators, and exception-center wiring (operational controls)
 
 **Phase 3 of the 4-phase enterprise hardening effort** (`phase-3-controls-reporting`). Audited

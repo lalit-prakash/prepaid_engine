@@ -67,7 +67,7 @@ export class Shell implements OnInit {
         { label: 'Billing', path: '/billing', icon: 'receipt' },
         { label: 'Analytics', path: '/analytics', icon: 'chart', stub: true },
         { label: 'Reports', path: '/reports', icon: 'document' },
-        { label: 'SLA Monitoring', path: '/sla-monitoring', icon: 'clock', stub: true },
+        { label: 'SLA Monitoring', path: '/sla-monitoring', icon: 'clock' },
         { label: 'Billing Holds', path: '/billing-holds', icon: 'pause' },
         { label: 'Reconciliation', path: '/reconciliation', icon: 'calculator' },
       ],

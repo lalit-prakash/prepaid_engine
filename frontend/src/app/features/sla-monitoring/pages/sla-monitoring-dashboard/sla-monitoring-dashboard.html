@@ -1,0 +1,63 @@
+<div class="sla">
+  <div class="page-header">
+    <div>
+      <h1>SLA Monitoring</h1>
+      <p class="page-header__subtitle">
+        Real performance against configurable targets — a workflow with no completed samples yet
+        shows "Unavailable", never a fabricated percentage.
+      </p>
+    </div>
+  </div>
+
+  @if (slaLoading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2,3,4,5]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (slaError()) {
+    <div class="error-panel">{{ slaError() }}</div>
+  } @else {
+    <section class="sla-grid">
+      @for (m of metrics(); track m.name) {
+        <article class="sla-card">
+          <div class="sla-card__header">
+            <h2>{{ m.name }}</h2>
+            <pe-status-badge [label]="m.status" [tone]="statusTone(m.status)" />
+          </div>
+          @if (m.sampleSize === 0) {
+            <div class="sla-card__unavailable">Data unavailable — no completed samples yet.</div>
+          } @else {
+            <div class="sla-card__value">{{ m.actualAverageMinutes | number:'1.1-1' }} min</div>
+            <div class="sla-card__target">Target: {{ m.targetMinutes }} min</div>
+            <div class="sla-card__meta">
+              {{ m.sampleSize }} sample{{ m.sampleSize === 1 ? '' : 's' }} ·
+              {{ m.breachCount }} breach{{ m.breachCount === 1 ? '' : 'es' }}
+              ({{ m.breachPercentage }}%)
+            </div>
+          }
+        </article>
+      }
+    </section>
+  }
+
+  <h2 class="section-title">Revenue &amp; Risk Indicators</h2>
+  <p class="section-subtitle">
+    Real open-condition counts only — this project has no monetary "revenue protected"
+    system-of-record, so no ₹ figure is shown here.
+  </p>
+
+  @if (riskLoading()) {
+    <div class="skeleton-row">
+      @for (i of [1,2,3,4,5]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (riskError()) {
+    <div class="error-panel">{{ riskError() }}</div>
+  } @else if (riskIndicators(); as risk) {
+    <section class="kpi-row">
+      <pe-kpi-card label="Open Exceptions" [value]="risk.openExceptions" tone="danger" />
+      <pe-kpi-card label="Active Billing Holds" [value]="risk.activeBillingHolds" tone="warning" />
+      <pe-kpi-card label="Unresolved Meter Alarms" [value]="risk.unresolvedMeterAlarms" tone="warning" />
+      <pe-kpi-card label="Disconnected Consumers" [value]="risk.disconnectedConsumers" tone="danger" />
+      <pe-kpi-card label="Failed Energy Validations" [value]="risk.failedEnergyValidations" tone="danger" />
+    </section>
+  }
+</div>

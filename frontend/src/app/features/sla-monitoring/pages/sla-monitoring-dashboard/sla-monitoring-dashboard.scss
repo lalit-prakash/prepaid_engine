@@ -1,0 +1,93 @@
+.page-header {
+  margin-bottom: var(--space-5);
+}
+.page-header h1 { font-size: var(--font-size-page-title); }
+.page-header__subtitle { color: var(--text-secondary); margin-top: 4px; max-width: 70ch; }
+
+.section-title {
+  font-size: var(--font-size-section-title);
+  margin: var(--space-6) 0 4px;
+}
+.section-subtitle {
+  color: var(--text-secondary);
+  max-width: 70ch;
+  margin-bottom: var(--space-4);
+}
+
+.skeleton-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+.skeleton-card {
+  height: 110px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(90deg, var(--color-neutral-100) 25%, var(--color-neutral-200) 37%, var(--color-neutral-100) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+.sla-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+.sla-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+}
+.sla-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.sla-card__header h2 {
+  font-size: var(--font-size-card-title);
+  margin: 0;
+}
+.sla-card__value {
+  font-size: var(--font-size-kpi);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+.sla-card__target {
+  color: var(--text-muted);
+  font-size: var(--font-size-meta);
+  margin-top: 2px;
+}
+.sla-card__meta {
+  color: var(--text-secondary);
+  font-size: var(--font-size-meta);
+  margin-top: var(--space-2);
+}
+.sla-card__unavailable {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: var(--font-size-body);
+  padding: var(--space-4) 0;
+}
+
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--space-4);
+}
+
+.error-panel {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  color: var(--color-danger-dark);
+  text-align: center;
+}

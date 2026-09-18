@@ -162,7 +162,13 @@ export const routes: Routes = [
       ...stubRoute('system-health', 'System Health'),
       ...stubRoute('service-requests', 'Service Requests'),
       ...stubRoute('analytics', 'Analytics'),
-      ...stubRoute('sla-monitoring', 'SLA Monitoring'),
+      {
+        path: 'sla-monitoring',
+        loadComponent: () =>
+          import('./features/sla-monitoring/pages/sla-monitoring-dashboard/sla-monitoring-dashboard').then(
+            (m) => m.SlaMonitoringDashboard,
+          ),
+      },
       ...stubRoute('user-management', 'User Management'),
       ...stubRoute('roles-permissions', 'Roles & Permissions'),
       ...stubRoute('integrations', 'Integrations'),
