@@ -1,0 +1,102 @@
+<div class="detail-page">
+  @if (loading()) {
+    <div class="skeleton-card"></div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else if (detail(); as d) {
+    <div class="page-header">
+      <div>
+        <h1>{{ d.proposed.proposedName }}</h1>
+        <pe-status-badge [label]="statusLabel(d.status)" [tone]="statusTone(d.status)" />
+      </div>
+      <a routerLink="/tariffs" class="page-header__cross-link">← Back to Tariffs</a>
+    </div>
+
+    <section class="card">
+      <h2>Request Details</h2>
+      <div class="meta-grid">
+        <div><span class="meta-label">Created By</span><span>{{ d.createdBy }}</span></div>
+        <div><span class="meta-label">Created At</span><span>{{ d.createdAt | date: 'medium' }}</span></div>
+        @if (d.submittedBy) {
+          <div><span class="meta-label">Submitted By</span><span>{{ d.submittedBy }}</span></div>
+          <div><span class="meta-label">Submitted At</span><span>{{ d.submittedAt | date: 'medium' }}</span></div>
+        }
+        @if (d.changeReason) {
+          <div class="span-2"><span class="meta-label">Change Reason</span><span>{{ d.changeReason }}</span></div>
+        }
+        @if (d.approvedBy) {
+          <div><span class="meta-label">Approved By</span><span>{{ d.approvedBy }}</span></div>
+          <div><span class="meta-label">Approved At</span><span>{{ d.approvedAt | date: 'medium' }}</span></div>
+        }
+        @if (d.commencementDate) {
+          <div><span class="meta-label">Commencement Date</span><span>{{ d.commencementDate | date: 'mediumDate' }}</span></div>
+        }
+        @if (d.rejectedBy) {
+          <div><span class="meta-label">Rejected By</span><span>{{ d.rejectedBy }}</span></div>
+          <div><span class="meta-label">Rejected At</span><span>{{ d.rejectedAt | date: 'medium' }}</span></div>
+          <div class="span-2"><span class="meta-label">Rejection Reason</span><span>{{ d.rejectionReason }}</span></div>
+        }
+        @if (d.activatedAt) {
+          <div><span class="meta-label">Activated At</span><span>{{ d.activatedAt | date: 'medium' }}</span></div>
+        }
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Current vs Proposed</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Current</th><th>Proposed</th></tr></thead>
+          <tbody>
+            @for (row of comparisonRows(); track row.field) {
+              <tr [class.row-changed]="row.changed">
+                <td>{{ row.field }}</td>
+                <td>{{ row.current }}</td>
+                <td>{{ row.proposed }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="hint">Illustrative comparison only — actual consumer bill impact depends on real consumption and is not computed here.</p>
+    </section>
+
+    @if (actionError()) {
+      <div class="error-panel">{{ actionError() }}</div>
+    }
+
+    @if (d.status === Status.PendingApproval && isUtility()) {
+      <section class="card approval-card">
+        <h2>Approval Decision</h2>
+        <div class="approval-grid">
+          <div class="approval-col">
+            <label class="field">
+              <span>Commencement Date (required to approve)</span>
+              <input type="date" [(ngModel)]="commencementDate" name="commencementDate" />
+            </label>
+            <button type="button" class="btn-primary" (click)="approve()" [disabled]="acting()">Approve &amp; Schedule</button>
+          </div>
+          <div class="approval-col">
+            <label class="field">
+              <span>Rejection Reason (required to reject)</span>
+              <textarea rows="2" [(ngModel)]="rejectionReason" name="rejectionReason"></textarea>
+            </label>
+            <button type="button" class="btn-danger" (click)="reject()" [disabled]="acting()">Reject</button>
+          </div>
+        </div>
+      </section>
+    }
+
+    @if (d.status === Status.Rejected && isIt()) {
+      <section class="card">
+        <button type="button" class="btn-primary" (click)="reviseAndResubmit()">Revise &amp; Resubmit</button>
+      </section>
+    }
+
+    @if (d.status === Status.Draft && isIt()) {
+      <section class="card">
+        <a [routerLink]="['/tariffs/change-requests', d.id, 'edit']" class="btn-primary">Continue Editing</a>
+      </section>
+    }
+  }
+</div>

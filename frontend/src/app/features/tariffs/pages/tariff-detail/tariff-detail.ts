@@ -1,8 +1,9 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, computed, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { TariffService } from '../../../../core/services/tariff.service';
 import { TariffVersionService } from '../../../../core/services/tariff-version.service';
+import { AuthService } from '../../../../core/services/auth.service';
 import { TariffDetail as TariffDetailModel } from '../../../../core/models/tariff.model';
 import { TariffVersionSummary } from '../../../../core/models/tariff-version.model';
 import { categoryLabel } from '../../../../shared/utils/category-label';
@@ -26,11 +27,13 @@ export class TariffDetail implements OnInit {
 
   protected readonly versions = signal<TariffVersionSummary[]>([]);
   protected readonly versionsLoading = signal(true);
+  protected readonly isIt = computed(() => this.auth.role() === 'IT');
 
   constructor(
     private readonly route: ActivatedRoute,
     private readonly tariffService: TariffService,
     private readonly tariffVersionService: TariffVersionService,
+    private readonly auth: AuthService,
   ) {}
 
   ngOnInit(): void {

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Api.Auth;
 using PrepaidEngine.Application.Billing;
@@ -73,7 +74,15 @@ builder.Services.AddHostedService<PrepaidEngine.Api.Billing.BillingProcessingWor
 // authentication before any shared/production exposure (see docs/assumptions-and-security.md).
 builder.Services.AddAuthentication("Basic")
     .AddScheme<BasicAuthenticationSchemeOptions, BasicAuthenticationHandler>("Basic", null);
-builder.Services.AddAuthorization();
+
+// Two-role authorization for the tariff-governance workflow (see UserRole's doc comment) — IT
+// drafts/edits/submits, Utility reviews/approves/rejects. Every pre-existing endpoint keeps using
+// plain .RequireAuthorization() (no role requirement), so this is additive, not a breaking change.
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("ITRole", policy => policy.RequireRole(nameof(UserRole.IT)));
+    options.AddPolicy("UtilityRole", policy => policy.RequireRole(nameof(UserRole.Utility)));
+});
 
 // Local-dev-only CORS so the Angular dev server (ng serve, default port 4200) can call this
 // API cross-origin. Never widen this beyond the dev server's own origin, and never enable it
@@ -659,19 +668,35 @@ app.MapGet("/api/v1/bills/{id:guid}", async (Guid id, PrepaidEngineDbContext db)
 .WithName("GetBillById")
 .RequireAuthorization();
 
+// Tells the caller who they are and which of the two tariff-governance roles (IT/Utility) their
+// credential carries, purely so the frontend can decide which actions to render — the backend's
+// own RequireAuthorization("ITRole"/"UtilityRole") policies are the actual security boundary and
+// are enforced independently of what this endpoint returns.
+app.MapGet("/api/v1/auth/whoami", (ClaimsPrincipal user) =>
+    Results.Ok(new
+    {
+        Username = user.Identity?.Name ?? "unknown",
+        Role = user.FindFirst(ClaimTypes.Role)?.Value,
+    }))
+.WithName("WhoAmI")
+.RequireAuthorization();
+
 // Tariff Management read endpoints — the real Tariff/TariffSlab/TouPeriod configuration this
-// engine actually bills against (see docs/tariff-validation-report.md for sourcing). Read-only
-// for now: no create/update endpoint exists yet, since tariff changes need versioning/approval
-// workflow (see the UI/UX spec's "never silently overwrite an active tariff" rule) that this
-// project hasn't built — better to expose nothing than a naive PUT that violates it.
-app.MapGet("/api/v1/tariffs", async (PrepaidEngineDbContext db) =>
+// engine actually bills against (see docs/tariff-validation-report.md for sourcing). A Tariff
+// row itself is still never edited in place — see TariffChangeRequest's doc comment for the
+// governance workflow that now exists to create a new one instead.
+app.MapGet("/api/v1/tariffs", async (PrepaidEngine.Domain.Enums.TariffLifecycleStatus? status, PrepaidEngineDbContext db) =>
 {
-    var tariffs = await db.Tariffs
+    var query = db.Tariffs.AsQueryable();
+    if (status.HasValue) query = query.Where(t => t.Status == status.Value);
+
+    var tariffs = await query
         .Select(t => new
         {
             t.Id,
             t.Name,
             t.Category,
+            t.Status,
             t.FixedChargePerUnitPerMonth,
             t.PrepaidEnergyRebatePercent,
             t.EmergencyCreditLimit,
@@ -700,6 +725,7 @@ app.MapGet("/api/v1/tariffs/{id:guid}", async (Guid id, PrepaidEngineDbContext d
         tariff.Id,
         tariff.Name,
         tariff.Category,
+        tariff.Status,
         tariff.FixedChargePerUnitPerMonth,
         tariff.PrepaidEnergyRebatePercent,
         tariff.EmergencyCreditLimit,
@@ -716,6 +742,314 @@ app.MapGet("/api/v1/tariffs/{id:guid}", async (Guid id, PrepaidEngineDbContext d
     });
 })
 .WithName("GetTariffById")
+.RequireAuthorization();
+
+// --- Tariff governance (Phase 1: Tariff Governance + MDM Recharge Command Integration) --------
+// See TariffChangeRequest's own doc comment for the full workflow. IT (CREATE/EDIT/DRAFT/SUBMIT)
+// and Utility (APPROVE/REJECT) are role-gated at the endpoint level — the primary defense against
+// self-approval — with a same-actor check inside TariffChangeRequest.Approve() as defense in depth.
+
+app.MapPost("/api/v1/tariff-change-requests", async (CreateTariffChangeRequestBody request, ClaimsPrincipal user, PrepaidEngineDbContext db) =>
+{
+    var actor = user.Identity?.Name ?? "unknown";
+
+    if (request.SupersedesTariffId.HasValue)
+    {
+        var superseded = await db.Tariffs.FirstOrDefaultAsync(t => t.Id == request.SupersedesTariffId.Value);
+        if (superseded is null)
+            return Results.BadRequest(new { error = $"No tariff found with id '{request.SupersedesTariffId}' to revise." });
+        if (superseded.Status == PrepaidEngine.Domain.Enums.TariffLifecycleStatus.Retired)
+            return Results.BadRequest(new { error = "Cannot revise a tariff that has already been retired." });
+
+        var conflictingPending = await db.TariffChangeRequests.AnyAsync(r =>
+            r.SupersedesTariffId == request.SupersedesTariffId.Value &&
+            (r.Status == TariffChangeRequestStatus.PendingApproval || r.Status == TariffChangeRequestStatus.Scheduled));
+        if (conflictingPending)
+        {
+            return Results.Conflict(new
+            {
+                error = "This tariff already has a pending-approval or scheduled change request. Resolve it before creating another.",
+            });
+        }
+    }
+
+    TariffChangeRequest changeRequest;
+    try
+    {
+        changeRequest = new TariffChangeRequest(
+            Guid.NewGuid(), request.SupersedesTariffId, request.ProposedName, request.ProposedCategory,
+            request.ProposedSlabs.Select(s => new TariffSlab(s.FromKwh, s.UpToKwh, s.RatePerKwh)),
+            request.ProposedFixedChargePerUnitPerMonth, request.ProposedPrepaidEnergyRebatePercent, request.ProposedEmergencyCreditLimit,
+            actor, DateTime.UtcNow,
+            request.ProposedMinVendAmountSinglePhase, request.ProposedMaxVendAmountSinglePhase,
+            request.ProposedMinVendAmountThreePhase, request.ProposedMaxVendAmountThreePhase,
+            request.ProposedTouPeriods?.Select(p => new TouPeriod(p.Label, TimeSpan.Parse(p.StartTime), TimeSpan.Parse(p.EndTime), p.RatePerKvah)));
+    }
+    catch (Exception ex) when (ex is ArgumentException or FormatException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    db.TariffChangeRequests.Add(changeRequest);
+    Audit(db, nameof(TariffChangeRequest), changeRequest.Id.ToString(), "TARIFF_CREATED", actor,
+        details: $"Proposed '{changeRequest.ProposedName}'" + (request.SupersedesTariffId.HasValue ? $" revising tariff {request.SupersedesTariffId}." : " as a new tariff."));
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { changeRequest.Id, changeRequest.Status });
+})
+.WithName("CreateTariffChangeRequest")
+.RequireAuthorization("ITRole");
+
+app.MapPut("/api/v1/tariff-change-requests/{id:guid}/draft", async (Guid id, UpdateTariffChangeRequestBody request, ClaimsPrincipal user, PrepaidEngineDbContext db) =>
+{
+    var actor = user.Identity?.Name ?? "unknown";
+    var changeRequest = await db.TariffChangeRequests
+        .Include(r => r.ProposedSlabs).Include(r => r.ProposedTouPeriods)
+        .FirstOrDefaultAsync(r => r.Id == id);
+    if (changeRequest is null)
+        return Results.NotFound();
+
+    try
+    {
+        changeRequest.UpdateProposal(
+            request.ProposedName, request.ProposedCategory,
+            request.ProposedSlabs.Select(s => new TariffSlab(s.FromKwh, s.UpToKwh, s.RatePerKwh)),
+            request.ProposedFixedChargePerUnitPerMonth, request.ProposedPrepaidEnergyRebatePercent, request.ProposedEmergencyCreditLimit,
+            request.ProposedMinVendAmountSinglePhase, request.ProposedMaxVendAmountSinglePhase,
+            request.ProposedMinVendAmountThreePhase, request.ProposedMaxVendAmountThreePhase,
+            request.ProposedTouPeriods?.Select(p => new TouPeriod(p.Label, TimeSpan.Parse(p.StartTime), TimeSpan.Parse(p.EndTime), p.RatePerKvah)));
+    }
+    catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    Audit(db, nameof(TariffChangeRequest), changeRequest.Id.ToString(), "DRAFT_SAVED", actor);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { changeRequest.Id, changeRequest.Status });
+})
+.WithName("UpdateTariffChangeRequestDraft")
+.RequireAuthorization("ITRole");
+
+app.MapPost("/api/v1/tariff-change-requests/{id:guid}/submit", async (Guid id, SubmitTariffChangeRequestBody request, ClaimsPrincipal user, PrepaidEngineDbContext db) =>
+{
+    var actor = user.Identity?.Name ?? "unknown";
+    var changeRequest = await db.TariffChangeRequests
+        .Include(r => r.ProposedSlabs).Include(r => r.ProposedTouPeriods)
+        .FirstOrDefaultAsync(r => r.Id == id);
+    if (changeRequest is null)
+        return Results.NotFound();
+
+    var validationErrors = changeRequest.ValidateForSubmission();
+    if (validationErrors.Count > 0)
+        return Results.BadRequest(new { errors = validationErrors });
+
+    try
+    {
+        changeRequest.Submit(actor, request.ChangeReason, DateTime.UtcNow);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    Audit(db, nameof(TariffChangeRequest), changeRequest.Id.ToString(), "SUBMITTED", actor, details: request.ChangeReason);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { changeRequest.Id, changeRequest.Status });
+})
+.WithName("SubmitTariffChangeRequest")
+.RequireAuthorization("ITRole");
+
+app.MapGet("/api/v1/tariff-change-requests", async (TariffChangeRequestStatus? status, PrepaidEngineDbContext db) =>
+{
+    var query = db.TariffChangeRequests.AsQueryable();
+    if (status.HasValue) query = query.Where(r => r.Status == status.Value);
+
+    var requests = await query
+        .OrderByDescending(r => r.CreatedAt)
+        .Select(r => new
+        {
+            r.Id, r.SupersedesTariffId, r.ResultingTariffId, r.ProposedName, r.ProposedCategory, r.Status,
+            r.CreatedBy, r.CreatedAt, r.ChangeReason, r.SubmittedBy, r.SubmittedAt,
+            r.ApprovedBy, r.ApprovedAt, r.CommencementDate, r.RejectedBy, r.RejectedAt, r.RejectionReason, r.ActivatedAt,
+        })
+        .Take(500)
+        .ToListAsync();
+
+    return Results.Ok(requests);
+})
+.WithName("ListTariffChangeRequests")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/tariff-change-requests/{id:guid}", async (Guid id, PrepaidEngineDbContext db) =>
+{
+    var changeRequest = await db.TariffChangeRequests
+        .Include(r => r.ProposedSlabs).Include(r => r.ProposedTouPeriods)
+        .FirstOrDefaultAsync(r => r.Id == id);
+    if (changeRequest is null)
+        return Results.NotFound();
+
+    Tariff? currentTariff = changeRequest.SupersedesTariffId.HasValue
+        ? await db.Tariffs.Include(t => t.Slabs).Include(t => t.TouPeriods).FirstOrDefaultAsync(t => t.Id == changeRequest.SupersedesTariffId.Value)
+        : null;
+
+    return Results.Ok(new
+    {
+        changeRequest.Id,
+        changeRequest.SupersedesTariffId,
+        changeRequest.ResultingTariffId,
+        changeRequest.Status,
+        Proposed = new
+        {
+            changeRequest.ProposedName,
+            changeRequest.ProposedCategory,
+            changeRequest.ProposedFixedChargePerUnitPerMonth,
+            changeRequest.ProposedPrepaidEnergyRebatePercent,
+            changeRequest.ProposedEmergencyCreditLimit,
+            changeRequest.ProposedMinVendAmountSinglePhase,
+            changeRequest.ProposedMaxVendAmountSinglePhase,
+            changeRequest.ProposedMinVendAmountThreePhase,
+            changeRequest.ProposedMaxVendAmountThreePhase,
+            Slabs = changeRequest.ProposedSlabs.OrderBy(s => s.FromKwh).Select(s => new { s.FromKwh, s.UpToKwh, s.RatePerKwh }),
+            TouPeriods = changeRequest.ProposedTouPeriods.Select(p => new { p.Label, StartTime = p.StartTime.ToString(), EndTime = p.EndTime.ToString(), p.RatePerKvah }),
+        },
+        Current = currentTariff == null ? null : new
+        {
+            currentTariff.Name,
+            currentTariff.Category,
+            currentTariff.FixedChargePerUnitPerMonth,
+            currentTariff.PrepaidEnergyRebatePercent,
+            currentTariff.EmergencyCreditLimit,
+            currentTariff.MinVendAmountSinglePhase,
+            currentTariff.MaxVendAmountSinglePhase,
+            currentTariff.MinVendAmountThreePhase,
+            currentTariff.MaxVendAmountThreePhase,
+            Slabs = currentTariff.Slabs.OrderBy(s => s.FromKwh).Select(s => new { s.FromKwh, s.UpToKwh, s.RatePerKwh }),
+            TouPeriods = currentTariff.TouPeriods.Select(p => new { p.Label, StartTime = p.StartTime.ToString(), EndTime = p.EndTime.ToString(), p.RatePerKvah }),
+        },
+        changeRequest.CreatedBy,
+        changeRequest.CreatedAt,
+        changeRequest.ChangeReason,
+        changeRequest.SubmittedBy,
+        changeRequest.SubmittedAt,
+        changeRequest.ApprovedBy,
+        changeRequest.ApprovedAt,
+        changeRequest.CommencementDate,
+        changeRequest.RejectedBy,
+        changeRequest.RejectedAt,
+        changeRequest.RejectionReason,
+        changeRequest.ActivatedAt,
+    });
+})
+.WithName("GetTariffChangeRequestById")
+.RequireAuthorization();
+
+app.MapPost("/api/v1/tariff-change-requests/{id:guid}/approve", async (Guid id, ApproveTariffChangeRequestBody request, ClaimsPrincipal user, PrepaidEngineDbContext db) =>
+{
+    var actor = user.Identity?.Name ?? "unknown";
+    var changeRequest = await db.TariffChangeRequests.FirstOrDefaultAsync(r => r.Id == id);
+    if (changeRequest is null)
+        return Results.NotFound();
+
+    // Postgres timestamptz columns require Kind=Utc; a date-only value from JSON model
+    // binding comes back as Kind=Unspecified, which Npgsql rejects at save time.
+    var commencementDate = DateTime.SpecifyKind(request.CommencementDate.Date, DateTimeKind.Utc);
+
+    try
+    {
+        changeRequest.Approve(actor, commencementDate, DateTime.UtcNow);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    Audit(db, nameof(TariffChangeRequest), changeRequest.Id.ToString(), "APPROVED", actor,
+        details: $"Commencement {commencementDate:d}");
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { changeRequest.Id, changeRequest.Status, changeRequest.CommencementDate });
+})
+.WithName("ApproveTariffChangeRequest")
+.RequireAuthorization("UtilityRole");
+
+app.MapPost("/api/v1/tariff-change-requests/{id:guid}/reject", async (Guid id, RejectTariffChangeRequestBody request, ClaimsPrincipal user, PrepaidEngineDbContext db) =>
+{
+    var actor = user.Identity?.Name ?? "unknown";
+    var changeRequest = await db.TariffChangeRequests.FirstOrDefaultAsync(r => r.Id == id);
+    if (changeRequest is null)
+        return Results.NotFound();
+
+    try
+    {
+        changeRequest.Reject(actor, request.RejectionReason, DateTime.UtcNow);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    Audit(db, nameof(TariffChangeRequest), changeRequest.Id.ToString(), "REJECTED", actor, details: request.RejectionReason);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { changeRequest.Id, changeRequest.Status });
+})
+.WithName("RejectTariffChangeRequest")
+.RequireAuthorization("UtilityRole");
+
+// Activates every Scheduled request whose commencement date has arrived — materializes the new
+// immutable Tariff row and retires the superseded one (if any). Idempotent/atomic per request via
+// the same Status guard TariffChangeRequest.Activate already enforces (a request can only ever be
+// Activated once). Exposed as a real endpoint (rather than only a background job) so the demo can
+// trigger it deterministically instead of waiting on wall-clock time.
+app.MapPost("/api/v1/tariff-change-requests/activate-due", async (PrepaidEngineDbContext db) =>
+{
+    var today = DateTime.UtcNow;
+    var due = await db.TariffChangeRequests
+        .Where(r => r.Status == TariffChangeRequestStatus.Scheduled && r.CommencementDate!.Value.Date <= today.Date)
+        .ToListAsync();
+
+    var activated = new List<object>();
+    foreach (var changeRequest in due)
+    {
+        // AsNoTracking is required here: EF Core cannot track an owned-entity collection queried
+        // on its own without its owner also present in the same result set.
+        var proposedSlabs = await db.Entry(changeRequest).Collection(r => r.ProposedSlabs).Query().AsNoTracking().ToListAsync();
+        var proposedTou = await db.Entry(changeRequest).Collection(r => r.ProposedTouPeriods).Query().AsNoTracking().ToListAsync();
+
+        var newTariff = new Tariff(
+            Guid.NewGuid(), changeRequest.ProposedName, changeRequest.ProposedCategory,
+            proposedSlabs.Select(s => new TariffSlab(s.FromKwh, s.UpToKwh, s.RatePerKwh)),
+            changeRequest.ProposedFixedChargePerUnitPerMonth, changeRequest.ProposedPrepaidEnergyRebatePercent, changeRequest.ProposedEmergencyCreditLimit,
+            changeRequest.ProposedMinVendAmountSinglePhase, changeRequest.ProposedMaxVendAmountSinglePhase,
+            changeRequest.ProposedMinVendAmountThreePhase, changeRequest.ProposedMaxVendAmountThreePhase,
+            proposedTou.Select(p => new TouPeriod(p.Label, p.StartTime, p.EndTime, p.RatePerKvah)));
+        db.Tariffs.Add(newTariff);
+
+        if (changeRequest.SupersedesTariffId.HasValue)
+        {
+            var superseded = await db.Tariffs.FirstOrDefaultAsync(t => t.Id == changeRequest.SupersedesTariffId.Value);
+            superseded?.Retire();
+        }
+
+        changeRequest.Activate(newTariff.Id, today);
+        Audit(db, nameof(TariffChangeRequest), changeRequest.Id.ToString(), "ACTIVATED", "system",
+            details: $"New tariff {newTariff.Id} ('{newTariff.Name}') is now active.");
+        if (changeRequest.SupersedesTariffId.HasValue)
+            Audit(db, nameof(Tariff), changeRequest.SupersedesTariffId.Value.ToString(), "RETIRED", "system");
+
+        activated.Add(new { changeRequest.Id, NewTariffId = newTariff.Id, newTariff.Name });
+    }
+
+    if (activated.Count > 0)
+        await db.SaveChangesAsync();
+
+    return Results.Ok(activated);
+})
+.WithName("ActivateDueTariffChangeRequests")
 .RequireAuthorization();
 
 // Calculation Workbench — a SIMULATION-ONLY preview of a charge calculation for an arbitrary
@@ -937,18 +1271,18 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
             // actually runs, per MeterCommand's own state machine.
             var meterCommand = new MeterCommand(Guid.NewGuid(), consumer.Id, recharge.Id, request.Amount, DateTime.UtcNow);
             db.MeterCommands.Add(meterCommand);
-            meterCommand.MarkSent(DateTime.UtcNow);
 
             var meterResult = await meterCommandClient.SendCreditCommandAsync(
                 new SendCreditCommandRequest(consumer.Id, request.Amount, request.IdempotencyKey));
+            meterCommand.MarkSent(DateTime.UtcNow, meterResult.ExternalCommandId);
 
             switch (meterResult.Outcome)
             {
                 case MeterCommandOutcome.Acknowledged:
-                    meterCommand.MarkAcknowledged(DateTime.UtcNow);
+                    meterCommand.MarkAcknowledged(DateTime.UtcNow, meterResult.ResponseCode, meterResult.Message);
                     break;
                 case MeterCommandOutcome.Failed:
-                    meterCommand.MarkFailed(meterResult.Message ?? "Meter rejected the credit command.");
+                    meterCommand.MarkFailed(meterResult.Message ?? "Meter rejected the credit command.", meterResult.ResponseCode);
                     RaiseException(db, OperationalExceptionSourceType.MeterCommand, meterCommand.Id, consumer.Id,
                         $"Meter command {meterCommand.Id} failed: {meterCommand.ErrorMessage}");
                     break;
@@ -1079,19 +1413,18 @@ app.MapPost("/api/v1/meter-commands/{id:guid}/retry", async (
         return Results.Conflict(new { error = ex.Message });
     }
 
-    command.MarkSent(DateTime.UtcNow);
-
     var correlationId = $"retry-{command.RetryCount}-{Guid.NewGuid():N}";
     var meterResult = await meterCommandClient.SendCreditCommandAsync(
         new SendCreditCommandRequest(command.ConsumerId, command.CreditAmount, correlationId));
+    command.MarkSent(DateTime.UtcNow, meterResult.ExternalCommandId);
 
     switch (meterResult.Outcome)
     {
         case MeterCommandOutcome.Acknowledged:
-            command.MarkAcknowledged(DateTime.UtcNow);
+            command.MarkAcknowledged(DateTime.UtcNow, meterResult.ResponseCode, meterResult.Message);
             break;
         case MeterCommandOutcome.Failed:
-            command.MarkFailed(meterResult.Message ?? "Meter rejected the credit command.");
+            command.MarkFailed(meterResult.Message ?? "Meter rejected the credit command.", meterResult.ResponseCode);
             RaiseException(db, OperationalExceptionSourceType.MeterCommand, command.Id, command.ConsumerId,
                 $"Meter command {command.Id} failed on retry #{command.RetryCount}: {command.ErrorMessage}");
             break;
@@ -2533,6 +2866,47 @@ public record ReconciliationAdjustmentRequest(decimal Amount, DateTime Reconcili
 /// <param name="ChangeNote">Required — why the change was made.</param>
 /// <param name="EffectiveDate">When the new value takes effect.</param>
 public record TariffVersionRequest(string FieldName, string OldValue, string NewValue, string ChangeNote, DateTime EffectiveDate);
+
+// --- Tariff governance request DTOs -------------------------------------------------------------
+/// <summary>One proposed energy slab. <see cref="StartTime"/>/<see cref="EndTime"/> equivalents
+/// for ToD periods are plain "HH:mm:ss"-parseable strings (see <see cref="TouPeriodInput"/>) since
+/// minimal APIs don't model-bind <see cref="TimeSpan"/> from JSON as cleanly as ISO-8601 duration.</summary>
+public record TariffSlabInput(decimal FromKwh, decimal? UpToKwh, decimal RatePerKwh);
+
+public record TouPeriodInput(string Label, string StartTime, string EndTime, decimal RatePerKvah);
+
+public record CreateTariffChangeRequestBody(
+    Guid? SupersedesTariffId,
+    string ProposedName,
+    ConsumerCategory ProposedCategory,
+    IReadOnlyList<TariffSlabInput> ProposedSlabs,
+    decimal ProposedFixedChargePerUnitPerMonth,
+    decimal ProposedPrepaidEnergyRebatePercent,
+    decimal ProposedEmergencyCreditLimit,
+    decimal? ProposedMinVendAmountSinglePhase = null,
+    decimal? ProposedMaxVendAmountSinglePhase = null,
+    decimal? ProposedMinVendAmountThreePhase = null,
+    decimal? ProposedMaxVendAmountThreePhase = null,
+    IReadOnlyList<TouPeriodInput>? ProposedTouPeriods = null);
+
+public record UpdateTariffChangeRequestBody(
+    string ProposedName,
+    ConsumerCategory ProposedCategory,
+    IReadOnlyList<TariffSlabInput> ProposedSlabs,
+    decimal ProposedFixedChargePerUnitPerMonth,
+    decimal ProposedPrepaidEnergyRebatePercent,
+    decimal ProposedEmergencyCreditLimit,
+    decimal? ProposedMinVendAmountSinglePhase = null,
+    decimal? ProposedMaxVendAmountSinglePhase = null,
+    decimal? ProposedMinVendAmountThreePhase = null,
+    decimal? ProposedMaxVendAmountThreePhase = null,
+    IReadOnlyList<TouPeriodInput>? ProposedTouPeriods = null);
+
+public record SubmitTariffChangeRequestBody(string ChangeReason);
+
+public record ApproveTariffChangeRequestBody(DateTime CommencementDate);
+
+public record RejectTariffChangeRequestBody(string RejectionReason);
 
 /// <summary>POST /api/v1/meter-data/dlp request body.</summary>
 public record DailyLoadProfileIngestRequest(

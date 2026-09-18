@@ -20,6 +20,9 @@ public class MeterCommandConfiguration : IEntityTypeConfiguration<MeterCommand>
 
         builder.Property(m => m.RetryCount).IsRequired();
         builder.Property(m => m.ErrorMessage).HasMaxLength(500);
+        builder.Property(m => m.ExternalCommandId).HasMaxLength(100);
+        builder.Property(m => m.ResponseCode).HasMaxLength(50);
+        builder.Property(m => m.ResponseMessage).HasMaxLength(500);
 
         builder.Property(m => m.CreatedAt).IsRequired();
 

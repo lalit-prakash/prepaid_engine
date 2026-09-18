@@ -13,6 +13,9 @@
           <span>{{ categoryLabel(t.category) }}</span>
         </div>
       </div>
+      @if (isIt()) {
+        <a [routerLink]="['/tariffs/change-requests/new']" [queryParams]="{ supersedes: t.id }" class="btn-primary">Revise This Tariff</a>
+      }
     </header>
 
     <section class="summary-strip">

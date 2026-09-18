@@ -25,7 +25,18 @@
   padding: var(--space-5);
 }
 
-.detail-header { margin-bottom: var(--space-5); }
+.detail-header { margin-bottom: var(--space-5); display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+.btn-primary {
+  background: var(--color-primary);
+  color: var(--text-inverse);
+  border: 1px solid var(--color-primary);
+  padding: 8px var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-body);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
 .detail-header h1 { font-size: var(--font-size-page-title); }
 .detail-header__meta {
   color: var(--text-secondary);

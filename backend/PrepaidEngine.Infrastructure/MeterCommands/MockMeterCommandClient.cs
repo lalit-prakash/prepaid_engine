@@ -33,13 +33,14 @@ public class MockMeterCommandClient : IMeterCommandClient
 
         var correlationId = request.CorrelationId ?? string.Empty;
 
+        var externalCommandId = $"MOCK-MDM-{Guid.NewGuid():N}";
         var result = correlationId switch
         {
             var c when c.Contains(FailMarker, StringComparison.OrdinalIgnoreCase) =>
-                new SendCreditCommandResult(MeterCommandOutcome.Failed, "Meter rejected the credit command (simulated)."),
+                new SendCreditCommandResult(MeterCommandOutcome.Failed, "Meter rejected the credit command (simulated).", externalCommandId, "MDM_REJECTED"),
             var c when c.Contains(TimeoutMarker, StringComparison.OrdinalIgnoreCase) =>
-                new SendCreditCommandResult(MeterCommandOutcome.TimedOut, "No acknowledgement received from the meter (simulated)."),
-            _ => new SendCreditCommandResult(MeterCommandOutcome.Acknowledged, null),
+                new SendCreditCommandResult(MeterCommandOutcome.TimedOut, "No acknowledgement received from the meter (simulated).", externalCommandId, "MDM_NO_ACK"),
+            _ => new SendCreditCommandResult(MeterCommandOutcome.Acknowledged, null, externalCommandId, "MDM_ACK_OK"),
         };
 
         return Task.FromResult(result);

@@ -37,6 +37,7 @@ public class PrepaidEngineDbContext : DbContext
     public DbSet<OperationalException> OperationalExceptions => Set<OperationalException>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<TariffVersion> TariffVersions => Set<TariffVersion>();
+    public DbSet<TariffChangeRequest> TariffChangeRequests => Set<TariffChangeRequest>();
     public DbSet<DailyLoadProfile> DailyLoadProfiles => Set<DailyLoadProfile>();
     public DbSet<BillingRun> BillingRuns => Set<BillingRun>();
     public DbSet<MeterAssignment> MeterAssignments => Set<MeterAssignment>();
