@@ -501,6 +501,36 @@ type has one job:
   the meter-swap boundary (a reading under a different `MeterId` is never pulled into a
   comparison).
 
+### SLA monitoring, risk indicators, and exception-center wiring (operational controls)
+
+**Phase 3 of the 4-phase enterprise hardening effort** (`phase-3-controls-reporting`). Audited
+reconciliation, the exception center, and reporting first: reconciliation is deliberately a
+one-directional, RMS-pushed-adjustment model (see `ReconciliationAdjustment`'s own doc comment —
+an earlier three-way-comparison design was explicitly reverted as wrong against the real AMISP
+spec, so Phase 3 does not reintroduce it), and the existing exception center/reports were already
+real. This phase adds the two genuinely missing control-plane pieces plus one piece of connective
+wiring between Phase 1 and the exception center:
+
+- **SLA monitoring** (`ISlaMonitoringService`, `GET /api/v1/sla`): real performance for DLP
+  ingestion latency, daily billing-run duration, recharge completion, meter-credit acknowledgement,
+  and RC/DC acknowledgement — every target **configurable** via `appsettings.json`'s
+  `SlaMonitoring` section (never hard-coded), computed from timestamps these entities already
+  record. A workflow with zero completed samples reports `SampleSize: 0` and `"Unavailable"`,
+  never a fabricated percentage.
+- **Revenue & Risk Indicators** (`RiskIndicatorsSummary`, `GET /api/v1/risk-indicators`):
+  deliberately never a monetary "revenue protected" figure (no real system-of-record for one
+  exists here) — real counts only: open exceptions, active billing holds, unresolved meter alarms,
+  disconnected consumers, failed energy validations.
+- **Energy-validation → exception wiring**: a `Fail` from Phase 1's
+  `EvaluateEnergyValidationAsync` now automatically raises a real, visible `OperationalException`
+  (new `OperationalExceptionSourceType.EnergyValidation` source) instead of being recorded and
+  forgotten — one Open exception per result, not duplicated on re-evaluation.
+- Tests: `PrepaidEngine.Tests/Sla/SlaMonitoringServiceTests.cs` (no-data/met/breach/provisional-
+  exclusion/average-computation) and two new cases in `MeterDataIngestionServiceTests` (a Fail
+  raises exactly one exception; re-evaluating while still Open never duplicates it). Verified live
+  against the real dev database, including a genuine end-to-end Fail → exception → risk-indicator
+  count chain.
+
 ### Prepaid → Postpaid conversion (reverse flow)
 
 **Phase 2 of the 4-phase enterprise hardening effort** (`phase-2-prepaid-core`). The forward

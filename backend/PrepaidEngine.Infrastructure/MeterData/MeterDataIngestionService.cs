@@ -245,6 +245,23 @@ public class MeterDataIngestionService : IMeterDataIngestionService
             _db.EnergyValidationResults.Add(existing);
         }
 
+        // A Fail becomes a real, visible operational exception — never silently recorded and
+        // forgotten. One Open exception per result (not one per re-evaluation): if this same
+        // rule/date already has an Open exception from a prior Fail, it is left alone rather than
+        // duplicated.
+        if (status == EnergyValidationStatus.Fail)
+        {
+            var alreadyRaised = await _db.OperationalExceptions.AnyAsync(
+                e => e.SourceType == OperationalExceptionSourceType.EnergyValidation && e.SourceId == existing.Id && e.Status == OperationalExceptionStatus.Open,
+                cancellationToken);
+            if (!alreadyRaised)
+            {
+                _db.OperationalExceptions.Add(new OperationalException(
+                    Guid.NewGuid(), OperationalExceptionSourceType.EnergyValidation, existing.Id, consumerId,
+                    $"{rule} energy validation failed for {validationDate}: {reason}", evaluatedAt));
+            }
+        }
+
         return new EnergyValidationOutcome(
             existing.Id, consumerId, meterId, validationDate, rule, existing.ExpectedValueKwh, existing.ActualValueKwh,
             existing.VarianceKwh, existing.VariancePct, existing.Status, existing.Reason);

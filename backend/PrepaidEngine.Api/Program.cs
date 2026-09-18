@@ -15,6 +15,8 @@ using PrepaidEngine.Infrastructure.Conversion;
 using PrepaidEngine.Infrastructure.MeterCommands;
 using PrepaidEngine.Infrastructure.MeterData;
 using PrepaidEngine.Infrastructure.Persistence;
+using PrepaidEngine.Infrastructure.Sla;
+using PrepaidEngine.Application.Sla;
 using PrepaidEngine.Infrastructure.Persistence.Seed;
 using PrepaidEngine.Infrastructure.Rms;
 
@@ -57,6 +59,11 @@ builder.Services.AddScoped<IBillingEngineService, BillingEngineService>();
 // doc comment. Never bills anything; DLP billing stays entirely in IBillingEngineService above.
 builder.Services.Configure<EnergyValidationOptions>(builder.Configuration.GetSection(EnergyValidationOptions.SectionName));
 builder.Services.AddScoped<IMeterDataIngestionService, MeterDataIngestionService>();
+
+// Real SLA performance for DLP ingestion/billing/recharge/meter-credit/RC-DC — see
+// ISlaMonitoringService's doc comment. Targets configurable via appsettings.json.
+builder.Services.Configure<SlaMonitoringOptions>(builder.Configuration.GetSection(SlaMonitoringOptions.SectionName));
+builder.Services.AddScoped<ISlaMonitoringService, SlaMonitoringService>();
 
 // Local/demo background processing for the daily billing cycle — see the worker's own doc
 // comment for why this is intentionally simple.
@@ -1866,6 +1873,32 @@ app.MapGet("/api/v1/reports/recharge-failures", async (PrepaidEngineDbContext db
     return Results.Ok(failures);
 })
 .WithName("RechargeFailureReport")
+.RequireAuthorization();
+
+// --- SLA monitoring (Phase 3): real performance against configurable targets, computed from ---
+// timestamps this engine already records — see ISlaMonitoringService's doc comment.
+app.MapGet("/api/v1/sla", async (ISlaMonitoringService slaMonitoring) =>
+{
+    var metrics = await slaMonitoring.GetSlaSummaryAsync();
+    return Results.Ok(metrics);
+})
+.WithName("GetSlaSummary")
+.RequireAuthorization();
+
+// --- Revenue & Risk Indicators (Phase 3): real open-condition counts only — deliberately never
+// a fabricated monetary "revenue protected" figure (see RiskIndicatorsSummary's doc comment).
+app.MapGet("/api/v1/risk-indicators", async (PrepaidEngineDbContext db) =>
+{
+    var summary = new RiskIndicatorsSummary(
+        OpenExceptions: await db.OperationalExceptions.CountAsync(e => e.Status == OperationalExceptionStatus.Open),
+        ActiveBillingHolds: await db.MeterBillingControls.CountAsync(m => m.ActualBillingBlocked),
+        UnresolvedMeterAlarms: await db.MeterAlarms.CountAsync(a => a.Status != MeterAlarmStatus.Resolved),
+        DisconnectedConsumers: await db.Consumers.CountAsync(c => c.ConnectionStatus == ConnectionStatus.Disconnected),
+        FailedEnergyValidations: await db.EnergyValidationResults.CountAsync(v => v.Status == EnergyValidationStatus.Fail));
+
+    return Results.Ok(summary);
+})
+.WithName("GetRiskIndicators")
 .RequireAuthorization();
 
 // --- DLP billing pipeline: Daily Load Profile ingestion and the daily charge — see -------------
