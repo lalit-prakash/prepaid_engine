@@ -14,7 +14,19 @@ public class TariffConfiguration : IEntityTypeConfiguration<Tariff>
         builder.Property(t => t.Name)
             .IsRequired()
             .HasMaxLength(100);
-        builder.HasIndex(t => t.Name).IsUnique();
+
+        // Explicit default so a future migration that adds a similar column never repeats the
+        // bug this one had to be hand-fixed for: EF's migration scaffolding does not infer a
+        // sensible default string from a C# property initializer for a HasConversion<string>
+        // enum, and silently emitted "" for existing rows without this.
+        builder.Property(t => t.Status).HasConversion<string>().HasMaxLength(20).IsRequired()
+            .HasDefaultValue(PrepaidEngine.Domain.Enums.TariffLifecycleStatus.Active);
+
+        // Unique only among Active tariffs: a tariff-governance revision (see
+        // TariffChangeRequest) creates a brand-new row with the same Name once the old one is
+        // retired, so two rows sharing a Name is expected — the constraint that actually matters
+        // is that only one of them is ever Active at a time.
+        builder.HasIndex(t => t.Name).IsUnique().HasFilter("\"Status\" = 'Active'");
 
         builder.Property(t => t.Category)
             .HasConversion<string>()

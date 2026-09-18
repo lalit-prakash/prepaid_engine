@@ -34,6 +34,17 @@ public class MeterCommand
     public DateTime? SentAt { get; private set; }
     public DateTime? AcknowledgedAt { get; private set; }
 
+    /// <summary>The external command/tracking id the meter-command layer (MDM/HES/vendor API)
+    /// assigned to this dispatch, if it returned one — kept for operational investigation
+    /// ("which command did the downstream system actually see"). Null until <see cref="MarkSent"/>.</summary>
+    public string? ExternalCommandId { get; private set; }
+
+    /// <summary>The downstream response code/message, if the meter-command layer returned one —
+    /// distinct from <see cref="ErrorMessage"/> (this project's own summary) so the raw
+    /// downstream response stays available for investigation even on a successful outcome.</summary>
+    public string? ResponseCode { get; private set; }
+    public string? ResponseMessage { get; private set; }
+
     public MeterCommand(Guid id, Guid consumerId, Guid rechargeTransactionId, decimal creditAmount, DateTime createdAt)
     {
         if (creditAmount <= 0)
@@ -55,28 +66,31 @@ public class MeterCommand
 
     /// <summary>The command left the Prepaid Engine for the meter-command layer. Not yet a
     /// success — see <see cref="MarkAcknowledged"/> for the only real completion.</summary>
-    public void MarkSent(DateTime sentAt)
+    public void MarkSent(DateTime sentAt, string? externalCommandId = null)
     {
         if (Status != MeterCommandStatus.Queued)
             throw new InvalidOperationException($"Cannot mark a {Status} command as sent.");
 
         Status = MeterCommandStatus.Sent;
         SentAt = sentAt;
+        ExternalCommandId = externalCommandId;
     }
 
     /// <summary>The only state that means the meter was actually credited — a real downstream
     /// acknowledgement, never inferred from RMS payment confirmation alone.</summary>
-    public void MarkAcknowledged(DateTime acknowledgedAt)
+    public void MarkAcknowledged(DateTime acknowledgedAt, string? responseCode = null, string? responseMessage = null)
     {
         if (Status != MeterCommandStatus.Sent)
             throw new InvalidOperationException($"Cannot acknowledge a command that was never sent (current status: {Status}).");
 
         Status = MeterCommandStatus.Acknowledged;
         AcknowledgedAt = acknowledgedAt;
+        ResponseCode = responseCode;
+        ResponseMessage = responseMessage;
     }
 
     /// <summary>The meter-command layer explicitly rejected or errored on this command.</summary>
-    public void MarkFailed(string errorMessage)
+    public void MarkFailed(string errorMessage, string? responseCode = null)
     {
         if (Status is MeterCommandStatus.Acknowledged or MeterCommandStatus.Failed or MeterCommandStatus.TimedOut)
             throw new InvalidOperationException($"Cannot mark a {Status} command as failed.");
@@ -85,6 +99,8 @@ public class MeterCommand
 
         Status = MeterCommandStatus.Failed;
         ErrorMessage = errorMessage;
+        ResponseCode = responseCode;
+        ResponseMessage = errorMessage;
     }
 
     /// <summary>No acknowledgement arrived within the expected window — distinct from

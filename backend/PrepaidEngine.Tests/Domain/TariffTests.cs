@@ -112,4 +112,27 @@ public class TariffTests
             minVendAmountSinglePhase: 1000m,
             maxVendAmountSinglePhase: 500m));
     }
+
+    [Fact]
+    public void Constructor_DefaultsToActiveStatus()
+    {
+        var tariff = BuildSlabTariff();
+        Assert.Equal(TariffLifecycleStatus.Active, tariff.Status);
+    }
+
+    [Fact]
+    public void Retire_FromActive_SetsRetiredStatus()
+    {
+        var tariff = BuildSlabTariff();
+        tariff.Retire();
+        Assert.Equal(TariffLifecycleStatus.Retired, tariff.Status);
+    }
+
+    [Fact]
+    public void Retire_AlreadyRetired_Throws()
+    {
+        var tariff = BuildSlabTariff();
+        tariff.Retire();
+        Assert.Throws<InvalidOperationException>(() => tariff.Retire());
+    }
 }

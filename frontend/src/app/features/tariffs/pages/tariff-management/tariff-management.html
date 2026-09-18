@@ -1,48 +1,113 @@
 <div class="tariffs">
   <div class="page-header">
-    <h1>Tariffs & Rules</h1>
-    <p class="page-header__subtitle">
-      {{ tariffs().length }} tariff(s) configured — read-only (no change workflow built yet, see
-      docs/frontend-scope.md)
-    </p>
+    <div>
+      <h1>Tariffs &amp; Governance</h1>
+      <p class="page-header__subtitle">
+        {{ tariffs().length }} active tariff(s). Changes go through IT draft → submit → Utility approval before
+        they ever take effect — see the Change Requests tabs below.
+      </p>
+    </div>
+    @if (isIt()) {
+      <a routerLink="/tariffs/change-requests/new" class="btn-primary">+ New Tariff</a>
+    } @else if (isUtility()) {
+      <button type="button" class="btn-primary" (click)="selectTab('pending')">Review Pending Changes ({{ pendingCount() }})</button>
+    }
   </div>
 
-  @if (loading()) {
-    <div class="skeleton-row">
-      @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
-    </div>
-  } @else if (error()) {
-    <div class="error-panel">{{ error() }}</div>
-  } @else if (tariffs().length === 0) {
-    <div class="empty-panel">No tariffs are configured.</div>
-  } @else {
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Category</th>
-            <th class="num">Fixed Charge</th>
-            <th class="num">Prepaid Rebate</th>
-            <th class="num">Emergency Credit</th>
-            <th class="num">Slabs</th>
-            <th class="num">ToD Periods</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (t of tariffs(); track t.id) {
-            <tr (click)="open(t.id)" class="row-clickable">
-              <td>{{ t.name }}</td>
-              <td>{{ categoryLabel(t.category) }}</td>
-              <td class="num">₹{{ t.fixedChargePerUnitPerMonth | number: '1.2-2' }} / unit / month</td>
-              <td class="num">{{ t.prepaidEnergyRebatePercent }}%</td>
-              <td class="num">₹{{ t.emergencyCreditLimit | number: '1.2-2' }}</td>
-              <td class="num">{{ t.slabCount }}</td>
-              <td class="num">{{ t.touPeriodCount }}</td>
+  <section class="kpi-row">
+    <pe-kpi-card label="Active Tariffs" [value]="tariffs().length" tone="primary" />
+    <pe-kpi-card label="Pending Approval" [value]="pendingCount()" tone="warning" [clickable]="true" (click)="selectTab('pending')" />
+    <pe-kpi-card label="Drafts" [value]="draftCount()" tone="neutral" [clickable]="true" (click)="selectTab('drafts')" />
+    <pe-kpi-card label="Scheduled" [value]="scheduledCount()" tone="info" [clickable]="true" (click)="selectTab('scheduled')" />
+    <pe-kpi-card label="Rejected" [value]="rejectedCount()" tone="danger" [clickable]="true" (click)="selectTab('rejected')" />
+  </section>
+
+  <div class="tabs">
+    <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'active-tariffs'" (click)="selectTab('active-tariffs')">Active Tariffs</button>
+    <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'pending'" (click)="selectTab('pending')">Pending Approval ({{ pendingCount() }})</button>
+    <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'drafts'" (click)="selectTab('drafts')">Drafts ({{ draftCount() }})</button>
+    <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'scheduled'" (click)="selectTab('scheduled')">Scheduled ({{ scheduledCount() }})</button>
+    <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'rejected'" (click)="selectTab('rejected')">Rejected ({{ rejectedCount() }})</button>
+    <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'history'" (click)="selectTab('history')">History</button>
+  </div>
+
+  @if (activeTab() === 'active-tariffs') {
+    @if (loading()) {
+      <div class="skeleton-row">
+        @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
+      </div>
+    } @else if (error()) {
+      <div class="error-panel">{{ error() }}</div>
+    } @else if (tariffs().length === 0) {
+      <div class="empty-panel">No tariffs are configured.</div>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Category</th>
+              <th class="num">Fixed Charge</th>
+              <th class="num">Prepaid Rebate</th>
+              <th class="num">Emergency Credit</th>
+              <th class="num">Slabs</th>
+              <th class="num">ToD Periods</th>
+              @if (isIt()) { <th></th> }
             </tr>
-          }
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            @for (t of tariffs(); track t.id) {
+              <tr class="row-clickable">
+                <td (click)="open(t.id)">{{ t.name }}</td>
+                <td (click)="open(t.id)">{{ categoryLabel(t.category) }}</td>
+                <td class="num" (click)="open(t.id)">₹{{ t.fixedChargePerUnitPerMonth | number: '1.2-2' }} / unit / month</td>
+                <td class="num" (click)="open(t.id)">{{ t.prepaidEnergyRebatePercent }}%</td>
+                <td class="num" (click)="open(t.id)">₹{{ t.emergencyCreditLimit | number: '1.2-2' }}</td>
+                <td class="num" (click)="open(t.id)">{{ t.slabCount }}</td>
+                <td class="num" (click)="open(t.id)">{{ t.touPeriodCount }}</td>
+                @if (isIt()) {
+                  <td><button type="button" class="btn-sm" (click)="reviseTariff(t.id)">Revise</button></td>
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  } @else {
+    @if (changeRequestsLoading()) {
+      <div class="skeleton-row">
+        @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
+      </div>
+    } @else if (changeRequestsError()) {
+      <div class="error-panel">{{ changeRequestsError() }}</div>
+    } @else if (visibleChangeRequests().length === 0) {
+      <div class="empty-panel">Nothing here.</div>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Proposed Name</th>
+              <th>Status</th>
+              <th>Created By</th>
+              <th>Submitted At</th>
+              <th>Commencement</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of visibleChangeRequests(); track r.id) {
+              <tr (click)="openChangeRequest(r.id)" class="row-clickable">
+                <td>{{ r.proposedName }}</td>
+                <td><pe-status-badge [label]="statusLabel(r.status)" [tone]="statusTone(r.status)" /></td>
+                <td>{{ r.createdBy }}</td>
+                <td>{{ r.submittedAt ? (r.submittedAt | date: 'medium') : '—' }}</td>
+                <td>{{ r.commencementDate ? (r.commencementDate | date: 'mediumDate') : '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
   }
 </div>

@@ -30,6 +30,12 @@ public class Tariff
     public Guid Id { get; private set; }
     public string Name { get; private set; }
     public ConsumerCategory Category { get; private set; }
+
+    /// <summary>Active until a later <see cref="TariffChangeRequest"/> supersedes it and reaches
+    /// its commencement date — see <see cref="TariffLifecycleStatus"/>'s doc comment for why this
+    /// never requires editing any past bill's tariff reference.</summary>
+    public TariffLifecycleStatus Status { get; private set; } = TariffLifecycleStatus.Active;
+
     public IReadOnlyCollection<TariffSlab> Slabs => _slabs.AsReadOnly();
 
     /// <summary>
@@ -243,6 +249,17 @@ public class Tariff
     /// Throws if <paramref name="amount"/> falls outside this tariff's configured min/max vend
     /// amount for the given meter phase. A phase with no configured limits is unconstrained.
     /// </summary>
+    /// <summary>Marks this tariff superseded — see <see cref="TariffLifecycleStatus"/>. Called
+    /// exactly once, when a <see cref="TariffChangeRequest"/> that names this tariff as
+    /// <c>SupersedesTariffId</c> is activated at its commencement date.</summary>
+    public void Retire()
+    {
+        if (Status == TariffLifecycleStatus.Retired)
+            throw new InvalidOperationException($"Tariff '{Name}' is already retired.");
+
+        Status = TariffLifecycleStatus.Retired;
+    }
+
     public void ValidateVendAmount(decimal amount, MeterPhase phase)
     {
         var (min, max) = phase == MeterPhase.SinglePhase

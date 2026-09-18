@@ -46,12 +46,13 @@ export class Login {
 
     const encoded = btoa(`${this.username}:${this.password}`);
     this.http
-      .get(`${environment.apiBaseUrl}/api/v1/consumers`, {
+      .get<{ username: string; role: string | null }>(`${environment.apiBaseUrl}/api/v1/auth/whoami`, {
         headers: { Authorization: `Basic ${encoded}` },
       })
       .subscribe({
-        next: () => {
+        next: (whoami) => {
           this.auth.setCredentials(this.username, this.password);
+          this.auth.setRole(whoami.role === 'IT' || whoami.role === 'Utility' ? whoami.role : null);
           this.router.navigate(['/overview']);
         },
         error: (err) => {

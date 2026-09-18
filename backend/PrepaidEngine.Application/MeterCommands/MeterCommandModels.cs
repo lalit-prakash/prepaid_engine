@@ -28,6 +28,11 @@ public record SendCreditCommandRequest(
 /// </summary>
 /// <param name="Outcome">What actually happened, per <see cref="MeterCommandOutcome"/>.</param>
 /// <param name="Message">Human-readable detail, e.g. a failure or timeout reason.</param>
+/// <param name="ExternalCommandId">The downstream system's own tracking id for this command, if
+/// it returned one — kept on <see cref="Entities.MeterCommand"/> for operational investigation.</param>
+/// <param name="ResponseCode">The downstream system's raw response code, if any.</param>
 public record SendCreditCommandResult(
     MeterCommandOutcome Outcome,
-    string? Message);
+    string? Message,
+    string? ExternalCommandId = null,
+    string? ResponseCode = null);

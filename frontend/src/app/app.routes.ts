@@ -97,6 +97,27 @@ export const routes: Routes = [
           import('./features/tariffs/pages/tariff-management/tariff-management').then((m) => m.TariffManagement),
       },
       {
+        path: 'tariffs/change-requests/new',
+        loadComponent: () =>
+          import('./features/tariffs/pages/tariff-change-request-form/tariff-change-request-form').then(
+            (m) => m.TariffChangeRequestForm,
+          ),
+      },
+      {
+        path: 'tariffs/change-requests/:id',
+        loadComponent: () =>
+          import('./features/tariffs/pages/tariff-change-request-detail/tariff-change-request-detail').then(
+            (m) => m.TariffChangeRequestDetailPage,
+          ),
+      },
+      {
+        path: 'tariffs/change-requests/:id/edit',
+        loadComponent: () =>
+          import('./features/tariffs/pages/tariff-change-request-form/tariff-change-request-form').then(
+            (m) => m.TariffChangeRequestForm,
+          ),
+      },
+      {
         path: 'tariffs/:id',
         loadComponent: () =>
           import('./features/tariffs/pages/tariff-detail/tariff-detail').then((m) => m.TariffDetail),

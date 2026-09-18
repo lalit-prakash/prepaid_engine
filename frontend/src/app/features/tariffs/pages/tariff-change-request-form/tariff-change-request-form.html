@@ -1,0 +1,132 @@
+<div class="form-page">
+  <div class="page-header">
+    <h1>{{ requestId ? 'Edit Tariff Change' : 'New Tariff Change' }}</h1>
+    <p class="page-header__subtitle">
+      @if (currentTariffName) {
+        Revision of <strong>{{ currentTariffName }}</strong> — the current tariff stays Active and billing keeps using it
+        until this change is approved and its commencement date arrives.
+      } @else {
+        A brand-new tariff. It will not go live until a Utility user approves it and its commencement date arrives.
+      }
+    </p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-row"><div class="skeleton-card"></div></div>
+  } @else if (loadError()) {
+    <div class="error-panel">{{ loadError() }}</div>
+  } @else {
+    @if (formError()) {
+      <div class="error-panel">{{ formError() }}</div>
+    }
+    @if (validationErrors().length > 0) {
+      <div class="error-panel">
+        <strong>Fix these before submitting:</strong>
+        <ul>
+          @for (e of validationErrors(); track e) { <li>{{ e }}</li> }
+        </ul>
+      </div>
+    }
+
+    <section class="card">
+      <h2>Basic Info</h2>
+      <div class="field-grid">
+        <label class="field">
+          <span>Tariff Name</span>
+          <input type="text" [(ngModel)]="proposedName" name="proposedName" />
+        </label>
+        <label class="field">
+          <span>Category</span>
+          <select [(ngModel)]="proposedCategory" name="proposedCategory">
+            @for (c of categories; track c) { <option [ngValue]="c">{{ categoryLabel(c) }}</option> }
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Fixed Charges &amp; Prepaid Parameters</h2>
+      <div class="field-grid">
+        <label class="field">
+          <span>Fixed Charge (₹ / unit / month)</span>
+          <input type="number" step="0.01" [(ngModel)]="fixedCharge" name="fixedCharge" />
+        </label>
+        <label class="field">
+          <span>Prepaid Energy Rebate (%)</span>
+          <input type="number" step="0.01" [(ngModel)]="rebatePercent" name="rebatePercent" />
+        </label>
+        <label class="field">
+          <span>Emergency Credit Limit (₹)</span>
+          <input type="number" step="0.01" [(ngModel)]="emergencyCredit" name="emergencyCredit" />
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Vend Limits</h2>
+      <div class="field-grid">
+        <label class="field">
+          <span>Min Vend — Single Phase (₹)</span>
+          <input type="number" step="0.01" [(ngModel)]="minVendSingle" name="minVendSingle" />
+        </label>
+        <label class="field">
+          <span>Max Vend — Single Phase (₹)</span>
+          <input type="number" step="0.01" [(ngModel)]="maxVendSingle" name="maxVendSingle" />
+        </label>
+        <label class="field">
+          <span>Min Vend — Three Phase (₹)</span>
+          <input type="number" step="0.01" [(ngModel)]="minVendThree" name="minVendThree" />
+        </label>
+        <label class="field">
+          <span>Max Vend — Three Phase (₹)</span>
+          <input type="number" step="0.01" [(ngModel)]="maxVendThree" name="maxVendThree" />
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Energy Slabs</h2>
+      <p class="hint">First slab must start at 0; each slab must continue exactly where the previous one ends; only the last slab may be unbounded.</p>
+      <div class="slab-rows">
+        @for (slab of slabs; track $index) {
+          <div class="slab-row">
+            <label class="field"><span>From (kWh)</span><input type="number" step="0.001" [(ngModel)]="slab.fromKwh" [name]="'slabFrom' + $index" /></label>
+            <label class="field"><span>Up To (kWh, blank = unbounded)</span><input type="number" step="0.001" [(ngModel)]="slab.upToKwh" [name]="'slabTo' + $index" /></label>
+            <label class="field"><span>Rate (₹/kWh)</span><input type="number" step="0.0001" [(ngModel)]="slab.ratePerKwh" [name]="'slabRate' + $index" /></label>
+            <button type="button" class="btn-icon" (click)="removeSlab($index)" [disabled]="slabs.length === 1">Remove</button>
+          </div>
+        }
+      </div>
+      <button type="button" class="btn-secondary" (click)="addSlab()">+ Add Slab</button>
+    </section>
+
+    <section class="card">
+      <h2>Time-of-Day Periods (optional)</h2>
+      <div class="slab-rows">
+        @for (tou of touPeriods; track $index) {
+          <div class="tou-row">
+            <label class="field"><span>Label</span><input type="text" [(ngModel)]="tou.label" [name]="'touLabel' + $index" /></label>
+            <label class="field"><span>Start</span><input type="time" [(ngModel)]="tou.startTime" [name]="'touStart' + $index" /></label>
+            <label class="field"><span>End</span><input type="time" [(ngModel)]="tou.endTime" [name]="'touEnd' + $index" /></label>
+            <label class="field"><span>Rate (₹/kVAh)</span><input type="number" step="0.0001" [(ngModel)]="tou.ratePerKvah" [name]="'touRate' + $index" /></label>
+            <button type="button" class="btn-icon" (click)="removeTouPeriod($index)">Remove</button>
+          </div>
+        }
+      </div>
+      <button type="button" class="btn-secondary" (click)="addTouPeriod()">+ Add ToD Period</button>
+    </section>
+
+    <section class="card">
+      <h2>Review &amp; Submit</h2>
+      <label class="field">
+        <span>Change Reason (required to submit for approval)</span>
+        <textarea rows="2" [(ngModel)]="changeReason" name="changeReason"></textarea>
+      </label>
+      <div class="actions">
+        <a routerLink="/tariffs" class="btn-secondary">Cancel</a>
+        <button type="button" class="btn-secondary" (click)="saveDraft()" [disabled]="saving()">Save Draft</button>
+        <button type="button" class="btn-primary" (click)="submitForApproval()" [disabled]="saving()">Submit for Approval</button>
+      </div>
+    </section>
+  }
+</div>
