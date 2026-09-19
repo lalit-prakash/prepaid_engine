@@ -28,6 +28,16 @@ export interface ConnectivityCommandSummary {
   acknowledgedAt: string | null;
 }
 
+/** GET /api/v1/connectivity-commands/summary: counts computed by the database. */
+export interface ConnectivityCommandSummaryStats {
+  total: number;
+  disconnects: number;
+  reconnects: number;
+  acknowledged: number;
+  failedOrTimedOut: number;
+  pending: number;
+}
+
 /** GET /api/v1/connectivity-commands/{id}. */
 export interface ConnectivityCommandDetail {
   id: string;

@@ -2,88 +2,105 @@
   <div class="page-header">
     <h1>Notification History</h1>
     <p class="page-header__subtitle">
-      {{ notifications().length }} notification(s), queued automatically during billing, conversion, and recharge processing
+      {{ (stats()?.total ?? 0) | number }} notification(s), queued automatically during billing, conversion, and recharge processing
     </p>
   </div>
 
-  @if (loading()) {
+  <p class="no-gateway-note">
+    This project has no real SMS gateway — "Sent" means a real dispatcher would pick this up
+    next, never that an SMS actually left this system.
+  </p>
+
+  @if (stats(); as s) {
+    <section class="kpi-row kpi-row--filterable">
+      <pe-kpi-card label="Total Notifications" [value]="s.total" tone="primary" [clickable]="true" (click)="filterByStatus(null)" />
+      <pe-kpi-card label="Pending" [value]="s.pending" tone="warning" [clickable]="true" (click)="filterByStatus(NotificationStatus.Pending)" />
+      <pe-kpi-card label="Sent" [value]="s.sent" tone="success" [clickable]="true" (click)="filterByStatus(NotificationStatus.Sent)" />
+      <pe-kpi-card label="Failed" [value]="s.failed" tone="danger" [clickable]="true" (click)="filterByStatus(NotificationStatus.Failed)" />
+    </section>
+  } @else if (statsError()) {
+    <div class="error-panel">Could not load the summary counts from the API.</div>
+  } @else {
     <div class="skeleton-row">
       @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
     </div>
-  } @else if (error()) {
-    <div class="error-panel">{{ error() }}</div>
+  }
+
+  <div class="toolbar">
+    <input
+      #searchBox
+      type="search"
+      placeholder="Search account number, name, or message…"
+      [value]="searchTerm()"
+      (input)="onSearchInput($any($event.target).value)"
+    />
+    <select (change)="onEventTypeChange($any($event.target).value)">
+      <option value="" [selected]="eventTypeFilter() === null">All event types</option>
+      <option [value]="NotificationEventType.LowBalance" [selected]="eventTypeFilter() === NotificationEventType.LowBalance">Low Balance</option>
+      <option [value]="NotificationEventType.EmergencyCredit" [selected]="eventTypeFilter() === NotificationEventType.EmergencyCredit">Emergency Credit</option>
+      <option [value]="NotificationEventType.DisconnectionEligible" [selected]="eventTypeFilter() === NotificationEventType.DisconnectionEligible">Disconnection Eligible</option>
+      <option [value]="NotificationEventType.BillingProvisional" [selected]="eventTypeFilter() === NotificationEventType.BillingProvisional">Billing Provisional</option>
+      <option [value]="NotificationEventType.PrepaidConversionCompleted" [selected]="eventTypeFilter() === NotificationEventType.PrepaidConversionCompleted">Prepaid Conversion Completed</option>
+      <option [value]="NotificationEventType.AutoDisconnected" [selected]="eventTypeFilter() === NotificationEventType.AutoDisconnected">Auto-Disconnected</option>
+      <option [value]="NotificationEventType.AutoReconnected" [selected]="eventTypeFilter() === NotificationEventType.AutoReconnected">Auto-Reconnected</option>
+    </select>
+    @if (hasActiveFilters) { <button type="button" class="toolbar__clear" (click)="clearFilters(); searchBox.value = ''">Clear filters</button> }
+  </div>
+
+  @if (list.loading() && list.items().length === 0) {
+    <div class="skeleton-row"><div class="skeleton-card"></div></div>
+  } @else if (list.error()) {
+    <div class="error-panel">
+      {{ list.error() }}
+      <button type="button" class="toolbar__clear" (click)="list.load()">Retry</button>
+    </div>
+  } @else if (list.items().length === 0) {
+    <div class="empty-panel">{{ hasActiveFilters ? 'No notifications match these filters.' : 'No notifications yet.' }}</div>
   } @else {
-    <p class="no-gateway-note">
-      This project has no real SMS gateway — "Sent" means a real dispatcher would pick this up
-      next, never that an SMS actually left this system.
-    </p>
-
-    <section class="kpi-row">
-      <pe-kpi-card label="Total Notifications" [value]="notifications().length" tone="primary" />
-      <pe-kpi-card label="Pending" [value]="pendingCount" tone="warning" />
-      <pe-kpi-card label="Sent" [value]="sentCount" tone="success" />
-      <pe-kpi-card label="Failed" [value]="failedCount" tone="danger" />
-    </section>
-
-    <div class="toolbar">
-      <input
-        type="search"
-        placeholder="Search account number, name, or message…"
-        [value]="searchTerm()"
-        (input)="searchTerm.set($any($event.target).value)"
-      />
-      <select [value]="eventTypeFilter()" (change)="eventTypeFilter.set($any($event.target).value)">
-        <option value="">All event types</option>
-        <option [value]="NotificationEventType.LowBalance">Low Balance</option>
-        <option [value]="NotificationEventType.EmergencyCredit">Emergency Credit</option>
-        <option [value]="NotificationEventType.DisconnectionEligible">Disconnection Eligible</option>
-        <option [value]="NotificationEventType.BillingProvisional">Billing Provisional</option>
-        <option [value]="NotificationEventType.PrepaidConversionCompleted">Prepaid Conversion Completed</option>
-        <option [value]="NotificationEventType.AutoDisconnected">Auto-Disconnected</option>
-        <option [value]="NotificationEventType.AutoReconnected">Auto-Reconnected</option>
-      </select>
+    <div class="table-wrap" [class.table-wrap--loading]="list.loading()">
+      <table>
+        <thead>
+          <tr>
+            <th>Created</th>
+            <th>Account</th>
+            <th>Consumer</th>
+            <th>Event Type</th>
+            <th>Message</th>
+            <th>Status</th>
+            <th>Provider Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (n of list.items(); track n.id) {
+            <tr>
+              <td>{{ n.createdAt | date: 'medium' }}</td>
+              <td><a [routerLink]="['/consumers', n.accountNumber]">{{ n.accountNumber }}</a></td>
+              <td>{{ n.name }}</td>
+              <td>{{ eventTypeLabel(n.eventType) }}</td>
+              <td class="message">{{ n.message }}</td>
+              <td>
+                @switch (n.status) {
+                  @case (NotificationStatus.Sent) {
+                    <pe-status-badge label="Sent" tone="success" />
+                    @if (n.sentAt) { <div class="sent-at">{{ n.sentAt | date: 'medium' }}</div> }
+                  }
+                  @case (NotificationStatus.Failed) { <pe-status-badge label="Failed" tone="danger" /> }
+                  @default { <pe-status-badge label="Pending" tone="warning" /> }
+                }
+              </td>
+              <td class="mono">{{ n.providerReference ?? '—' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
     </div>
 
-    @if (filtered.length === 0) {
-      <div class="empty-panel">No notifications matched your search.</div>
-    } @else {
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Created</th>
-              <th>Account</th>
-              <th>Consumer</th>
-              <th>Event Type</th>
-              <th>Message</th>
-              <th>Status</th>
-              <th>Provider Reference</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (n of filtered; track n.id) {
-              <tr>
-                <td>{{ n.createdAt | date: 'medium' }}</td>
-                <td><a [routerLink]="['/consumers', n.accountNumber]">{{ n.accountNumber }}</a></td>
-                <td>{{ n.name }}</td>
-                <td>{{ eventTypeLabel(n.eventType) }}</td>
-                <td class="message">{{ n.message }}</td>
-                <td>
-                  @switch (n.status) {
-                    @case (NotificationStatus.Sent) {
-                      <pe-status-badge label="Sent" tone="success" />
-                      @if (n.sentAt) { <div class="sent-at">{{ n.sentAt | date: 'medium' }}</div> }
-                    }
-                    @case (NotificationStatus.Failed) { <pe-status-badge label="Failed" tone="danger" /> }
-                    @default { <pe-status-badge label="Pending" tone="warning" /> }
-                  }
-                </td>
-                <td class="mono">{{ n.providerReference ?? '—' }}</td>
-              </tr>
-            }
-          </tbody>
-        </table>
+      <div class="pager">
+        <span>{{ list.totalCount() | number }} notification(s){{ hasActiveFilters ? ' match' : '' }} · page {{ list.pageIndex() + 1 }}</span>
+        <span class="pager__buttons">
+          <button type="button" (click)="list.previous()" [disabled]="list.pageIndex() === 0 || list.loading()">Previous</button>
+          <button type="button" (click)="list.next()" [disabled]="!list.nextCursor() || list.loading()">Next</button>
+        </span>
       </div>
-    }
   }
 </div>

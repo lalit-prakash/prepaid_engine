@@ -18,6 +18,16 @@ export interface MeterCommandSummary {
   rmsReferenceId: string;
 }
 
+/** GET /api/v1/meter-commands/summary: counts computed by the database. */
+export interface MeterCommandSummaryStats {
+  total: number;
+  acknowledged: number;
+  failed: number;
+  timedOut: number;
+  pending: number;
+  retried: number;
+}
+
 /** GET /api/v1/meter-commands/{id}. */
 export interface MeterCommandDetail {
   id: string;

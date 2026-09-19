@@ -196,11 +196,28 @@ app.MapOperationsEndpoints();
 app.MapAuditEndpoints();
 app.MapAnalyticsEndpoints();
 app.MapMeterDataEndpoints();
+app.MapPagedListEndpoints();
+
+// Writes docs/API_REFERENCE.md from the registered endpoints, then exits (see Docs/ApiReference.cs).
+if (args.Length >= 1 && args[0] == "dump-endpoints")
+{
+    // The API description provider only sees endpoints once the host has started, so start it (on an ephemeral port) and stop it again.
+    await app.StartAsync();
+    await PrepaidEngine.Api.Docs.ApiReference.WriteAsync(app, args.Length >= 2 ? args[1] : "API_REFERENCE.md");
+    await app.StopAsync();
+    return;
+}
 
 // Deny-by-default guard: refuse to start if any write endpoint (other than sign-in) has no named authorization policy.
+// The endpoints are read from the app's own route builder: the DI EndpointDataSource is empty until the host starts, so a
+// guard that used it would check nothing. An empty list is itself an error, so the guard can never pass silently.
 {
-    var unprotected = app.Services.GetRequiredService<EndpointDataSource>().Endpoints
-        .OfType<RouteEndpoint>()
+    var endpoints = ((Microsoft.AspNetCore.Routing.IEndpointRouteBuilder)app).DataSources
+        .SelectMany(d => d.Endpoints).OfType<RouteEndpoint>().ToList();
+    if (endpoints.Count == 0)
+        throw new InvalidOperationException("The authorization guard found no endpoints to check.");
+
+    var unprotected = endpoints
         .Where(e => e.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.HttpMethodMetadata>() is { } m
                     && m.HttpMethods.Any(h => h is "POST" or "PUT" or "PATCH" or "DELETE")
                     && e.Metadata.GetMetadata<Microsoft.AspNetCore.Authorization.IAllowAnonymous>() is null

@@ -51,7 +51,7 @@ public static class AuthEndpoints
 
             var user = new AuthUser(name, principal.FindFirstValue(TokenService.DisplayNameClaim) ?? name, role);
             return Results.Ok(Response(tokens.Issue(user, authTime, now), user));
-        }).RequireAuthorization().WithName("RefreshToken");
+        }).RequireAuthorization("Authenticated").WithName("RefreshToken");
 
         // Sign-out is client-side (a token cannot be revoked yet), so this only records the event.
         app.MapPost("/api/v1/auth/logout", async (ClaimsPrincipal principal, PrepaidEngineDbContext db, ILogger<LoginThrottle> log) =>
