@@ -6,7 +6,7 @@ import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ConsumerService } from '../../../../core/services/consumer.service';
 import { BillService } from '../../../../core/services/bill.service';
-import { ConsumerSummary } from '../../../../core/models/consumer.model';
+import { ConsumerNetwork, ConsumerSummary } from '../../../../core/models/consumer.model';
 import { BillDetail } from '../../../../core/models/bill.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 import { categoryLabel } from '../../../../shared/utils/category-label';
@@ -26,6 +26,8 @@ import { exportToCsv } from '../../../../shared/utils/csv-export';
 })
 export class ChargeCalculationReport implements OnInit {
   protected readonly consumers = signal<ConsumerSummary[]>([]);
+  /** The selected consumer's place in the supply network, shown above the bills. */
+  protected readonly network = signal<ConsumerNetwork | null>(null);
   protected readonly loadingConsumers = signal(true);
   protected readonly consumerLoadError = signal<string | null>(null);
 
@@ -64,9 +66,11 @@ export class ChargeCalculationReport implements OnInit {
     this.billLoadError.set(null);
     this.hasRun.set(true);
     this.bills.set([]);
+    this.network.set(null);
 
     this.consumerService.getByAccountNumber(this.selectedAccountNumber).subscribe({
       next: (consumer) => {
+        this.network.set(consumer.network);
         if (consumer.bills.length === 0) {
           this.loadingBills.set(false);
           return;

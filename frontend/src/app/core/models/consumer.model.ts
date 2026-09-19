@@ -86,7 +86,19 @@ export interface ConsumerSummary {
   emergencyCreditLimit: number;
 }
 
+/** Where the consumer sits in the supply network; every level is null until the consumer is mapped to a DTR. */
+export interface ConsumerNetwork {
+  zone: string | null;
+  circle: string | null;
+  division: string | null;
+  subDivision: string | null;
+  substation: string | null;
+  feeder: string | null;
+  dtr: string | null;
+}
+
 export interface ConsumerDetail {
+  network: ConsumerNetwork;
   id: string;
   accountNumber: string;
   name: string;

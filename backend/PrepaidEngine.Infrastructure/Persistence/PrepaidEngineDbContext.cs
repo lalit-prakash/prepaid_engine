@@ -21,6 +21,13 @@ public class PrepaidEngineDbContext : DbContext
     }
 
     public DbSet<Consumer> Consumers => Set<Consumer>();
+    public DbSet<Zone> Zones => Set<Zone>();
+    public DbSet<Circle> Circles => Set<Circle>();
+    public DbSet<Division> Divisions => Set<Division>();
+    public DbSet<SubDivision> SubDivisions => Set<SubDivision>();
+    public DbSet<Substation> Substations => Set<Substation>();
+    public DbSet<Feeder> Feeders => Set<Feeder>();
+    public DbSet<Dtr> Dtrs => Set<Dtr>();
     public DbSet<SmartMeter> Meters => Set<SmartMeter>();
     public DbSet<ConsumptionReading> ConsumptionReadings => Set<ConsumptionReading>();
     public DbSet<Tariff> Tariffs => Set<Tariff>();

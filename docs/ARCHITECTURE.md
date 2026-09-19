@@ -112,7 +112,7 @@ exceptions to 400/409.
 
 ### 3.3 Persistence
 - One `PrepaidEngineDbContext`; entity configuration in `Persistence/Configurations`, migrations in
-  `Persistence/Migrations` (16 so far, latest `AddBillingRunLeaseAndCursor`).
+  `Persistence/Migrations` (17 so far, latest `AddNetworkHierarchy`).
 - **UTC everywhere:** a model convention converts every `DateTime` to UTC on write and marks it UTC on
   read. This fixes Npgsql rejecting `Kind=Unspecified` values (date-only JSON or query inputs) for the
   whole API in one place.
@@ -146,7 +146,8 @@ filtered in the database, page size 1–100 (default 25).
 | Conversion / reconciliation | `GET/POST conversions`, `conversions/{id}`, `GET/POST conversions/reverse`; `GET reconciliation-adjustments`, `.../{id}` |
 | Operations | `GET exceptions`, `exceptions/{id}`, `POST exceptions/{id}/resolve`; `GET notifications`; `GET sla`; `GET risk-indicators` |
 | Audit | `GET audit-entries` (optional `entityId`), `audit-entries/search`, `audit-entries/summary` |
-| Reports | `GET reports/billing`, `day-wise-rc-dc`, `day-wise-recharge`, `recharge-failures`, `meter-credit-failures` — each `{ rows, truncated, generatedAt, totals? }`, 5,000-row cap |
+| Reports | `GET reports/billing`, `day-wise-rc-dc`, `day-wise-recharge`, `recharge-failures`, `meter-credit-failures` — each `{ rows, truncated, generatedAt, totals? }`, 5,000-row cap. **Network hierarchy on every report:** all accept `zoneId`, `circleId`, `divisionId`, `subDivisionId`, `substationId`, `feederId`, `dtrId` filters; the three row-level reports return `zone`, `circle`, `division`, `subDivision`, `substation`, `feeder`, `dtr` on each row; the two day-wise reports take `level` (`zone`…`dtr`) and break each day down by that level in a `group` column |
+| Network | `GET network/nodes?level=&parentId=` — the nodes at one level under a parent, for the cascading report filters. `GET consumers/{account}` also returns the consumer's `network` path |
 | Analytics | `GET analytics/overview` — database-side aggregates over a bounded range |
 | Dashboard | `GET dashboard/summary` — consumer/wallet counts and sums, latest-day billing progress, attention counts plus the newest 10 items, and the 4 latest connectivity commands, all computed in SQL |
 | Platform | `GET /health`, `POST auth/login`, `POST auth/refresh`, `GET auth/whoami`, Swagger in Development |
@@ -331,7 +332,7 @@ Tracked on the project board: https://github.com/users/lalit-prakash/projects/5
   command contract).
 - Report jobs for large exports; a scheduler with billing run history and alerting (the billing run itself is now batched, claimed and resumable).
 - System Health, Integrations and Service Requests modules; tariff fields (code, taxes, thresholds).
-- Network hierarchy (circle/division/feeder) and area analytics; balance history; abnormal-consumption detection.
+- Network hierarchy is modelled and shown on every report, but there is no import or maintenance screen for it yet (development seeds a labelled demo network); area analytics on the Analytics page, balance history and abnormal-consumption detection are still open.
 - Capped (1,000-row) lists on Exceptions, Notifications, Billing Holds, Meter Credit, RC/DC, Conversion, Reconciliation, Meter Replacements and Consumer-based lookups (the charge-calculation report loads consumers) need keyset paging and search; the cap keeps them safe but not complete.
 - `Program.cs` is one large file (~3,900 lines); splitting it into endpoint modules is planned.
 - Load and failure testing has not been run.

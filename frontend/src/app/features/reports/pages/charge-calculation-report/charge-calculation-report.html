@@ -30,6 +30,13 @@
       </button>
     </section>
 
+    @if (network(); as n) {
+      <p class="network-line">
+        <strong>Network:</strong>
+        {{ n.zone ?? 'Not mapped' }} › {{ n.circle ?? '—' }} › {{ n.division ?? '—' }} › {{ n.subDivision ?? '—' }} ›
+        {{ n.substation ?? '—' }} › {{ n.feeder ?? '—' }} › {{ n.dtr ?? '—' }}
+      </p>
+    }
     @if (billLoadError()) {
       <div class="error-panel">{{ billLoadError() }}</div>
     } @else if (loadingBills()) {

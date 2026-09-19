@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { environment } from '../../../../../environments/environment';
+import { NETWORK_LEVELS, NetworkLevelId, NetworkNode, NetworkService } from '../../../../core/services/network.service';
 import { exportToCsv } from '../../../../shared/utils/csv-export';
 import { REPORT_DEFINITIONS, ReportColumn, ReportDefinition } from './report-definitions';
 
@@ -35,11 +36,23 @@ export class ReportViewer implements OnInit {
   protected readonly toDate = signal('');
   protected readonly status = signal('');
 
+  /** Network filter: one selected node id per level ('' = any) and the options each select offers. */
+  protected readonly levels = NETWORK_LEVELS;
+  protected readonly selected = signal<Record<string, string>>({});
+  protected readonly options = signal<Record<string, NetworkNode[]>>({});
+  /** Day-wise reports only: break each day down by this level ('' = no breakdown). */
+  protected readonly groupBy = signal('');
+
   protected readonly rows = computed(() => this.response()?.rows ?? []);
+  protected readonly columns = computed(() => {
+    const d = this.definition();
+    return d ? d.columns.filter((c) => !c.groupedOnly || !!this.groupBy()) : [];
+  });
 
   constructor(
     private readonly route: ActivatedRoute,
     private readonly http: HttpClient,
+    private readonly network: NetworkService,
   ) {}
 
   ngOnInit(): void {
@@ -51,12 +64,16 @@ export class ReportViewer implements OnInit {
       this.fromDate.set('');
       this.toDate.set('');
       this.status.set('');
+      this.selected.set({});
+      this.options.set({});
+      this.groupBy.set('');
       this.notFound.set(!definition);
       this.definition.set(definition);
       if (!definition) {
         this.loading.set(false);
         return;
       }
+      this.loadOptions(0);
       this.load();
     });
   }
@@ -71,16 +88,48 @@ export class ReportViewer implements OnInit {
     this.load();
   }
 
+  /** Picking a node at one level narrows the choices below it and clears anything already picked under it. */
+  onLevelChange(index: number, value: string): void {
+    const next: Record<string, string> = { ...this.selected() };
+    next[NETWORK_LEVELS[index].id] = value;
+    for (let i = index + 1; i < NETWORK_LEVELS.length; i++) next[NETWORK_LEVELS[i].id] = '';
+    this.selected.set(next);
+    this.loadOptions(index + 1);
+    this.load();
+  }
+
+  onGroupByChange(value: string): void {
+    this.groupBy.set(value);
+    this.load();
+  }
+
+  /** Loads the choices for one level from the node picked one level above it (all zones for the first). */
+  private loadOptions(index: number): void {
+    const cleared = { ...this.options() };
+    for (let i = index; i < NETWORK_LEVELS.length; i++) cleared[NETWORK_LEVELS[i].id] = [];
+    this.options.set(cleared);
+    if (index >= NETWORK_LEVELS.length) return;
+    const parent = index === 0 ? undefined : this.selected()[NETWORK_LEVELS[index - 1].id] || undefined;
+    if (index > 0 && !parent) return;
+    this.network.nodes(NETWORK_LEVELS[index].id as NetworkLevelId, parent).subscribe({
+      next: (nodes) => this.options.update((o) => ({ ...o, [NETWORK_LEVELS[index].id]: nodes })),
+      error: () => {},
+    });
+  }
+
   clearFilters(): void {
     this.fromDate.set('');
     this.toDate.set('');
     this.status.set('');
+    this.selected.set({});
+    this.groupBy.set('');
+    this.loadOptions(0);
     for (const el of Array.from(document.querySelectorAll<HTMLInputElement>('.report-filters input[type=date]'))) el.value = '';
     this.load();
   }
 
   protected get hasFilters(): boolean {
-    return !!(this.fromDate() || this.toDate() || this.status());
+    return !!(this.fromDate() || this.toDate() || this.status() || this.groupBy() || Object.values(this.selected()).some((v) => !!v));
   }
 
   retry(): void {
@@ -102,7 +151,7 @@ export class ReportViewer implements OnInit {
 
   protected get hasTotals(): boolean {
     const d = this.definition();
-    return !!d && d.columns.some((c) => this.total(c) !== null);
+    return !!d && this.columns().some((c) => this.total(c) !== null);
   }
 
   protected link(row: Record<string, unknown>, col: ReportColumn): string | null {
@@ -114,8 +163,8 @@ export class ReportViewer implements OnInit {
     if (!d) return;
     exportToCsv(
       `${d.id}-${new Date().toISOString().slice(0, 10)}.csv`,
-      d.columns.map((c) => c.label),
-      this.rows().map((row) => d.columns.map((c) => this.cell(row, c) ?? '')),
+      this.columns().map((c) => c.label),
+      this.rows().map((row) => this.columns().map((c) => this.cell(row, c) ?? '')),
     );
   }
 
@@ -128,6 +177,11 @@ export class ReportViewer implements OnInit {
     if (this.fromDate()) params['from'] = this.fromDate();
     if (this.toDate()) params['to'] = this.toDate();
     if (this.status()) params['status'] = this.status();
+    if (this.groupBy()) params['level'] = this.groupBy();
+    for (const level of NETWORK_LEVELS) {
+      const id = this.selected()[level.id];
+      if (id) params[level.param] = id;
+    }
     this.http.get<ReportResponse>(`${environment.apiBaseUrl}/api/v1/reports/${d.endpoint}`, { params }).subscribe({
       next: (r) => {
         this.response.set(r);
