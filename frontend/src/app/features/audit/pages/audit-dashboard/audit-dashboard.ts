@@ -11,8 +11,8 @@ const PAGE_SIZE = 25;
  * Audit Logs. Search, filters and paging run on the server (GET /api/v1/audit-entries/search,
  * keyset-paginated newest first). Read-only by design: an audit entry is never edited or deleted
  * from the UI, and the API has no endpoint that could. Entries record actor, action, entity and
- * old/new values; actor role and correlation ID are not captured by the backend yet, so they are
- * not shown.
+ * old/new values, plus the actor's role, source address and a correlation ID that ties together everything
+ * recorded for one request (system actions and older entries have none of these).
  */
 @Component({
   selector: 'pe-audit-dashboard',

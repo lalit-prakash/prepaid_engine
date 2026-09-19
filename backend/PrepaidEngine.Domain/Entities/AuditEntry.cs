@@ -24,6 +24,15 @@ public sealed class AuditEntry
     public string? Details { get; }
     public DateTime OccurredAt { get; }
 
+    /// <summary>Role of the signed-in user who did it (null for system actions).</summary>
+    public string? ActorRole { get; private set; }
+
+    /// <summary>Client address the request came from (null for system actions).</summary>
+    public string? SourceIp { get; private set; }
+
+    /// <summary>Id shared by every audit entry and log line written for one request, so a single action can be traced end to end.</summary>
+    public string? CorrelationId { get; private set; }
+
     public AuditEntry(
         Guid id,
         string entityType,
@@ -54,6 +63,17 @@ public sealed class AuditEntry
         NewValue = newValue;
         Details = details;
     }
+
+    /// <summary>Records who and where the entry came from. Fills only what is still empty, so a value set explicitly is never overwritten.</summary>
+    public void AttachContext(string? actorRole, string? sourceIp, string? correlationId)
+    {
+        ActorRole ??= Trim(actorRole, 50);
+        SourceIp ??= Trim(sourceIp, 64);
+        CorrelationId ??= Trim(correlationId, 64);
+    }
+
+    private static string? Trim(string? value, int max)
+        => string.IsNullOrWhiteSpace(value) ? null : (value.Length > max ? value[..max] : value);
 
     // EF Core / serialization
     private AuditEntry()

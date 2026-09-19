@@ -26,7 +26,7 @@ public static class SecurityExtensions
         });
 
         builder.Services.AddCors(c => c.AddPolicy(CorsPolicy, p =>
-            p.WithOrigins(options.AllowedOrigins).WithHeaders("Authorization", "Content-Type").WithMethods("GET", "POST", "PUT", "DELETE").WithExposedHeaders(ListCap.TruncatedHeader)));
+            p.WithOrigins(options.AllowedOrigins).WithMethods("GET", "POST", "PUT", "DELETE").WithExposedHeaders(ListCap.TruncatedHeader, Correlation.HeaderName).WithHeaders("Authorization", "Content-Type", Correlation.HeaderName)));
 
         builder.Services.AddRateLimiter(r =>
         {
@@ -75,9 +75,15 @@ public static class SecurityExtensions
 
         app.Use(async (ctx, next) =>
         {
+            var correlationId = Correlation.Resolve(ctx.Request.Headers[Correlation.HeaderName].ToString());
+            ctx.Items[Correlation.ItemKey] = correlationId;
+            var logger = ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Request");
+            using var scope = logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = correlationId });
+
             ctx.Response.OnStarting(() =>
             {
                 var h = ctx.Response.Headers;
+                h[Correlation.HeaderName] = correlationId;
                 h["X-Content-Type-Options"] = "nosniff";
                 h["X-Frame-Options"] = "DENY";
                 h["Referrer-Policy"] = "no-referrer";

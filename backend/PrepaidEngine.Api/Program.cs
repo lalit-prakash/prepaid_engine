@@ -39,8 +39,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddDbContext<PrepaidEngineDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("PrepaidEngine")));
+builder.Services.AddDbContext<PrepaidEngineDbContext>((serviceProvider, options) =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("PrepaidEngine"))
+        .AddInterceptors(serviceProvider.GetRequiredService<AuditContextInterceptor>()));
 
 // TODO(RMS integration): swap for a real HTTP-based IRmsClient adapter once RMS's API
 // contract is available; keep MockRmsClient registered for local dev / tests until then.
@@ -100,6 +101,8 @@ else if (jwtOptions.Key.Length < 32)
     throw new InvalidOperationException("Jwt:Key must be at least 32 characters.");
 }
 builder.Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(jwtOptions));
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<AuditContextInterceptor>();
 builder.Services.AddSingleton<UserStore>();
 builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddSingleton<TokenService>();
@@ -1655,7 +1658,8 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
     PrepaidEngineDbContext db,
     IRmsClient rmsClient,
     IMeterCommandClient meterCommandClient,
-    IEmergencyCreditGuard emergencyCreditGuard) =>
+    IEmergencyCreditGuard emergencyCreditGuard,
+    ClaimsPrincipal user) =>
 {
     if (request.Amount <= 0)
         return Results.BadRequest(new { error = "Amount must be positive." });
@@ -1758,6 +1762,8 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
             // for an auto-reconnect independently of whether the meter command itself succeeded.
             await emergencyCreditGuard.EvaluateAsync(consumer);
 
+            Audit(db, nameof(RechargeTransaction), recharge.Id.ToString(), "RECHARGE_COMPLETED", user.Identity?.Name ?? "unknown",
+                newValue: $"Rs.{recharge.Amount}", details: $"Account {consumer.AccountNumber}, RMS ref {recharge.RmsReferenceId}, meter credit {meterCommand.Status}.");
             await db.SaveChangesAsync();
             return Results.Ok(new
             {
@@ -1769,12 +1775,16 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
 
         case RmsRechargeStatus.Failed:
             recharge.MarkFailed(DateTime.UtcNow);
+            Audit(db, nameof(RechargeTransaction), recharge.Id.ToString(), "RECHARGE_FAILED", user.Identity?.Name ?? "unknown",
+                newValue: $"Rs.{recharge.Amount}", details: $"Account {consumer.AccountNumber}, RMS ref {recharge.RmsReferenceId}: {rmsResult.Message}");
             await db.SaveChangesAsync();
             return Results.Json(
                 new { recharge.RmsReferenceId, Status = recharge.Status.ToString(), rmsResult.Message },
                 statusCode: StatusCodes.Status402PaymentRequired);
 
         case RmsRechargeStatus.Pending:
+            Audit(db, nameof(RechargeTransaction), recharge.Id.ToString(), "RECHARGE_PENDING", user.Identity?.Name ?? "unknown",
+                newValue: $"Rs.{recharge.Amount}", details: $"Account {consumer.AccountNumber}, RMS ref {recharge.RmsReferenceId}.");
             await db.SaveChangesAsync();
             return Results.Accepted(value: new { recharge.RmsReferenceId, Status = recharge.Status.ToString(), rmsResult.Message });
 
@@ -2533,6 +2543,7 @@ app.MapGet("/api/v1/audit-entries/search", async (
             EF.Functions.ILike(a.EntityId, prefix) ||
             EF.Functions.ILike(a.Action, prefix) ||
             EF.Functions.ILike(a.Actor, prefix) ||
+            (a.CorrelationId != null && EF.Functions.ILike(a.CorrelationId, prefix)) ||
             (a.Details != null && EF.Functions.ILike(a.Details, contains)));
     }
 
@@ -2550,7 +2561,7 @@ app.MapGet("/api/v1/audit-entries/search", async (
     var rows = await query
         .OrderByDescending(a => a.OccurredAt).ThenByDescending(a => a.Id)
         .Take(size + 1)
-        .Select(a => new { a.Id, a.EntityType, a.EntityId, a.Action, a.Actor, a.OldValue, a.NewValue, a.Details, a.OccurredAt })
+        .Select(a => new { a.Id, a.EntityType, a.EntityId, a.Action, a.Actor, a.ActorRole, a.SourceIp, a.CorrelationId, a.OldValue, a.NewValue, a.Details, a.OccurredAt })
         .ToListAsync();
 
     var hasMore = rows.Count > size;
@@ -3279,27 +3290,29 @@ app.MapGet("/api/v1/meter-data/alarms", async (HttpContext http, Guid? consumerI
 .WithName("ListMeterAlarms")
 .RequireAuthorization();
 
-app.MapPost("/api/v1/meter-data/alarms/{id:guid}/acknowledge", async (Guid id, AcknowledgeAlarmRequest request, PrepaidEngineDbContext db) =>
+app.MapPost("/api/v1/meter-data/alarms/{id:guid}/acknowledge", async (Guid id, AcknowledgeAlarmRequest request, PrepaidEngineDbContext db, ClaimsPrincipal user) =>
 {
     var alarm = await db.MeterAlarms.FirstOrDefaultAsync(a => a.Id == id);
     if (alarm is null) return Results.NotFound();
 
     try
     {
-        alarm.Acknowledge(request.AcknowledgedBy, DateTime.UtcNow);
+        // The acknowledger is the authenticated user; a name supplied in the request body is ignored so it cannot be forged.
+        alarm.Acknowledge(user.Identity?.Name ?? "unknown", DateTime.UtcNow);
     }
     catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
     {
         return Results.BadRequest(new { error = ex.Message });
     }
 
+    Audit(db, nameof(MeterAlarm), alarm.Id.ToString(), "ALARM_ACKNOWLEDGED", user.Identity?.Name ?? "unknown");
     await db.SaveChangesAsync();
     return Results.Ok(new { alarm.Id, alarm.Status, alarm.AcknowledgedAt, alarm.AcknowledgedBy });
 })
 .WithName("AcknowledgeMeterAlarm")
 .RequireAuthorization("Operations");
 
-app.MapPost("/api/v1/meter-data/alarms/{id:guid}/resolve", async (Guid id, ResolveAlarmRequest request, PrepaidEngineDbContext db) =>
+app.MapPost("/api/v1/meter-data/alarms/{id:guid}/resolve", async (Guid id, ResolveAlarmRequest request, PrepaidEngineDbContext db, ClaimsPrincipal user) =>
 {
     var alarm = await db.MeterAlarms.FirstOrDefaultAsync(a => a.Id == id);
     if (alarm is null) return Results.NotFound();
@@ -3313,6 +3326,7 @@ app.MapPost("/api/v1/meter-data/alarms/{id:guid}/resolve", async (Guid id, Resol
         return Results.BadRequest(new { error = ex.Message });
     }
 
+    Audit(db, nameof(MeterAlarm), alarm.Id.ToString(), "ALARM_RESOLVED", user.Identity?.Name ?? "unknown", details: request.ResolutionNote);
     await db.SaveChangesAsync();
     return Results.Ok(new { alarm.Id, alarm.Status, alarm.ResolvedAt, alarm.ResolutionNote });
 })
@@ -3372,26 +3386,32 @@ app.MapGet("/api/v1/meter-data/energy-validation", async (HttpContext http, Guid
 // which receipt-time boundary to bill against (defaults to 8:00 AM / 12:00 PM of `billingDate`'s
 // following day, matching the worker's own real cutoffs) — see IBillingEngineService's doc
 // comment for the full stage-1-vs-stage-2 rule.
-app.MapPost("/api/v1/billing/daily/{billingDate}/stage1", async (DateOnly billingDate, DateTime? cutoff, IBillingEngineService billingEngine) =>
+app.MapPost("/api/v1/billing/daily/{billingDate}/stage1", async (DateOnly billingDate, DateTime? cutoff, IBillingEngineService billingEngine, PrepaidEngineDbContext db, ClaimsPrincipal user) =>
 {
     var stage1Cutoff = cutoff ?? billingDate.AddDays(1).ToDateTime(new TimeOnly(8, 0), DateTimeKind.Utc);
     var results = await billingEngine.ProcessDailyStage1Async(billingDate, stage1Cutoff);
+    Audit(db, "BillingRun", billingDate.ToString("yyyy-MM-dd"), "BILLING_STAGE1_TRIGGERED", user.Identity?.Name ?? "unknown",
+        details: $"Manual trigger for {billingDate:yyyy-MM-dd}; {results.Count(r => !r.Skipped)} consumers processed, {results.Count(r => r.Skipped)} skipped.");
+    await db.SaveChangesAsync();
     return Results.Ok(results);
 })
 .WithName("ProcessDailyBillingStage1")
 .RequireAuthorization("DataAdmin");
 
-app.MapPost("/api/v1/billing/daily/{billingDate}/stage2", async (DateOnly billingDate, DateTime? cutoff, IBillingEngineService billingEngine) =>
+app.MapPost("/api/v1/billing/daily/{billingDate}/stage2", async (DateOnly billingDate, DateTime? cutoff, IBillingEngineService billingEngine, PrepaidEngineDbContext db, ClaimsPrincipal user) =>
 {
     var stage2Cutoff = cutoff ?? billingDate.AddDays(1).ToDateTime(new TimeOnly(12, 0), DateTimeKind.Utc);
     var results = await billingEngine.ProcessDailyStage2Async(billingDate, stage2Cutoff);
+    Audit(db, "BillingRun", billingDate.ToString("yyyy-MM-dd"), "BILLING_STAGE2_TRIGGERED", user.Identity?.Name ?? "unknown",
+        details: $"Manual trigger for {billingDate:yyyy-MM-dd}; {results.Count(r => !r.Skipped)} consumers processed, {results.Count(r => r.Skipped)} skipped.");
+    await db.SaveChangesAsync();
     return Results.Ok(results);
 })
 .WithName("ProcessDailyBillingStage2")
 .RequireAuthorization("DataAdmin");
 
 app.MapPost("/api/v1/consumers/{consumerId:guid}/meter-replacement", async (
-    Guid consumerId, MeterReplacementApiRequest request, IBillingEngineService billingEngine) =>
+    Guid consumerId, MeterReplacementApiRequest request, IBillingEngineService billingEngine, PrepaidEngineDbContext db, ClaimsPrincipal user) =>
 {
     if (string.IsNullOrWhiteSpace(request.NewMeterNumber))
         return Results.BadRequest(new { error = "A new meter number is required." });
@@ -3403,6 +3423,10 @@ app.MapPost("/api/v1/consumers/{consumerId:guid}/meter-replacement", async (
         var assignment = await billingEngine.ReplaceMeterAsync(consumerId, new MeterReplacementRequest(
             request.NewMeterNumber, request.Phase, request.EffectiveFrom,
             request.OldMeterClosingReadingKwh, request.NewMeterOpeningReadingKwh, request.Reason));
+
+        Audit(db, nameof(MeterAssignment), assignment.Id.ToString(), "METER_REPLACED", user.Identity?.Name ?? "unknown",
+            oldValue: assignment.OldMeterId.ToString(), newValue: assignment.NewMeterId.ToString(), details: request.Reason);
+        await db.SaveChangesAsync();
 
         return Results.Ok(new
         {

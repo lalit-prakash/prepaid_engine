@@ -18,7 +18,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const isApiCall = !!environment.apiBaseUrl && req.url.startsWith(environment.apiBaseUrl);
   const header = auth.authHeaderValue;
   const authedReq = isApiCall && header
-    ? req.clone({ setHeaders: { Authorization: header } })
+    ? req.clone({ setHeaders: { Authorization: header, 'X-Correlation-Id': crypto.randomUUID() } })
     : req;
 
   return next(authedReq).pipe(

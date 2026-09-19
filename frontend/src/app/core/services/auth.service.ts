@@ -63,6 +63,14 @@ export class AuthService implements OnDestroy {
       .pipe(tap((res) => this.store(res)));
   }
 
+  /** Signs out on request: tells the API (so the sign-out is audited), then clears the local session. */
+  logout(): void {
+    if (this.hasLiveToken()) {
+      this.http.post(`${environment.apiBaseUrl}/api/v1/auth/logout`, {}).subscribe({ error: () => {} });
+    }
+    this.signOut();
+  }
+
   signOut(): void {
     clearTimeout(this.renewTimer);
     [TOKEN_KEY, EXPIRY_KEY, ROLE_KEY, USER_KEY].forEach((k) => sessionStorage.removeItem(k));

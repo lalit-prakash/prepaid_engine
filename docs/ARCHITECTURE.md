@@ -112,7 +112,7 @@ exceptions to 400/409.
 
 ### 3.3 Persistence
 - One `PrepaidEngineDbContext`; entity configuration in `Persistence/Configurations`, migrations in
-  `Persistence/Migrations` (17 so far, latest `AddNetworkHierarchy`).
+  `Persistence/Migrations` (18 so far, latest `AddAuditContextColumns`).
 - **UTC everywhere:** a model convention converts every `DateTime` to UTC on write and marks it UTC on
   read. This fixes Npgsql rejecting `Kind=Unspecified` values (date-only JSON or query inputs) for the
   whole API in one place.
@@ -145,12 +145,12 @@ filtered in the database, page size 1–100 (default 25).
 | Meter data | GET + `search` for `dlp`, `bp`, `ls`, `events`, `alarms`; `GET ip/latest`; POST ingestion for each (for MDMS); alarm `acknowledge`/`resolve`; `dlp-completeness`; energy validation; billing holds (`billing-holds`, `clear`, `clear-bulk`) |
 | Conversion / reconciliation | `GET/POST conversions`, `conversions/{id}`, `GET/POST conversions/reverse`; `GET reconciliation-adjustments`, `.../{id}` |
 | Operations | `GET exceptions`, `exceptions/{id}`, `POST exceptions/{id}/resolve`; `GET notifications`; `GET sla`; `GET risk-indicators` |
-| Audit | `GET audit-entries` (optional `entityId`), `audit-entries/search`, `audit-entries/summary` |
+| Audit | `GET audit-entries` (optional `entityId`), `audit-entries/search` (rows carry `actorRole`, `sourceIp`, `correlationId`; `q` also matches a correlation id), `audit-entries/summary` |
 | Reports | `GET reports/billing`, `day-wise-rc-dc`, `day-wise-recharge`, `recharge-failures`, `meter-credit-failures` — each `{ rows, truncated, generatedAt, totals? }`, 5,000-row cap. **Network hierarchy on every report:** all accept `zoneId`, `circleId`, `divisionId`, `subDivisionId`, `substationId`, `feederId`, `dtrId` filters; the three row-level reports return `zone`, `circle`, `division`, `subDivision`, `substation`, `feeder`, `dtr` on each row; the two day-wise reports take `level` (`zone`…`dtr`) and break each day down by that level in a `group` column |
 | Network | `GET network/nodes?level=&parentId=` — the nodes at one level under a parent, for the cascading report filters; `GET network/summary` — counts per level and mapped/unmapped consumers; `POST network/import` — load the hierarchy from flat rows (one path down to a DTR per row); `POST network/consumer-mapping` — map consumers to DTRs by account number and DTR code. Both POSTs take `{ rows, dryRun }`, need the `DataAdmin` policy, accept up to 10,000 rows, match nodes by code (new code creates, changed name renames, a code under a different parent is an error), are **all-or-nothing** (any bad row saves nothing), report every problem by row, and write one audit entry when saved. `GET consumers/{account}` also returns the consumer's `network` path |
 | Analytics | `GET analytics/overview` — database-side aggregates over a bounded range |
 | Dashboard | `GET dashboard/summary` — consumer/wallet counts and sums, latest-day billing progress, attention counts plus the newest 10 items, and the 4 latest connectivity commands, all computed in SQL |
-| Platform | `GET /health`, `POST auth/login`, `POST auth/refresh`, `GET auth/whoami`, Swagger in Development |
+| Platform | `GET /health`, `POST auth/login`, `POST auth/refresh`, `POST auth/logout` (records the event), `GET auth/whoami`, Swagger in Development |
 
 Several endpoints exist for external systems (RMS conversions, MDMS ingestion, billing daily-export)
 and have no UI caller by design.
@@ -288,7 +288,7 @@ See [assumptions-and-security.md](assumptions-and-security.md) for the checklist
 parameterised queries only, decimal money, no secrets in source (`CHANGE_ME` placeholders + user-secrets),
 constant-time credential comparison, server-side role enforcement on governance actions, and audit of
 governance and operational actions. **Not production-ready:** users are configured rather than stored, tokens cannot be revoked, role assignment is by configuration
-and audit entries lack actor role and correlation id.
+and audit entries are not tamper-evident.
 
 ## 8. Configuration
 | Key | Purpose |
@@ -328,7 +328,7 @@ See the repository [README](../README.md).
 Tracked on the project board: https://github.com/users/lalit-prakash/projects/5
 
 - MFA, token revocation, and a user/role management screen with users stored in the database.
-- Audit entries lack actor role, correlation id and source; login events go to the application log but are not audited.
+- Audit entries are not tamper-evident (no hash chain) and have no retention or archiving policy; system actions carry no role or address.
 - Recharge outbox and a background MDM command worker; real MDM/HES adapter (needs the endpoint and
   command contract).
 - Report jobs for large exports; a scheduler with billing run history and alerting (the billing run itself is now batched, claimed and resumable).
