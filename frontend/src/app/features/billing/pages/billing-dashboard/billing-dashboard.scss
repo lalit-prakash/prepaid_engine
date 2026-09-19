@@ -73,3 +73,43 @@ tr.row-clickable:hover td { background: var(--color-primary-lighter); }
   text-align: center;
 }
 .error-panel { color: var(--color-danger-dark); }
+
+.toolbar { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
+.toolbar select, .toolbar__date input {
+  padding: 8px var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  font-size: var(--font-size-body);
+  background: var(--surface-card);
+  color: var(--text-primary);
+}
+.toolbar__date { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-meta); color: var(--text-secondary); }
+.toolbar__clear {
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 6px var(--space-3);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.cell-meta { color: var(--text-muted); font-size: var(--font-size-meta); margin-left: var(--space-1); }
+.table-wrap--loading { opacity: 0.6; }
+tr.row-clickable:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--font-size-meta);
+}
+.pager__buttons { display: inline-flex; gap: var(--space-2); }
+.pager button {
+  padding: 6px var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.pager button:disabled { opacity: 0.4; cursor: not-allowed; }
