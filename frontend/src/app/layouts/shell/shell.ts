@@ -99,8 +99,6 @@ export class Shell implements OnInit {
         { label: 'Audit Logs', path: '/audit', icon: 'scroll' },
         { label: 'System Settings', path: '/system-settings', icon: 'gear', stub: true },
         { label: 'Notifications', path: '/notifications', icon: 'bell' },
-        { label: 'System Health', path: '/system-health', icon: 'signal', stub: true },
-        { label: 'Automation Center', path: '/automation', icon: 'robot', stub: true },
       ],
     },
   ];
