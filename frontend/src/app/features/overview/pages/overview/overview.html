@@ -1,4 +1,5 @@
 <div class="overview">
+  <div class="top">
   <header class="hero">
     <div class="hero__text">
       <h1>{{ greeting }}, {{ operatorName }}!</h1>
@@ -23,7 +24,7 @@
     </div>
   } @else {
     <section class="kpi-row" aria-label="Key performance indicators">
-      <pe-kpi-card [tile]="true" label="Prepaid Consumers" [value]="consumers().length" tone="primary" icon="users"
+      <pe-kpi-card [tile]="true" label="Consumers" [value]="consumers().length" tone="primary" icon="users"
         [sublabel]="activeCount + ' active'" [clickable]="true" (click)="goToConsumers()" />
       <pe-kpi-card [tile]="true" label="Wallet Balance" [value]="'₹' + (totalWalletBalance | number:'1.0-0')" tone="success" icon="wallet"
         [sublabel]="'across ' + consumers().length + ' wallets'" />
@@ -38,7 +39,10 @@
         <pe-kpi-card [tile]="true" label="Billing (DLP)" value="" [unavailable]="true" tone="analytic" icon="receipt" />
       }
     </section>
+  }
+  </div>
 
+  @if (!loading() && !error()) {
     <section class="row row--trend">
       <div class="panel panel--trend">
         <div class="panel__header">

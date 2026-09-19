@@ -3,6 +3,8 @@ $gap: 12px;
 .overview { display: flex; flex-direction: column; gap: $gap; min-width: 0; }
 
 /* ---------------------------------------------------------------- hero */
+.top { border-radius: var(--radius-lg); overflow: hidden; background: #e6eefc; box-shadow: var(--shadow-sm); }
+.top .kpi-row, .top .skeleton-row, .top .error-panel { margin: 10px; }
 .hero {
   position: relative;
   isolation: isolate;
@@ -10,9 +12,8 @@ $gap: 12px;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-5);
-  padding: 18px 28px;
-  min-height: 124px;
-  border-radius: var(--radius-lg);
+  padding: 16px 28px;
+  min-height: 112px;
   overflow: hidden;
   color: var(--text-primary);
 }
@@ -24,14 +25,14 @@ $gap: 12px;
   inset: 0;
   z-index: -2;
   background: url('/images/hero-transmission-towers.jpg') right 22% / cover no-repeat;
-  filter: saturate(0.8) brightness(1.15);
+  filter: saturate(0.55) brightness(1.1) hue-rotate(-12deg);
 }
 .hero::after {
   content: '';
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(90deg, #e9f1ff 0%, rgba(233, 241, 255, 0.96) 30%, rgba(196, 218, 250, 0.55) 60%, rgba(196, 218, 250, 0.3) 100%);
+  background: linear-gradient(90deg, #e6eefc 0%, rgba(230, 238, 252, 0.96) 32%, rgba(150, 178, 240, 0.5) 62%, rgba(140, 170, 240, 0.4) 100%);
 }
 .hero__text h1 { font-size: 40px; line-height: 1.1; letter-spacing: -0.02em; color: #0f1f3d; margin: 0 0 6px; }
 .hero__subtitle { color: #33415c; font-size: 15px; margin: 0; }
