@@ -15,6 +15,7 @@ public class SmartMeterConfiguration : IEntityTypeConfiguration<SmartMeter>
             .IsRequired()
             .HasMaxLength(50);
         builder.HasIndex(m => m.MeterNumber).IsUnique();
+        builder.HasIndex(m => m.MeterNumber, "IX_Meters_MeterNumber_trgm").HasMethod("gin").HasOperators("gin_trgm_ops");
 
         builder.Property(m => m.Phase)
             .HasConversion<string>()

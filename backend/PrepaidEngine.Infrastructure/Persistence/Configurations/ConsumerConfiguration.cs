@@ -47,6 +47,11 @@ public class ConsumerConfiguration : IEntityTypeConfiguration<Consumer>
         builder.Property(c => c.MobileNumber)
             .HasMaxLength(20);
 
+        // Trigram indexes for the server-side search box (ILIKE prefix on account and mobile, contains on name).
+        builder.HasIndex(c => c.AccountNumber, "IX_Consumers_AccountNumber_trgm").HasMethod("gin").HasOperators("gin_trgm_ops");
+        builder.HasIndex(c => c.MobileNumber, "IX_Consumers_MobileNumber_trgm").HasMethod("gin").HasOperators("gin_trgm_ops");
+        builder.HasIndex(c => c.Name, "IX_Consumers_Name_trgm").HasMethod("gin").HasOperators("gin_trgm_ops");
+
         // One-to-one: a consumer is linked to a single smart meter.
         builder.HasOne(c => c.Meter)
             .WithOne()

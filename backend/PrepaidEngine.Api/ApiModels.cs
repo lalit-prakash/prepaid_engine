@@ -182,3 +182,5 @@ public record ResolveAlarmRequest(string ResolutionNote);
 public record EvaluateEnergyValidationRequest(Guid ConsumerId, Guid MeterId, DateOnly ValidationDate);
 
 // Exposed so WebApplicationFactory-based integration tests can bootstrap this Api project.
+
+public record UpdateMobileRequest(string? MobileNumber);

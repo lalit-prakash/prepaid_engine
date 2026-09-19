@@ -113,10 +113,10 @@ public class Consumer
     /// <summary>Sets the notification destination.</summary>
     public void SetMobileNumber(string mobileNumber)
     {
-        if (string.IsNullOrWhiteSpace(mobileNumber))
-            throw new ArgumentException("A mobile number is required.", nameof(mobileNumber));
+        if (!PrepaidEngine.Domain.MobileNumber.TryNormalize(mobileNumber, out var normalized))
+            throw new ArgumentException("Enter a valid 10-digit Indian mobile number (starting 6-9), with or without +91.", nameof(mobileNumber));
 
-        MobileNumber = mobileNumber;
+        MobileNumber = normalized;
     }
 
     /// <summary>Swaps the consumer's physical meter (see <see cref="MeterAssignment"/> for the

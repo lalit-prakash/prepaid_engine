@@ -146,7 +146,7 @@ filtered in the database, page size 1–100 (default 25).
 
 | Module | Endpoints |
 |---|---|
-| Consumers | `GET consumers` (capped at 1,000 rows), `GET consumers/search`, `GET consumers/{account}`, `POST consumers/{account}/recharge`, `.../disconnect`, `.../reconnect`, `.../reconciliation-adjustments`, `POST consumers/{id}/meter-replacement`, `GET meter-replacements`, `GET consumers/{id}/notifications` |
+| Consumers | `GET consumers` (capped at 1,000 rows), `GET consumers/search`, `GET consumers/{account}`, `PUT consumers/{account}/mobile`, `POST consumers/{account}/recharge`, `.../disconnect`, `.../reconnect`, `.../reconciliation-adjustments`, `POST consumers/{id}/meter-replacement`, `GET meter-replacements`, `GET consumers/{id}/notifications` |
 | Recharge / meter credit | `GET recharges`, `recharges/search`, `recharges/summary`, `recharges/{id}`; `GET meter-commands`, `meter-commands/{id}`, `POST meter-commands/{id}/retry` |
 | RC / DC | `GET connectivity-commands`, `connectivity-commands/{id}`, `POST connectivity-commands/{id}/retry` |
 | Billing | `GET bills`, `bills/search`, `bills/summary`, `bills/{id}` (with per-slab breakdown), `POST billing/daily/{date}/stage1|stage2`, `GET billing-reconciliation/daily-export`, `POST calculation-workbench/simulate` |
@@ -246,6 +246,9 @@ acknowledgement. Postpaid→prepaid conversions arrive in batches from RMS and d
 `PaymentModeChangeCommand` (MDMS→HES→meter). Reconciliation adjustments are signed wallet entries tagged
 distinctly in the ledger. All three write audit entries.
 
+### Consumer mobile numbers
+A consumer's mobile number is captured with `PUT consumers/{account}/mobile` (`Operations` policy; the Consumer 360 profile has a Change/Add control for those roles). The number is normalised to `+91` and ten digits starting 6 to 9 (spaces, dashes, brackets and a leading `+91`, `91` or `0` are accepted), a bad number gets a 400 with a message, and only the last four digits go into the audit trail (`MOBILE_UPDATED`). It is searchable from the Consumers list. There is no bulk import for mobile numbers yet.
+
 ## 5. Scale approach
 The specification targets 1,000,000 consumers, so operator-facing lists and KPIs avoid loading
 populations into memory or the browser:
@@ -253,7 +256,8 @@ populations into memory or the browser:
 - **Database-side aggregates** for recharge/bill/audit summaries, reports and analytics (`GROUP BY` in SQL).
 - **Bounded responses:** reports cap at 5,000 rows and say so; analytics ranges are capped at 366 days. Every list endpoint without paging (`consumers`, `bills`, `meter-commands`, `connectivity-commands`, `conversions`, `reconciliation-adjustments`, `exceptions`, `notifications`, `billing-holds`, `meter-replacements`, the meter-data lists, `audit-entries`, `tariff-change-requests`, `tariffs`) goes through `ToCappedListAsync`: at most 1,000 rows, and `X-Result-Truncated: true` when more exist. Pages that need every row use the paged `search` endpoints.
 - **Dashboard:** `GET dashboard/summary` replaces the eight full-list downloads the dashboard used to make; no dashboard number is computed in the browser from a list any more.
-- **Indexes** for the time-ordered paging queries.
+- **Indexes** for the time-ordered paging queries, and **trigram (GIN, `pg_trgm`) indexes** on consumer name, account number, mobile number and meter number so the search box's case-insensitive prefix and contains matching (`ILIKE`) can use an index instead of scanning every consumer. The migration runs `CREATE EXTENSION IF NOT EXISTS pg_trgm`, which needs a role allowed to create extensions (the default `postgres` role is; on a managed database enable `pg_trgm` first). Confirmed the planner picks the name index; timing at 1,000,000 consumers waits for the load-test data.
+- **Search patterns:** every `ILike` passes an explicit escape character. Without it Npgsql sends `ESCAPE ''`, the search term's escaped `_`, `%` and `\` are taken literally, and any search containing an underscore (for example an audit action such as `LOGIN_SUCCEEDED`) matched nothing.
 
 Pages that still read a capped list (Exceptions, Notifications, Billing Holds, Meter Credit, RC/DC, Conversion, Reconciliation, Meter Replacements) show at most the newest 1,000 rows; moving them to keyset paging is listed in [Known gaps](#12-known-gaps).
 

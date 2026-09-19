@@ -40,6 +40,11 @@ export class ConsumerService {
     return this.http.get<ConsumerSearchPage>(`${this.baseUrl}/search`, { params: query });
   }
 
+  /** PUT /api/v1/consumers/{account}/mobile: the API normalises the number and answers 400 with a message if it is not valid. */
+  updateMobile(accountNumber: string, mobileNumber: string): Observable<{ accountNumber: string; mobileNumber: string }> {
+    return this.http.put<{ accountNumber: string; mobileNumber: string }>(`${this.baseUrl}/${encodeURIComponent(accountNumber)}/mobile`, { mobileNumber });
+  }
+
   getByAccountNumber(accountNumber: string): Observable<ConsumerDetail> {
     return this.http.get<ConsumerDetail>(`${this.baseUrl}/${encodeURIComponent(accountNumber)}`);
   }

@@ -273,3 +273,8 @@ button[type='submit']:disabled { opacity: 0.6; cursor: not-allowed; }
 .timeline__body { flex: 1; min-width: 0; }
 .timeline__time { color: var(--text-muted); font-size: var(--font-size-meta); margin-left: var(--space-2); }
 .timeline__detail { color: var(--text-secondary); font-size: var(--font-size-meta); overflow-wrap: anywhere; }
+
+.mobile-input { padding: 4px 8px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: var(--font-size-body); width: 12em; }
+.mobile-error { color: var(--color-danger-dark); font-size: var(--font-size-meta); margin-top: 4px; }
+.link-btn { background: none; border: none; color: var(--color-primary); cursor: pointer; padding: 0 var(--space-2); text-decoration: underline; font-size: var(--font-size-meta); }
+.link-btn:disabled { opacity: 0.5; cursor: not-allowed; }

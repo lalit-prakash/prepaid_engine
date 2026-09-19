@@ -64,6 +64,9 @@ public class PrepaidEngineDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // The consumer search uses case-insensitive prefix and contains matching (ILIKE), which ordinary
+        // b-tree indexes cannot serve. Trigram indexes (see the Consumers and Meters configurations) can.
+        modelBuilder.HasPostgresExtension("pg_trgm");
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(PrepaidEngineDbContext).Assembly);
     }
 

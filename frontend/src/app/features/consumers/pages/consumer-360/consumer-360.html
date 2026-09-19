@@ -73,7 +73,19 @@
           <dl class="kv">
             <dt>Account number</dt><dd>{{ c.accountNumber }}</dd>
             <dt>Name</dt><dd>{{ c.name }}</dd>
-            <dt>Mobile</dt><dd>{{ c.mobileNumber ?? 'Not on record' }}</dd>
+            <dt>Mobile</dt>
+            <dd>
+              @if (editingMobile()) {
+                <input class="mobile-input" type="tel" inputmode="tel" autocomplete="off" [value]="mobileDraft"
+                  (input)="mobileDraft = $any($event.target).value" (keydown.enter)="saveMobile()" aria-label="Mobile number" />
+                <button type="button" class="link-btn" (click)="saveMobile()" [disabled]="mobileSaving()">{{ mobileSaving() ? 'Saving…' : 'Save' }}</button>
+                <button type="button" class="link-btn" (click)="cancelEditMobile()" [disabled]="mobileSaving()">Cancel</button>
+                @if (mobileError()) { <div class="mobile-error" role="alert">{{ mobileError() }}</div> }
+              } @else {
+                {{ c.mobileNumber ?? 'Not on record' }}
+                <button type="button" class="link-btn" peOperate (click)="startEditMobile()">{{ c.mobileNumber ? 'Change' : 'Add' }}</button>
+              }
+            </dd>
             <dt>Service address</dt><dd>{{ c.serviceAddress }}</dd>
             <dt>Connected load</dt><dd>{{ c.connectedLoadKw }} kW</dd>
             <dt>Zone</dt><dd>{{ c.network.zone ?? 'Not mapped' }}</dd>

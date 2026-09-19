@@ -92,9 +92,9 @@ public static class BillingEndpoints
                 var prefix = term + "%";
                 var contains = "%" + term + "%";
                 query = query.Where(x =>
-                    EF.Functions.ILike(x.c.AccountNumber, prefix) ||
-                    EF.Functions.ILike(x.c.Name, contains) ||
-                    EF.Functions.ILike(x.t.Name, contains));
+                    EF.Functions.ILike(x.c.AccountNumber, prefix, "\\") ||
+                    EF.Functions.ILike(x.c.Name, contains, "\\") ||
+                    EF.Functions.ILike(x.t.Name, contains, "\\"));
             }
             if (status.HasValue)
                 query = query.Where(x => x.b.Status == status.Value);
