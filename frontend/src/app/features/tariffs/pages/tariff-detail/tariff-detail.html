@@ -11,9 +11,12 @@
         <h1>{{ t.name }}</h1>
         <div class="detail-header__meta">
           <span>{{ categoryLabel(t.category) }}</span>
+          <span>·</span>
+          @if (t.status === 0) { <pe-status-badge label="Active" tone="success" /> }
+          @else { <pe-status-badge label="Retired" tone="neutral" /> }
         </div>
       </div>
-      @if (isIt()) {
+      @if (isIt() && t.status === 0) {
         <a [routerLink]="['/tariffs/change-requests/new']" [queryParams]="{ supersedes: t.id }" class="btn-primary">Revise This Tariff</a>
       }
     </header>
@@ -87,12 +90,66 @@
       </section>
     </div>
 
-    <section class="panel version-history">
-      <h2>Version History</h2>
+    <section class="panel">
+      <h2>Version lineage</h2>
       <p class="panel__hint">
-        Recorded parameter changes (GET /api/v1/tariffs/&#123;id&#125;/versions) — this tariff has no
-        update endpoint yet, so a version here reflects a change logged independently, not one
-        applied through this page.
+        Tariffs are never edited in place: every approved change creates a new version and retires the
+        previous one at its commencement date, so bills always keep the rates they were calculated with.
+      </p>
+      @if (lineageLoading()) {
+        <p class="empty-note">Loading…</p>
+      } @else if (lineageError()) {
+        <p class="empty-note">Data unavailable — could not load this tariff's version history.</p>
+      } @else if (lineage(); as l) {
+        <table class="mini-table">
+          <thead>
+            <tr><th>Version</th><th>Status</th><th class="num">Fixed charge</th><th class="num">Rebate</th><th>Effective</th><th>Retired</th><th>Approved by</th><th>Reason</th></tr>
+          </thead>
+          <tbody>
+            @for (v of l.versions; track v.tariffId) {
+              <tr [class.lineage-current]="v.isCurrentlyViewed">
+                <td>
+                  @if (v.isCurrentlyViewed) { <strong>v{{ v.versionNumber }} (this page)</strong> }
+                  @else { <a [routerLink]="['/tariffs', v.tariffId]">v{{ v.versionNumber }}</a> }
+                </td>
+                <td>
+                  @if (v.status === 0) { <pe-status-badge label="Active" tone="success" /> }
+                  @else { <pe-status-badge label="Retired" tone="neutral" /> }
+                </td>
+                <td class="num">₹{{ v.fixedChargePerUnitPerMonth | number: '1.2-2' }}</td>
+                <td class="num">{{ v.prepaidEnergyRebatePercent }}%</td>
+                <td>{{ v.effectiveFrom ? (v.effectiveFrom | date: 'd MMM y, HH:mm') : 'Original tariff' }}</td>
+                <td>{{ v.retiredAt ? (v.retiredAt | date: 'd MMM y, HH:mm') : '—' }}</td>
+                <td>{{ v.approvedBy ?? '—' }}</td>
+                <td class="change-note">
+                  @if (v.changeRequestId) { <a [routerLink]="['/tariffs/change-requests', v.changeRequestId]">{{ v.changeReason ?? 'View change request' }}</a> }
+                  @else { — }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+
+        @if (l.openChanges.length > 0) {
+          <h3 class="lineage-heading">Open changes against this tariff</h3>
+          <ul class="open-changes">
+            @for (c of l.openChanges; track c.id) {
+              <li>
+                <pe-status-badge [label]="changeStatusLabel(c.status)" [tone]="changeStatusTone(c.status)" />
+                <a [routerLink]="['/tariffs/change-requests', c.id]">{{ c.proposedName }}</a>
+                <span class="open-changes__meta">by {{ c.createdBy }}{{ c.commencementDate ? ' · commences ' + (c.commencementDate | date: 'd MMM y') : '' }}</span>
+              </li>
+            }
+          </ul>
+        }
+      }
+    </section>
+
+    <section class="panel version-history">
+      <h2>Recorded parameter changes</h2>
+      <p class="panel__hint">
+        A separate manual log (GET /api/v1/tariffs/&#123;id&#125;/versions) of individual field changes.
+        It is independent of the approval workflow above; approved changes appear in the lineage.
       </p>
       @if (versionsLoading()) {
         <p class="empty-note">Loading version history…</p>

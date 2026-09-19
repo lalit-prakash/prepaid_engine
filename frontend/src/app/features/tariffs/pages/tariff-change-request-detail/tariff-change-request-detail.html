@@ -46,19 +46,41 @@
       <h2>Current vs Proposed</h2>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Field</th><th>Current</th><th>Proposed</th></tr></thead>
+          <thead><tr><th>Field</th><th>Current</th><th>Proposed</th><th>Difference</th></tr></thead>
           <tbody>
             @for (row of comparisonRows(); track row.field) {
               <tr [class.row-changed]="row.changed">
                 <td>{{ row.field }}</td>
                 <td>{{ row.current }}</td>
                 <td>{{ row.proposed }}</td>
+                <td>{{ row.difference }}</td>
               </tr>
             }
           </tbody>
         </table>
       </div>
       <p class="hint">Illustrative comparison only — actual consumer bill impact depends on real consumption and is not computed here.</p>
+    </section>
+
+    <section class="card">
+      <h2>Audit trail</h2>
+      @if (auditLoading()) {
+        <p class="hint">Loading…</p>
+      } @else if (auditError()) {
+        <p class="hint">Data unavailable — could not load the audit trail.</p>
+      } @else if (auditTrail().length === 0) {
+        <p class="hint">No audit entries recorded for this request.</p>
+      } @else {
+        <ol class="audit-trail">
+          @for (e of auditTrail(); track e.id) {
+            <li>
+              <span class="audit-trail__time">{{ e.occurredAt | date: 'd MMM y, HH:mm' }}</span>
+              <strong>{{ e.action }}</strong> by {{ e.actor }}
+              @if (e.details) { <span class="audit-trail__details">— {{ e.details }}</span> }
+            </li>
+          }
+        </ol>
+      }
     </section>
 
     @if (actionError()) {

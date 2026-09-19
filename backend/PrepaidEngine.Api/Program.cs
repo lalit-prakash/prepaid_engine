@@ -930,6 +930,89 @@ app.MapGet("/api/v1/tariffs/{id:guid}", async (Guid id, PrepaidEngineDbContext d
 .WithName("GetTariffById")
 .RequireAuthorization();
 
+// Version lineage of a tariff: the chain of immutable Tariff rows linked by activated
+// TariffChangeRequests (oldest first), plus any still-open change requests against this tariff.
+// A Tariff row is never edited, so each entry is exactly what bills against it were calculated with.
+app.MapGet("/api/v1/tariffs/{id:guid}/lineage", async (Guid id, PrepaidEngineDbContext db) =>
+{
+    if (!await db.Tariffs.AnyAsync(t => t.Id == id))
+        return Results.NotFound();
+
+    // Walk back to the oldest ancestor, then forward, bounded so a bad data cycle cannot loop.
+    const int maxHops = 50;
+    var chainIds = new List<Guid> { id };
+    var cursor = id;
+    for (var i = 0; i < maxHops; i++)
+    {
+        var parent = await db.TariffChangeRequests.AsNoTracking()
+            .Where(r => r.ResultingTariffId == cursor && r.SupersedesTariffId != null)
+            .Select(r => r.SupersedesTariffId)
+            .FirstOrDefaultAsync();
+        if (parent is null || chainIds.Contains(parent.Value)) break;
+        chainIds.Insert(0, parent.Value);
+        cursor = parent.Value;
+    }
+    cursor = id;
+    for (var i = 0; i < maxHops; i++)
+    {
+        var child = await db.TariffChangeRequests.AsNoTracking()
+            .Where(r => r.SupersedesTariffId == cursor && r.Status == TariffChangeRequestStatus.Activated)
+            .Select(r => r.ResultingTariffId)
+            .FirstOrDefaultAsync();
+        if (child is null || chainIds.Contains(child.Value)) break;
+        chainIds.Add(child.Value);
+        cursor = child.Value;
+    }
+
+    var tariffs = await db.Tariffs.AsNoTracking().Where(t => chainIds.Contains(t.Id))
+        .Select(t => new { t.Id, t.Name, t.Status, t.FixedChargePerUnitPerMonth, t.PrepaidEnergyRebatePercent })
+        .ToListAsync();
+    var requests = await db.TariffChangeRequests.AsNoTracking()
+        .Where(r => r.Status == TariffChangeRequestStatus.Activated
+            && ((r.ResultingTariffId != null && chainIds.Contains(r.ResultingTariffId.Value))
+                || (r.SupersedesTariffId != null && chainIds.Contains(r.SupersedesTariffId.Value))))
+        .ToListAsync();
+
+    var versions = chainIds.Select((tid, index) =>
+    {
+        var t = tariffs.First(x => x.Id == tid);
+        var created = requests.FirstOrDefault(r => r.ResultingTariffId == tid);
+        var superseding = requests.FirstOrDefault(r => r.SupersedesTariffId == tid);
+        return new
+        {
+            VersionNumber = index + 1,
+            TariffId = t.Id,
+            t.Name,
+            t.Status,
+            t.FixedChargePerUnitPerMonth,
+            t.PrepaidEnergyRebatePercent,
+            IsCurrentlyViewed = tid == id,
+            ChangeRequestId = created?.Id,
+            ChangeReason = created?.ChangeReason,
+            SubmittedBy = created?.SubmittedBy,
+            ApprovedBy = created?.ApprovedBy,
+            CommencementDate = created?.CommencementDate,
+            EffectiveFrom = created?.ActivatedAt,
+            RetiredAt = superseding?.ActivatedAt,
+        };
+    }).ToList();
+
+    var openStatuses = new[]
+    {
+        TariffChangeRequestStatus.Draft, TariffChangeRequestStatus.PendingApproval,
+        TariffChangeRequestStatus.Rejected, TariffChangeRequestStatus.Scheduled,
+    };
+    var openChanges = await db.TariffChangeRequests.AsNoTracking()
+        .Where(r => r.SupersedesTariffId == id && openStatuses.Contains(r.Status))
+        .OrderByDescending(r => r.CreatedAt)
+        .Select(r => new { r.Id, r.Status, r.ProposedName, r.CreatedBy, r.SubmittedAt, r.CommencementDate })
+        .ToListAsync();
+
+    return Results.Ok(new { versions, openChanges });
+})
+.WithName("GetTariffLineage")
+.RequireAuthorization();
+
 // --- Tariff governance (Phase 1: Tariff Governance + MDM Recharge Command Integration) --------
 // See TariffChangeRequest's own doc comment for the full workflow. IT (CREATE/EDIT/DRAFT/SUBMIT)
 // and Utility (APPROVE/REJECT) are role-gated at the endpoint level — the primary defense against

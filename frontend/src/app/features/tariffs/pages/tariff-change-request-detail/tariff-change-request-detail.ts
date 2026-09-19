@@ -3,6 +3,8 @@ import { Component, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../../../core/services/auth.service';
+import { AuditEntryService } from '../../../../core/services/audit-entry.service';
+import { AuditEntrySummary } from '../../../../core/models/audit-entry.model';
 import { TariffChangeRequestService } from '../../../../core/services/tariff-change-request.service';
 import { TariffChangeRequestDetail, TariffChangeRequestStatus } from '../../../../core/models/tariff-change-request.model';
 import { categoryLabel } from '../../../../shared/utils/category-label';
@@ -14,6 +16,7 @@ interface ComparisonRow {
   current: string;
   proposed: string;
   changed: boolean;
+  difference: string;
 }
 
 /**
@@ -42,6 +45,9 @@ export class TariffChangeRequestDetailPage implements OnInit {
   protected readonly error = signal<string | null>(null);
   protected readonly actionError = signal<string | null>(null);
   protected readonly acting = signal(false);
+  protected readonly auditTrail = signal<AuditEntrySummary[]>([]);
+  protected readonly auditLoading = signal(true);
+  protected readonly auditError = signal(false);
 
   protected readonly isUtility = computed(() => this.auth.role() === 'Utility');
   protected readonly isIt = computed(() => this.auth.role() === 'IT');
@@ -56,6 +62,7 @@ export class TariffChangeRequestDetailPage implements OnInit {
     private readonly router: Router,
     private readonly changeRequestService: TariffChangeRequestService,
     private readonly auth: AuthService,
+    private readonly auditService: AuditEntryService,
   ) {}
 
   ngOnInit(): void {
@@ -69,6 +76,7 @@ export class TariffChangeRequestDetailPage implements OnInit {
       next: (detail) => {
         this.detail.set(detail);
         this.loading.set(false);
+        this.loadAudit();
       },
       error: (err) => {
         this.error.set(err?.status === 404 ? 'This change request could not be found.' : 'Could not load this change request.');
@@ -77,48 +85,77 @@ export class TariffChangeRequestDetailPage implements OnInit {
     });
   }
 
+  private loadAudit(): void {
+    this.auditLoading.set(true);
+    this.auditError.set(false);
+    // Oldest first, so the trail reads as the request's actual history.
+    this.auditService.list(this.requestId).subscribe({
+      next: (entries) => {
+        this.auditTrail.set([...entries].sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : 1)));
+        this.auditLoading.set(false);
+      },
+      error: () => {
+        this.auditError.set(true);
+        this.auditLoading.set(false);
+      },
+    });
+  }
+
+  private diff(current: number | undefined, proposed: number, suffix = ''): string {
+    if (current === undefined) return '—';
+    const delta = proposed - current;
+    if (delta === 0) return 'No change';
+    return `${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(2)}${suffix}`;
+  }
+
   protected comparisonRows(): ComparisonRow[] {
     const d = this.detail();
     if (!d) return [];
     const c = d.current;
     const p = d.proposed;
     const rows: ComparisonRow[] = [
-      { field: 'Name', current: c?.name ?? '—', proposed: p.proposedName, changed: c?.name !== p.proposedName },
+      { field: 'Name', current: c?.name ?? '—', proposed: p.proposedName, changed: c?.name !== p.proposedName, difference: c ? (c.name === p.proposedName ? 'No change' : 'Renamed') : '—' },
       {
         field: 'Category',
         current: c ? categoryLabel(c.category) : '—',
         proposed: categoryLabel(p.proposedCategory),
         changed: c?.category !== p.proposedCategory,
+        difference: c ? (c.category === p.proposedCategory ? 'No change' : 'Changed') : '—',
       },
       {
         field: 'Fixed Charge (₹/unit/month)',
         current: c ? c.fixedChargePerUnitPerMonth.toFixed(2) : '—',
         proposed: p.proposedFixedChargePerUnitPerMonth.toFixed(2),
         changed: c?.fixedChargePerUnitPerMonth !== p.proposedFixedChargePerUnitPerMonth,
+        difference: this.diff(c?.fixedChargePerUnitPerMonth, p.proposedFixedChargePerUnitPerMonth),
       },
       {
         field: 'Prepaid Rebate (%)',
         current: c ? `${c.prepaidEnergyRebatePercent}%` : '—',
         proposed: `${p.proposedPrepaidEnergyRebatePercent}%`,
         changed: c?.prepaidEnergyRebatePercent !== p.proposedPrepaidEnergyRebatePercent,
+        difference: this.diff(c?.prepaidEnergyRebatePercent, p.proposedPrepaidEnergyRebatePercent, ' pts'),
       },
       {
         field: 'Emergency Credit (₹)',
         current: c ? c.emergencyCreditLimit.toFixed(2) : '—',
         proposed: p.proposedEmergencyCreditLimit.toFixed(2),
         changed: c?.emergencyCreditLimit !== p.proposedEmergencyCreditLimit,
+        difference: this.diff(c?.emergencyCreditLimit, p.proposedEmergencyCreditLimit),
       },
       {
         field: 'Slabs',
         current: c ? this.formatSlabs(c.slabs) : '—',
         proposed: this.formatSlabs(p.slabs),
         changed: c ? this.formatSlabs(c.slabs) !== this.formatSlabs(p.slabs) : true,
+        difference: c ? (this.formatSlabs(c.slabs) === this.formatSlabs(p.slabs) ? 'No change' : 'Slabs changed') : '—',
       },
       {
         field: 'ToD Periods',
         current: c ? `${c.touPeriods.length}` : '—',
         proposed: `${p.touPeriods.length}`,
         changed: c?.touPeriods.length !== p.touPeriods.length,
+        difference: c ? (c.touPeriods.length === p.touPeriods.length ? 'No change' : `${p.touPeriods.length - c.touPeriods.length > 0 ? '+' : '−'}${Math.abs(p.touPeriods.length - c.touPeriods.length)}`) : '—',
       },
     ];
     return rows;

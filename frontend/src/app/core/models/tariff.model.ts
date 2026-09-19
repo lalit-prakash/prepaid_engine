@@ -5,6 +5,8 @@ export interface TariffSummary {
   id: string;
   name: string;
   category: ConsumerCategory;
+  /** 0 = Active, 1 = Retired. */
+  status: number;
   fixedChargePerUnitPerMonth: number;
   prepaidEnergyRebatePercent: number;
   emergencyCreditLimit: number;
@@ -33,6 +35,8 @@ export interface TariffDetail {
   id: string;
   name: string;
   category: ConsumerCategory;
+  /** 0 = Active, 1 = Retired. */
+  status: number;
   fixedChargePerUnitPerMonth: number;
   prepaidEnergyRebatePercent: number;
   emergencyCreditLimit: number;
@@ -42,4 +46,38 @@ export interface TariffDetail {
   maxVendAmountThreePhase: number | null;
   slabs: TariffSlab[];
   touPeriods: TariffTouPeriod[];
+}
+
+/** One immutable tariff version in a lineage (GET /api/v1/tariffs/{id}/lineage). */
+export interface TariffLineageVersion {
+  versionNumber: number;
+  tariffId: string;
+  name: string;
+  /** 0 = Active, 1 = Retired. */
+  status: number;
+  fixedChargePerUnitPerMonth: number;
+  prepaidEnergyRebatePercent: number;
+  isCurrentlyViewed: boolean;
+  changeRequestId: string | null;
+  changeReason: string | null;
+  submittedBy: string | null;
+  approvedBy: string | null;
+  commencementDate: string | null;
+  effectiveFrom: string | null;
+  retiredAt: string | null;
+}
+
+export interface TariffOpenChange {
+  id: string;
+  /** TariffChangeRequestStatus. */
+  status: number;
+  proposedName: string;
+  createdBy: string;
+  submittedAt: string | null;
+  commencementDate: string | null;
+}
+
+export interface TariffLineage {
+  versions: TariffLineageVersion[];
+  openChanges: TariffOpenChange[];
 }

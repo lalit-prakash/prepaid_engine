@@ -36,6 +36,7 @@ export class TariffManagement implements OnInit {
   protected readonly Status = TariffChangeRequestStatus;
 
   protected readonly activeTab = signal<'active-tariffs' | ChangeRequestTab>('active-tariffs');
+  protected readonly retiredTariffs = signal<TariffSummary[]>([]);
   protected readonly changeRequests = signal<TariffChangeRequestSummary[]>([]);
   protected readonly changeRequestsLoading = signal(true);
   protected readonly changeRequestsError = signal<string | null>(null);
@@ -94,6 +95,11 @@ export class TariffManagement implements OnInit {
         this.error.set('Could not load tariffs from the API.');
         this.loading.set(false);
       },
+    });
+
+    this.tariffService.list('Retired').subscribe({
+      next: (rows) => this.retiredTariffs.set(rows),
+      error: () => this.retiredTariffs.set([]),
     });
 
     this.changeRequestService.list().subscribe({
