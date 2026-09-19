@@ -59,7 +59,8 @@ backend/
                                 ISlaMonitoringService, IEmergencyCreditGuard, request/response models
   PrepaidEngine.Infrastructure  EF Core + Npgsql, migrations, adapters (Mock*), BillingEngineService,
                                 MeterDataIngestionService, SlaMonitoringService, TariffActivationService, DbSeeder
-  PrepaidEngine.Api             minimal-API host: Program.cs, JWT auth (Auth/), background workers
+  PrepaidEngine.Api             minimal-API host: Program.cs (wiring only), Endpoints/ (one file per module),
+                                Auth/, Security/, Reports/, Dashboard/, background workers
   PrepaidEngine.Tests           xUnit (domain rules, services, EF mapping on SQLite in-memory)
 frontend/                       Angular 22, standalone components, plain SCSS design tokens
 docs/                           this file, DOMAIN_RULES, assumptions-and-security, tariff-validation-report
@@ -72,6 +73,14 @@ exceptions to 400/409.
 ## 3. Backend
 
 ### 3.1 Startup and wiring (`Program.cs`)
+`Program.cs` is about 200 lines of wiring only: services, authentication, middleware, the deny-by-default guard and one
+`Map...Endpoints()` call per module. The routes live in `Endpoints/`: `ConsumerEndpoints` (consumers, recharge,
+disconnect/reconnect, meter replacement), `ConnectivityEndpoints`, `BillingEndpoints`, `TariffEndpoints` (tariffs,
+change requests, workbench), `RechargeEndpoints` (recharges, meter commands), `ConversionEndpoints` (conversions,
+reconciliation), `OperationsEndpoints` (exceptions, notifications, SLA, risk), `AuditEndpoints`, `AnalyticsEndpoints`,
+`MeterDataEndpoints` and `PlatformEndpoints` (health, whoami). `ApiHelpers` holds the shared helpers (audit and
+exception recording, cursor parsing) and `ApiModels` the request records. Reports, network, dashboard and auth
+endpoints have their own folders.
 - `AddDbContext<PrepaidEngineDbContext>` (Npgsql), connection string `ConnectionStrings:PrepaidEngine`.
 - Singletons: `IRmsClient`, `IMeterCommandClient`, `IConnectivityCommandClient`, `IPaymentModeChangeClient`
   (all mocks). Scoped: `IEmergencyCreditGuard`, `IBillingEngineService`, `IMeterDataIngestionService`,
@@ -338,5 +347,4 @@ Tracked on the project board: https://github.com/users/lalit-prakash/projects/5
 - System Health, Integrations and Service Requests modules; tariff fields (code, taxes, thresholds).
 - Network hierarchy can be loaded and consumers mapped from CSV (Network Hierarchy screen), but there is no screen to edit or delete a single node, files are limited to 10,000 rows each, and development still seeds a labelled demo network; area analytics on the Analytics page, balance history and abnormal-consumption detection are still open.
 - Capped (1,000-row) lists on Exceptions, Notifications, Billing Holds, Meter Credit, RC/DC, Conversion, Reconciliation, Meter Replacements and Consumer-based lookups (the charge-calculation report loads consumers) need keyset paging and search; the cap keeps them safe but not complete.
-- `Program.cs` is one large file (~3,900 lines); splitting it into endpoint modules is planned.
 - Load and failure testing has not been run.
