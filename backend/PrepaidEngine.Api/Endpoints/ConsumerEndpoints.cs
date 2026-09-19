@@ -66,10 +66,12 @@ public static class ConsumerEndpoints
         // same definition the dashboard uses; a configurable threshold does not exist yet.
         app.MapGet("/api/v1/consumers/search", async (
             string? q, PrepaidEngine.Domain.Enums.ConnectionStatus? status, bool? lowBalance,
-            string? after, int? pageSize, PrepaidEngineDbContext db) =>
+            string? after, int? pageSize, PrepaidEngineDbContext db,
+            Microsoft.Extensions.Options.IOptions<PrepaidEngine.Application.Wallets.LowBalanceOptions> lowBalanceOptions) =>
         {
             var size = Math.Clamp(pageSize ?? 25, 1, 100);
 
+            decimal? lowBalanceThreshold = lowBalanceOptions.Value.ThresholdRs; // null: below each wallet's own emergency credit limit
             var query = db.Consumers.AsNoTracking().AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(q))
@@ -86,7 +88,7 @@ public static class ConsumerEndpoints
             if (status.HasValue)
                 query = query.Where(c => c.ConnectionStatus == status.Value);
             if (lowBalance == true)
-                query = query.Where(c => c.Wallet.Balance < c.Wallet.EmergencyCreditLimit);
+                query = query.Where(c => c.Wallet.Balance < (lowBalanceThreshold ?? c.Wallet.EmergencyCreditLimit));
 
             var totalCount = await query.CountAsync();
 
@@ -105,7 +107,7 @@ public static class ConsumerEndpoints
                     MeterNumber = c.Meter.MeterNumber,
                     WalletBalance = c.Wallet.Balance,
                     c.Wallet.EmergencyCreditLimit,
-                    LowBalance = c.Wallet.Balance < c.Wallet.EmergencyCreditLimit,
+                    LowBalance = c.Wallet.Balance < (lowBalanceThreshold ?? c.Wallet.EmergencyCreditLimit),
                     LastRechargeAt = db.RechargeTransactions
                         .Where(r => r.ConsumerId == c.Id && r.Status == PrepaidEngine.Domain.Enums.RechargeStatus.Success)
                         .Max(r => r.CompletedAt),
@@ -120,7 +122,7 @@ public static class ConsumerEndpoints
         .RequireAuthorization();
 
 
-        app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, PrepaidEngineDbContext db) =>
+        app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, PrepaidEngineDbContext db, Microsoft.Extensions.Options.IOptions<PrepaidEngine.Application.Wallets.LowBalanceOptions> lowBalanceOptions) =>
         {
             var consumer = await db.Consumers
                 .Include(c => c.Meter)
@@ -201,6 +203,7 @@ public static class ConsumerEndpoints
                     consumer.Wallet.Balance,
                     consumer.Wallet.EmergencyCreditLimit,
                     consumer.Wallet.IsWithinEmergencyCredit,
+                    LowBalance = consumer.Wallet.Balance < (lowBalanceOptions.Value.ThresholdRs ?? consumer.Wallet.EmergencyCreditLimit),
                     Transactions = consumer.Wallet.Transactions.Select(t => new { t.Amount, t.Type, t.OccurredAt, t.Reference })
                 },
                 Bills = bills

@@ -165,7 +165,7 @@ export class Consumer360 implements OnInit {
       cumulativeCharges: debits.reduce((sum, t) => sum + Math.abs(t.amount), 0),
       lastRechargeAt: last?.occurredAt ?? null,
       lastRechargeAmount: last?.amount ?? null,
-      lowBalance: c.wallet.balance < c.wallet.emergencyCreditLimit,
+      lowBalance: c.wallet.lowBalance,
     };
   });
 

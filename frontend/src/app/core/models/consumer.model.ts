@@ -48,6 +48,8 @@ export interface WalletTransaction {
 export interface Wallet {
   balance: number;
   emergencyCreditLimit: number;
+  /** Decided by the API from the configured low-balance threshold. */
+  lowBalance: boolean;
   isWithinEmergencyCredit: boolean;
   transactions: WalletTransaction[];
 }
