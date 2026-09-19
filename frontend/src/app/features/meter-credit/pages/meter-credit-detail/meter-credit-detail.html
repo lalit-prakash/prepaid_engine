@@ -119,6 +119,9 @@
         <dl class="kv-list">
           <dt>Credit Amount</dt><dd class="num">₹{{ c.creditAmount | number: '1.2-2' }}</dd>
           <dt>Retry Count</dt><dd class="num">{{ c.retryCount }}</dd>
+          <dt>MDM command ID</dt><dd class="mono">{{ c.externalCommandId ?? 'Not assigned yet' }}</dd>
+          <dt>Response code</dt><dd class="mono">{{ c.responseCode ?? '—' }}</dd>
+          <dt>Response message</dt><dd>{{ c.responseMessage ?? '—' }}</dd>
           <dt>Created</dt><dd>{{ c.createdAt | date: 'medium' }}</dd>
           <dt>Sent</dt><dd>{{ c.sentAt ? (c.sentAt | date: 'medium') : '—' }}</dd>
           <dt>Acknowledged</dt><dd>{{ c.acknowledgedAt ? (c.acknowledgedAt | date: 'medium') : '—' }}</dd>

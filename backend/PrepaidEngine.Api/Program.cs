@@ -1208,13 +1208,124 @@ app.MapGet("/api/v1/recharges", async (string? accountNumber, PrepaidEngineDbCon
 .WithName("ListRecharges")
 .RequireAuthorization();
 
+// Server-side searchable, keyset-paginated recharge list for Recharge Operations (the unpaginated
+// ListRecharges above remains for per-consumer views). Ordered newest first; the cursor is
+// "<InitiatedAt ticks>_<Id>" so ties on timestamp still page deterministically. Payment status and
+// meter-credit status are separate filters on purpose: RMS confirming payment never implies the
+// meter was credited. meterCredit=None matches recharges with no meter command at all.
+app.MapGet("/api/v1/recharges/search", async (
+    string? q, RechargeStatus? paymentStatus, string? meterCredit, string? after, int? pageSize,
+    PrepaidEngineDbContext db) =>
+{
+    var size = Math.Clamp(pageSize ?? 25, 1, 100);
+
+    var query =
+        from r in db.RechargeTransactions.AsNoTracking()
+        join c in db.Consumers.AsNoTracking() on r.ConsumerId equals c.Id
+        join mcOuter in db.MeterCommands.AsNoTracking() on r.Id equals mcOuter.RechargeTransactionId into mcGroup
+        from mc in mcGroup.DefaultIfEmpty()
+        select new { r, c, mc };
+
+    if (!string.IsNullOrWhiteSpace(q))
+    {
+        var term = q.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+        var prefix = term + "%";
+        var contains = "%" + term + "%";
+        query = query.Where(x =>
+            EF.Functions.ILike(x.c.AccountNumber, prefix) ||
+            EF.Functions.ILike(x.r.RmsReferenceId, prefix) ||
+            EF.Functions.ILike(x.c.Name, contains));
+    }
+    if (paymentStatus.HasValue)
+        query = query.Where(x => x.r.Status == paymentStatus.Value);
+    if (!string.IsNullOrWhiteSpace(meterCredit))
+    {
+        if (string.Equals(meterCredit, "None", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(x => x.mc == null);
+        else if (string.Equals(meterCredit, "FailedOrTimedOut", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(x => x.mc != null && (x.mc.Status == MeterCommandStatus.Failed || x.mc.Status == MeterCommandStatus.TimedOut));
+        else if (Enum.TryParse<MeterCommandStatus>(meterCredit, true, out var mcs))
+            query = query.Where(x => x.mc != null && x.mc.Status == mcs);
+        else
+            return Results.BadRequest(new { error = $"Unknown meterCredit value '{meterCredit}'." });
+    }
+
+    var totalCount = await query.CountAsync();
+
+    if (!string.IsNullOrEmpty(after))
+    {
+        var parts = after.Split('_', 2);
+        if (parts.Length != 2 || !long.TryParse(parts[0], out var ticks) || !Guid.TryParse(parts[1], out var afterId))
+            return Results.BadRequest(new { error = "Invalid cursor." });
+        var afterAt = new DateTime(ticks, DateTimeKind.Utc);
+        query = query.Where(x => x.r.InitiatedAt < afterAt || (x.r.InitiatedAt == afterAt && x.r.Id.CompareTo(afterId) < 0));
+    }
+
+    var rows = await query
+        .OrderByDescending(x => x.r.InitiatedAt).ThenByDescending(x => x.r.Id)
+        .Take(size + 1)
+        .Select(x => new
+        {
+            x.r.Id,
+            x.c.AccountNumber,
+            x.c.Name,
+            MeterNumber = x.c.Meter.MeterNumber,
+            x.r.Amount,
+            x.r.RmsReferenceId,
+            x.r.Status,
+            x.r.InitiatedAt,
+            x.r.CompletedAt,
+            MeterCommandStatus = x.mc == null ? (MeterCommandStatus?)null : x.mc.Status,
+        })
+        .ToListAsync();
+
+    var hasMore = rows.Count > size;
+    var items = hasMore ? rows.Take(size).ToList() : rows;
+    var nextCursor = hasMore ? $"{items[^1].InitiatedAt.Ticks}_{items[^1].Id}" : null;
+    return Results.Ok(new { items, nextCursor, totalCount });
+})
+.WithName("SearchRecharges")
+.RequireAuthorization();
+
+// Aggregate counts for the Recharge Operations KPI strip, computed in the database so the
+// browser never has to load every recharge to render a KPI.
+app.MapGet("/api/v1/recharges/summary", async (PrepaidEngineDbContext db) =>
+{
+    var byStatus = await db.RechargeTransactions.AsNoTracking()
+        .GroupBy(r => r.Status)
+        .Select(g => new { Status = g.Key, Count = g.Count(), Amount = g.Sum(r => r.Amount) })
+        .ToListAsync();
+    var byCredit = await db.MeterCommands.AsNoTracking()
+        .GroupBy(m => m.Status)
+        .Select(g => new { Status = g.Key, Count = g.Count() })
+        .ToListAsync();
+
+    int Payments(RechargeStatus s) => byStatus.FirstOrDefault(x => x.Status == s)?.Count ?? 0;
+    int Credits(MeterCommandStatus s) => byCredit.FirstOrDefault(x => x.Status == s)?.Count ?? 0;
+
+    return Results.Ok(new
+    {
+        Total = byStatus.Sum(x => x.Count),
+        PaymentSuccess = Payments(RechargeStatus.Success),
+        PaymentFailed = Payments(RechargeStatus.Failed),
+        PaymentPending = Payments(RechargeStatus.Initiated),
+        PaymentReversed = Payments(RechargeStatus.Reversed),
+        AmountSucceeded = byStatus.FirstOrDefault(x => x.Status == RechargeStatus.Success)?.Amount ?? 0m,
+        MeterCredited = Credits(MeterCommandStatus.Acknowledged),
+        MeterCreditAwaiting = Credits(MeterCommandStatus.Queued) + Credits(MeterCommandStatus.Sent),
+        MeterCreditFailed = Credits(MeterCommandStatus.Failed) + Credits(MeterCommandStatus.TimedOut),
+    });
+})
+.WithName("GetRechargeSummary")
+.RequireAuthorization();
+
 app.MapGet("/api/v1/recharges/{id:guid}", async (Guid id, PrepaidEngineDbContext db) =>
 {
     var recharge = await db.RechargeTransactions.FirstOrDefaultAsync(r => r.Id == id);
     if (recharge is null)
         return Results.NotFound();
 
-    var consumer = await db.Consumers.Include(c => c.Wallet).FirstOrDefaultAsync(c => c.Id == recharge.ConsumerId);
+    var consumer = await db.Consumers.Include(c => c.Wallet).Include(c => c.Meter).FirstOrDefaultAsync(c => c.Id == recharge.ConsumerId);
     if (consumer is null)
     {
         return Results.Problem(
@@ -1228,7 +1339,7 @@ app.MapGet("/api/v1/recharges/{id:guid}", async (Guid id, PrepaidEngineDbContext
     return Results.Ok(new
     {
         recharge.Id,
-        Consumer = new { consumer.AccountNumber, consumer.Name },
+        Consumer = new { consumer.AccountNumber, consumer.Name, consumer.Meter.MeterNumber },
         recharge.Amount,
         recharge.RmsReferenceId,
         recharge.Status,
@@ -1241,6 +1352,9 @@ app.MapGet("/api/v1/recharges/{id:guid}", async (Guid id, PrepaidEngineDbContext
             meterCommand.Status,
             meterCommand.RetryCount,
             meterCommand.ErrorMessage,
+            meterCommand.ExternalCommandId,
+            meterCommand.ResponseCode,
+            meterCommand.ResponseMessage,
             meterCommand.CreatedAt,
             meterCommand.SentAt,
             meterCommand.AcknowledgedAt,
@@ -1451,6 +1565,9 @@ app.MapGet("/api/v1/meter-commands/{id:guid}", async (Guid id, PrepaidEngineDbCo
         command.Status,
         command.RetryCount,
         command.ErrorMessage,
+        command.ExternalCommandId,
+        command.ResponseCode,
+        command.ResponseMessage,
         command.CreatedAt,
         command.SentAt,
         command.AcknowledgedAt,
