@@ -1,80 +1,117 @@
 <div class="billing">
   <div class="page-header">
     <h1>Billing</h1>
-    <p class="page-header__subtitle">{{ bills().length }} bill(s) generated across all consumers</p>
+    <p class="page-header__subtitle">
+      Every bill keeps the tariff version it was calculated under; changing a tariff never alters past bills.
+    </p>
   </div>
 
-  @if (loading()) {
+  @if (statsError()) {
+    <div class="error-panel">Data unavailable — could not load billing totals.</div>
+  } @else if (stats(); as s) {
+    <section class="kpi-row" aria-label="Billing totals">
+      <pe-kpi-card label="Bills generated" [value]="s.total" tone="primary" />
+      <pe-kpi-card label="Paid" [value]="s.paid" tone="success" [clickable]="true" (click)="filterByStatus(BillStatus.Paid)" />
+      <pe-kpi-card label="Awaiting payment" [value]="s.generated + s.partiallyPaid" tone="warning" sublabel="generated or partly paid" [clickable]="true" (click)="filterByStatus(BillStatus.Generated)" />
+      <pe-kpi-card label="Overdue" [value]="s.overdue" tone="danger" [clickable]="true" (click)="filterByStatus(BillStatus.Overdue)" />
+      <pe-kpi-card label="Total billed" [value]="'₹' + (s.totalBilled | number: '1.2-2')" tone="info" />
+      <pe-kpi-card label="Outstanding" [value]="'₹' + (s.outstanding | number: '1.2-2')" tone="warning" sublabel="billed minus settled" />
+    </section>
+  } @else {
     <div class="skeleton-row">
       @for (i of [1,2,3,4]; track i) { <div class="skeleton-card"></div> }
     </div>
-  } @else if (error()) {
-    <div class="error-panel">{{ error() }}</div>
-  } @else {
-    <section class="kpi-row">
-      <pe-kpi-card label="Bills Generated" [value]="bills().length" tone="primary" />
-      <pe-kpi-card label="Paid" [value]="paidCount" tone="success" />
-      <pe-kpi-card label="Pending" [value]="pendingCount" tone="warning" />
-      <pe-kpi-card label="Overdue" [value]="overdueCount" tone="danger" />
-      <pe-kpi-card label="Total Charges" [value]="'₹' + (totalCharges | number: '1.2-2')" tone="info" />
-    </section>
+  }
 
-    <div class="toolbar">
-      <input
-        type="search"
-        placeholder="Search account number, name, or tariff…"
-        [value]="searchTerm()"
-        (input)="searchTerm.set($any($event.target).value)"
-      />
+  <div class="toolbar">
+    <input
+      #searchBox
+      type="search"
+      aria-label="Search bills"
+      placeholder="Search account, consumer or tariff name…"
+      [value]="searchTerm()"
+      (input)="onSearchInput($any($event.target).value)"
+    />
+    <select aria-label="Filter by bill status" (change)="onStatusChange($any($event.target).value)">
+      <option value="" [selected]="statusFilter() === null">All statuses</option>
+      @for (o of statusOptions; track o.value) {
+        <option [value]="o.value" [selected]="statusFilter() === o.value">{{ o.label }}</option>
+      }
+    </select>
+    <label class="toolbar__date">From
+      <input #fromBox type="date" [value]="fromDate()" (change)="onDateChange('from', $any($event.target).value)" />
+    </label>
+    <label class="toolbar__date">To
+      <input #toBox type="date" [value]="toDate()" (change)="onDateChange('to', $any($event.target).value)" />
+    </label>
+    @if (hasActiveFilters) {
+      <button type="button" class="toolbar__clear" (click)="clearFilters()">Clear filters</button>
+    }
+  </div>
+
+  @if (loading() && items().length === 0) {
+    <div class="skeleton-row" aria-busy="true">
+      @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  } @else if (error()) {
+    <div class="error-panel">
+      {{ error() }}
+      <button type="button" class="toolbar__clear" (click)="retry()">Retry</button>
+    </div>
+  } @else if (items().length === 0) {
+    <div class="empty-panel">{{ hasActiveFilters ? 'No bills match these filters.' : 'No bills have been generated yet.' }}</div>
+  } @else {
+    <div class="table-wrap" [class.table-wrap--loading]="loading()">
+      <table>
+        <thead>
+          <tr>
+            <th>Generated</th>
+            <th>Consumer</th>
+            <th>Category</th>
+            <th>Tariff used</th>
+            <th class="num">Net energy</th>
+            <th class="num">Fixed</th>
+            <th class="num">Duty</th>
+            <th class="num">FPPAS</th>
+            <th class="num">Total</th>
+            <th class="num">Outstanding</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (b of items(); track b.id) {
+            <tr (click)="open(b.id)" (keydown.enter)="open(b.id)" tabindex="0" class="row-clickable">
+              <td>{{ b.generatedAt | date: 'd MMM y' }}</td>
+              <td>{{ b.name }} <span class="cell-meta">{{ b.accountNumber }}</span></td>
+              <td>{{ categoryLabel(b.category) }}</td>
+              <td>{{ b.tariffName }}</td>
+              <td class="num">₹{{ b.energyChargeNet | number: '1.2-2' }}</td>
+              <td class="num">₹{{ b.fixedCharge | number: '1.2-2' }}</td>
+              <td class="num">₹{{ b.electricityDutyAmount | number: '1.2-2' }}</td>
+              <td class="num">₹{{ b.fppasAmount | number: '1.2-2' }}</td>
+              <td class="num"><strong>₹{{ b.amount | number: '1.2-2' }}</strong></td>
+              <td class="num">₹{{ (b.amount - b.amountPaid) | number: '1.2-2' }}</td>
+              <td>
+                @switch (b.status) {
+                  @case (BillStatus.Paid) { <pe-status-badge label="Paid" tone="success" /> }
+                  @case (BillStatus.PartiallyPaid) { <pe-status-badge label="Partially paid" tone="warning" /> }
+                  @case (BillStatus.Overdue) { <pe-status-badge label="Overdue" tone="danger" /> }
+                  @case (BillStatus.Cancelled) { <pe-status-badge label="Cancelled" tone="neutral" /> }
+                  @default { <pe-status-badge label="Generated" tone="info" /> }
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
     </div>
 
-    @if (filtered.length === 0) {
-      <div class="empty-panel">No bills matched your search.</div>
-    } @else {
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Generated</th>
-              <th>Account</th>
-              <th>Consumer</th>
-              <th>Category</th>
-              <th>Tariff</th>
-              <th class="num">Net Energy</th>
-              <th class="num">Fixed</th>
-              <th class="num">Duty</th>
-              <th class="num">FPPAS</th>
-              <th class="num">Total</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (b of filtered; track b.id) {
-              <tr (click)="open(b.id)" class="row-clickable">
-                <td>{{ b.generatedAt | date: 'mediumDate' }}</td>
-                <td>{{ b.accountNumber }}</td>
-                <td>{{ b.name }}</td>
-                <td>{{ categoryLabel(b.category) }}</td>
-                <td>{{ b.tariffName }}</td>
-                <td class="num">₹{{ b.energyChargeNet | number: '1.2-2' }}</td>
-                <td class="num">₹{{ b.fixedCharge | number: '1.2-2' }}</td>
-                <td class="num">₹{{ b.electricityDutyAmount | number: '1.2-2' }}</td>
-                <td class="num">₹{{ b.fppasAmount | number: '1.2-2' }}</td>
-                <td class="num"><strong>₹{{ b.amount | number: '1.2-2' }}</strong></td>
-                <td>
-                  @switch (b.status) {
-                    @case (BillStatus.Paid) { <pe-status-badge label="Paid" tone="success" /> }
-                    @case (BillStatus.PartiallyPaid) { <pe-status-badge label="Partially Paid" tone="warning" /> }
-                    @case (BillStatus.Overdue) { <pe-status-badge label="Overdue" tone="danger" /> }
-                    @case (BillStatus.Cancelled) { <pe-status-badge label="Cancelled" tone="neutral" /> }
-                    @default { <pe-status-badge label="Generated" tone="info" /> }
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    }
+    <div class="pager">
+      <span>{{ totalCount() }} bill(s){{ hasActiveFilters ? ' match' : '' }} · page {{ pageIndex() + 1 }}</span>
+      <span class="pager__buttons">
+        <button type="button" (click)="previousPage()" [disabled]="pageIndex() === 0 || loading()">Previous</button>
+        <button type="button" (click)="nextPage()" [disabled]="!nextCursor() || loading()">Next</button>
+      </span>
+    </div>
   }
 </div>

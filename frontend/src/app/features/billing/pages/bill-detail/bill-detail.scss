@@ -123,3 +123,10 @@
 }
 .kv-list dt { color: var(--text-secondary); font-size: var(--font-size-meta); }
 .kv-list dd { margin: 0; font-size: var(--font-size-body); }
+
+.slab-table { width: 100%; margin-top: var(--space-2); font-size: var(--font-size-meta); border-collapse: collapse; }
+.slab-table th { text-align: left; color: var(--text-muted); font-weight: var(--font-weight-medium); padding: 2px var(--space-2); }
+.slab-table td { padding: 2px var(--space-2); border-top: 1px solid var(--border-subtle); }
+.slab-table .num { text-align: right; }
+.slab-table__idle td { color: var(--text-muted); }
+.kv-note { display: block; color: var(--text-muted); font-size: var(--font-size-meta); margin-top: 2px; }

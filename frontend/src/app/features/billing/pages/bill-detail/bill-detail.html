@@ -38,12 +38,30 @@
             </div>
           </li>
           <li>
-            <div class="trace__label">Applicable Tariff</div>
+            <div class="trace__label">Applicable Tariff (version used)</div>
             <div class="trace__value">{{ b.tariff.name }}</div>
+            <div class="trace__note mono">Tariff version {{ b.tariff.id }}</div>
           </li>
           <li>
             <div class="trace__label">Gross Energy Charge</div>
             <div class="trace__value num">₹{{ b.energyChargeGross | number: '1.2-2' }}</div>
+            @if (b.slabBreakdownReconciles) {
+              <table class="slab-table">
+                <thead><tr><th>Slab (kWh)</th><th class="num">Rate</th><th class="num">kWh in slab</th><th class="num">Charge</th></tr></thead>
+                <tbody>
+                  @for (s of b.slabBreakdown; track s.fromKwh) {
+                    <tr [class.slab-table__idle]="s.kwhInSlab === 0">
+                      <td>{{ s.fromKwh }} – {{ s.upToKwh ?? 'above' }}</td>
+                      <td class="num">₹{{ s.ratePerKwh | number: '1.2-4' }}</td>
+                      <td class="num">{{ s.kwhInSlab | number: '1.0-3' }}</td>
+                      <td class="num">₹{{ s.charge | number: '1.2-2' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            } @else {
+              <div class="trace__note">A per-slab breakdown that reproduces this charge is not available for this bill.</div>
+            }
           </li>
           <li>
             <div class="trace__label">Prepaid Rebate ({{ b.tariff.prepaidEnergyRebatePercent }}%)</div>
@@ -111,6 +129,12 @@
         <h2 class="tariff-heading">Tariff</h2>
         <dl class="kv-list">
           <dt>Name</dt><dd>{{ b.tariff.name }}</dd>
+          <dt>Version status</dt>
+          <dd>
+            @if (b.tariff.status === 0) { <pe-status-badge label="Active" tone="success" /> }
+            @else { <pe-status-badge label="Retired" tone="neutral" /> }
+            <span class="kv-note">{{ b.tariff.status === 0 ? 'This is the current tariff.' : 'Superseded — this bill still reflects the rates it was billed under.' }}</span>
+          </dd>
           <dt>Fixed Charge</dt><dd>₹{{ b.tariff.fixedChargePerUnitPerMonth }} / unit / month</dd>
           <dt>Prepaid Rebate</dt><dd>{{ b.tariff.prepaidEnergyRebatePercent }}%</dd>
         </dl>

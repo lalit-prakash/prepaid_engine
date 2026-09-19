@@ -688,6 +688,108 @@ app.MapGet("/api/v1/bills", async (PrepaidEngineDbContext db) =>
 .WithName("ListBills")
 .RequireAuthorization();
 
+// Server-side searchable, keyset-paginated bill list for the Billing screen (the unpaginated
+// ListBills above stays for any caller that needs every row). Newest first; the cursor is
+// "<GeneratedAt ticks>_<Id>". Identifier fields match by prefix, tariff and consumer name by substring.
+app.MapGet("/api/v1/bills/search", async (
+    string? q, BillStatus? status, DateTime? from, DateTime? to, string? after, int? pageSize,
+    PrepaidEngineDbContext db) =>
+{
+    var size = Math.Clamp(pageSize ?? 25, 1, 100);
+
+    var query =
+        from b in db.Bills.AsNoTracking()
+        join c in db.Consumers.AsNoTracking() on b.ConsumerId equals c.Id
+        join t in db.Tariffs.AsNoTracking() on b.TariffId equals t.Id
+        select new { b, c, t };
+
+    if (!string.IsNullOrWhiteSpace(q))
+    {
+        var term = q.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+        var prefix = term + "%";
+        var contains = "%" + term + "%";
+        query = query.Where(x =>
+            EF.Functions.ILike(x.c.AccountNumber, prefix) ||
+            EF.Functions.ILike(x.c.Name, contains) ||
+            EF.Functions.ILike(x.t.Name, contains));
+    }
+    if (status.HasValue)
+        query = query.Where(x => x.b.Status == status.Value);
+    if (from.HasValue)
+        query = query.Where(x => x.b.GeneratedAt >= DateTime.SpecifyKind(from.Value, DateTimeKind.Utc));
+    if (to.HasValue)
+        query = query.Where(x => x.b.GeneratedAt < DateTime.SpecifyKind(to.Value.Date.AddDays(1), DateTimeKind.Utc));
+
+    var totalCount = await query.CountAsync();
+
+    if (!string.IsNullOrEmpty(after))
+    {
+        var parts = after.Split('_', 2);
+        if (parts.Length != 2 || !long.TryParse(parts[0], out var ticks) || !Guid.TryParse(parts[1], out var afterId))
+            return Results.BadRequest(new { error = "Invalid cursor." });
+        var afterAt = new DateTime(ticks, DateTimeKind.Utc);
+        query = query.Where(x => x.b.GeneratedAt < afterAt || (x.b.GeneratedAt == afterAt && x.b.Id.CompareTo(afterId) < 0));
+    }
+
+    var rows = await query
+        .OrderByDescending(x => x.b.GeneratedAt).ThenByDescending(x => x.b.Id)
+        .Take(size + 1)
+        .Select(x => new
+        {
+            x.b.Id,
+            x.c.AccountNumber,
+            x.c.Name,
+            Category = x.t.Category,
+            TariffName = x.t.Name,
+            TariffId = x.t.Id,
+            EnergyChargeNet = x.b.EnergyChargeGross - x.b.PrepaidRebateAmount,
+            x.b.FixedCharge,
+            x.b.ElectricityDutyAmount,
+            x.b.FppasAmount,
+            x.b.Amount,
+            x.b.AmountPaid,
+            x.b.Status,
+            x.b.GeneratedAt,
+        })
+        .ToListAsync();
+
+    var hasMore = rows.Count > size;
+    var items = hasMore ? rows.Take(size).ToList() : rows;
+    var nextCursor = hasMore ? $"{items[^1].GeneratedAt.Ticks}_{items[^1].Id}" : null;
+    return Results.Ok(new { items, nextCursor, totalCount });
+})
+.WithName("SearchBills")
+.RequireAuthorization();
+
+// Database-side aggregates for the Billing KPI strip.
+app.MapGet("/api/v1/bills/summary", async (PrepaidEngineDbContext db) =>
+{
+    var byStatus = await db.Bills.AsNoTracking()
+        .GroupBy(b => b.Status)
+        .Select(g => new { Status = g.Key, Count = g.Count(), Amount = g.Sum(b => b.Amount), Paid = g.Sum(b => b.AmountPaid) })
+        .ToListAsync();
+
+    int Count(BillStatus s) => byStatus.FirstOrDefault(x => x.Status == s)?.Count ?? 0;
+    var total = byStatus.Sum(x => x.Count);
+    var billed = byStatus.Sum(x => x.Amount);
+    var paid = byStatus.Sum(x => x.Paid);
+
+    return Results.Ok(new
+    {
+        Total = total,
+        Paid = Count(BillStatus.Paid),
+        PartiallyPaid = Count(BillStatus.PartiallyPaid),
+        Generated = Count(BillStatus.Generated),
+        Overdue = Count(BillStatus.Overdue),
+        Cancelled = Count(BillStatus.Cancelled),
+        TotalBilled = billed,
+        TotalSettled = paid,
+        Outstanding = billed - paid,
+    });
+})
+.WithName("GetBillSummary")
+.RequireAuthorization();
+
 app.MapGet("/api/v1/bills/{id:guid}", async (Guid id, PrepaidEngineDbContext db) =>
 {
     var bill = await db.Bills.FirstOrDefaultAsync(b => b.Id == id);
@@ -708,12 +810,30 @@ app.MapGet("/api/v1/bills/{id:guid}", async (Guid id, PrepaidEngineDbContext db)
             detail: $"Bill {id} references a consumer, tariff, or consumption reading that no longer exists.");
     }
 
+    // Energy charge split by slab, computed here (never in the browser) from the exact tariff row the
+    // bill references. The tariff row is immutable, so this reproduces the historical calculation.
+    // If the slab sum does not match the stored gross charge (e.g. a ToD tariff), say so instead of
+    // presenting a breakdown that does not explain the bill.
+    var slabBreakdown = tariff.Slabs
+        .OrderBy(sl => sl.FromKwh)
+        .Select(sl =>
+        {
+            var upper = sl.UpToKwh ?? reading.ConsumptionKwh;
+            var kwhInSlab = Math.Max(0m, Math.Min(reading.ConsumptionKwh, upper) - sl.FromKwh);
+            return new { sl.FromKwh, sl.UpToKwh, sl.RatePerKwh, KwhInSlab = kwhInSlab, Charge = kwhInSlab * sl.RatePerKwh };
+        })
+        .ToList();
+    var slabBreakdownReconciles = slabBreakdown.Count > 0
+        && Math.Abs(slabBreakdown.Sum(x => x.Charge) - bill.EnergyChargeGross) <= 0.01m;
+
     return Results.Ok(new
     {
         bill.Id,
         Consumer = new { consumer.AccountNumber, consumer.Name },
-        Tariff = new { tariff.Id, tariff.Name, tariff.Category, tariff.FixedChargePerUnitPerMonth, tariff.PrepaidEnergyRebatePercent },
+        Tariff = new { tariff.Id, tariff.Name, tariff.Category, tariff.FixedChargePerUnitPerMonth, tariff.PrepaidEnergyRebatePercent, tariff.Status },
         Reading = new { reading.ConsumptionKwh, reading.PeriodStart, reading.PeriodEnd },
+        SlabBreakdown = slabBreakdown,
+        SlabBreakdownReconciles = slabBreakdownReconciles,
         bill.EnergyChargeGross,
         bill.PrepaidRebateAmount,
         EnergyChargeNet = bill.EnergyChargeGross - bill.PrepaidRebateAmount,
