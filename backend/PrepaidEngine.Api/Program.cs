@@ -218,6 +218,66 @@ app.MapGet("/api/v1/consumers", async (PrepaidEngineDbContext db) =>
 .WithName("ListConsumers")
 .RequireAuthorization();
 
+// Server-side searchable, keyset-paginated consumer list for the Consumers screen (the
+// unpaginated ListConsumers above stays for the dashboard's aggregates). Identifier fields match
+// by prefix so they can use indexes; name matches by substring. Keyset on AccountNumber (unique)
+// avoids deep OFFSET. "Low balance" here means balance below the emergency-credit limit, the
+// same definition the dashboard uses; a configurable threshold does not exist yet.
+app.MapGet("/api/v1/consumers/search", async (
+    string? q, PrepaidEngine.Domain.Enums.ConnectionStatus? status, bool? lowBalance,
+    string? after, int? pageSize, PrepaidEngineDbContext db) =>
+{
+    var size = Math.Clamp(pageSize ?? 25, 1, 100);
+
+    var query = db.Consumers.AsNoTracking().AsQueryable();
+
+    if (!string.IsNullOrWhiteSpace(q))
+    {
+        var term = q.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+        var prefix = term + "%";
+        var contains = "%" + term + "%";
+        query = query.Where(c =>
+            EF.Functions.ILike(c.AccountNumber, prefix) ||
+            EF.Functions.ILike(c.Meter.MeterNumber, prefix) ||
+            (c.MobileNumber != null && EF.Functions.ILike(c.MobileNumber, prefix)) ||
+            EF.Functions.ILike(c.Name, contains));
+    }
+    if (status.HasValue)
+        query = query.Where(c => c.ConnectionStatus == status.Value);
+    if (lowBalance == true)
+        query = query.Where(c => c.Wallet.Balance < c.Wallet.EmergencyCreditLimit);
+
+    var totalCount = await query.CountAsync();
+
+    if (!string.IsNullOrEmpty(after))
+        query = query.Where(c => string.Compare(c.AccountNumber, after) > 0);
+
+    var rows = await query
+        .OrderBy(c => c.AccountNumber)
+        .Take(size + 1)
+        .Select(c => new
+        {
+            c.AccountNumber,
+            c.Name,
+            c.MobileNumber,
+            c.ConnectionStatus,
+            MeterNumber = c.Meter.MeterNumber,
+            WalletBalance = c.Wallet.Balance,
+            c.Wallet.EmergencyCreditLimit,
+            LowBalance = c.Wallet.Balance < c.Wallet.EmergencyCreditLimit,
+            LastRechargeAt = db.RechargeTransactions
+                .Where(r => r.ConsumerId == c.Id && r.Status == PrepaidEngine.Domain.Enums.RechargeStatus.Success)
+                .Max(r => r.CompletedAt),
+        })
+        .ToListAsync();
+
+    var hasMore = rows.Count > size;
+    var items = hasMore ? rows.Take(size).ToList() : rows;
+    return Results.Ok(new { items, nextCursor = hasMore ? items[^1].AccountNumber : null, totalCount });
+})
+.WithName("SearchConsumers")
+.RequireAuthorization();
+
 app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, PrepaidEngineDbContext db) =>
 {
     var consumer = await db.Consumers

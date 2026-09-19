@@ -523,7 +523,7 @@ export class Overview implements OnInit, OnDestroy {
     return `conic-gradient(${stops.join(', ')})`;
   }
 
-  goToConsumers(): void {
-    this.router.navigate(['/consumers']);
+  goToConsumers(queryParams?: Record<string, string>): void {
+    this.router.navigate(['/consumers'], { queryParams });
   }
 }
