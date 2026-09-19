@@ -112,7 +112,7 @@ exceptions to 400/409.
 
 ### 3.3 Persistence
 - One `PrepaidEngineDbContext`; entity configuration in `Persistence/Configurations`, migrations in
-  `Persistence/Migrations` (15 so far, latest `AddMeterDataTimeIndexes`).
+  `Persistence/Migrations` (16 so far, latest `AddBillingRunLeaseAndCursor`).
 - **UTC everywhere:** a model convention converts every `DateTime` to UTC on write and marks it UTC on
   read. This fixes Npgsql rejecting `Kind=Unspecified` values (date-only JSON or query inputs) for the
   whole API in one place.
@@ -157,10 +157,17 @@ and have no UI caller by design.
 ### 3.5 Background workers
 | Worker | Behaviour |
 |---|---|
-| `BillingProcessingWorker` | Polls every minute; runs DLP billing Stage 1 (8:30–9:30) and Stage 2 (12:30–13:30, plus provisional billing) once per day. |
+| `BillingProcessingWorker` | Polls every minute; runs DLP billing Stage 1 (8:30–9:30) and Stage 2 (12:30–13:30, plus provisional billing) once per day. Safe on several API instances: a stage that is running elsewhere is retried on later ticks. |
 | `TariffActivationWorker` | Runs at startup and every minute; calls `TariffActivationService.ActivateDueAsync`. |
 
-Both are simple in-process pollers. Production should move to a durable scheduler with retry guarantees.
+Both are simple in-process pollers. `TariffActivationWorker` is safe to run twice (each activation is its own transaction).
+
+**Billing runs (batch, claimed, resumable).** `BillingEngineService.RunStageAsync` runs one stage for one date:
+- *Claim:* the `BillingRuns` row is the claim. The unique `(RunType, BillingDate)` index lets exactly one instance create it. A run that is `Running` but has not heartbeated for 10 minutes can be taken over by another instance through a conditional `UPDATE`; a fresh one is left to its owner, and a finished one reports "already ran".
+- *Batches:* consumers are read in key order, 500 at a time, with their DLPs, tariffs, holds and already-billed references loaded per batch. Each batch (debits, notifications, and the run's `ConsumerCount`, `ExceptionCount`, `ResumeAfterConsumerId` cursor and `LastHeartbeatAt`) commits as one transaction, then the change tracker is cleared, so memory stays flat at any population size.
+- *Resume:* a takeover continues after the saved cursor. Debits are also idempotent on the DLP reference (`DLP:<id>`), so a repeated batch never bills a consumer twice.
+- *Results:* the API returns at most 5,000 per-consumer results; the run row holds the true totals.
+- Not yet done: a shared scheduler with run history and alerts, and batching the remaining per-consumer lookups (notification de-duplication, emergency-credit guard, provisional estimates).
 
 `TariffActivationService` activates each due request **in its own transaction**: retire the superseded
 tariff, insert the new one, mark the request `Activated`, write `ACTIVATED`/`RETIRED` audit entries. A
@@ -322,7 +329,7 @@ Tracked on the project board: https://github.com/users/lalit-prakash/projects/5
 - Audit entries lack actor role, correlation id and source; login events go to the application log but are not audited.
 - Recharge outbox and a background MDM command worker; real MDM/HES adapter (needs the endpoint and
   command contract).
-- Billing batch/job model with progress; report jobs for large exports.
+- Report jobs for large exports; a scheduler with billing run history and alerting (the billing run itself is now batched, claimed and resumable).
 - System Health, Integrations and Service Requests modules; tariff fields (code, taxes, thresholds).
 - Network hierarchy (circle/division/feeder) and area analytics; balance history; abnormal-consumption detection.
 - Capped (1,000-row) lists on Exceptions, Notifications, Billing Holds, Meter Credit, RC/DC, Conversion, Reconciliation, Meter Replacements and Consumer-based lookups (the charge-calculation report loads consumers) need keyset paging and search; the cap keeps them safe but not complete.

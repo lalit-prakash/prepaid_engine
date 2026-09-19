@@ -30,6 +30,13 @@ public class BillingRun
     public int ConsumerCount { get; private set; }
     public int ExceptionCount { get; private set; }
 
+    /// <summary>Last time the instance running this billing run reported progress. A run whose heartbeat is older
+    /// than the lease can be taken over by another instance.</summary>
+    public DateTime LastHeartbeatAt { get; private set; }
+
+    /// <summary>Highest consumer id already processed and committed; a resumed run continues after it.</summary>
+    public Guid? ResumeAfterConsumerId { get; private set; }
+
     public BillingRun(Guid id, string runType, DateOnly billingDate, DateTime startedAt)
     {
         if (string.IsNullOrWhiteSpace(runType))
@@ -39,6 +46,7 @@ public class BillingRun
         RunType = runType;
         BillingDate = billingDate;
         StartedAt = startedAt;
+        LastHeartbeatAt = startedAt;
         Status = BillingRunStatus.Running;
     }
 
@@ -48,9 +56,15 @@ public class BillingRun
         RunType = string.Empty;
     }
 
-    public void RecordConsumer() => ConsumerCount++;
-
-    public void RecordException() => ExceptionCount++;
+    /// <summary>Records one committed batch: how many consumers it covered, how many raised exceptions, the last
+    /// consumer id reached (the resume cursor) and a fresh heartbeat.</summary>
+    public void RecordBatch(int consumers, int exceptions, Guid lastConsumerId, DateTime now)
+    {
+        ConsumerCount += consumers;
+        ExceptionCount += exceptions;
+        ResumeAfterConsumerId = lastConsumerId;
+        LastHeartbeatAt = now;
+    }
 
     public void Complete(DateTime completedAt)
     {

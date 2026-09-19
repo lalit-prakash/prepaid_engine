@@ -14,6 +14,7 @@ public class BillingRunConfiguration : IEntityTypeConfiguration<BillingRun>
         builder.Property(r => r.RunType).IsRequired().HasMaxLength(30);
         builder.Property(r => r.BillingDate).IsRequired();
         builder.Property(r => r.StartedAt).IsRequired();
+        builder.Property(r => r.LastHeartbeatAt).IsRequired();
         builder.Property(r => r.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
 
         // Prevents two daily billing runs from being created for the same date (spec §22).

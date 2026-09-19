@@ -1,4 +1,4 @@
-using PrepaidEngine.Application.Billing;
+﻿using PrepaidEngine.Application.Billing;
 
 namespace PrepaidEngine.Api.Billing;
 
@@ -9,9 +9,11 @@ namespace PrepaidEngine.Api.Billing;
 /// calendar day's DLP charge for that stage — see <see cref="IBillingEngineService"/>'s doc
 /// comment for the full rule.
 ///
-/// Intentionally simple, per the spec's own framing: production should replace this with a
-/// durable scheduler/job framework (with retry guarantees) once operational scale requires it —
-/// this is not that, and is not meant to be mistaken for it.
+/// Safe to run on several API instances at once: the billing service claims each stage run (one instance
+/// wins, the others are told it is running elsewhere), processes consumers in committed batches, and lets
+/// another instance take over and resume a run whose owner stopped reporting progress. A stage that is
+/// running elsewhere is therefore retried on later ticks rather than marked done here. A dedicated job
+/// framework would still add scheduling history and alerting, but is no longer needed for correctness.
 /// </summary>
 public class BillingProcessingWorker : BackgroundService
 {
@@ -71,9 +73,14 @@ public class BillingProcessingWorker : BackgroundService
             using var scope = _scopeFactory.CreateScope();
             var billingEngine = scope.ServiceProvider.GetRequiredService<IBillingEngineService>();
             var stage1CutoffUtc = today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc).Add(Stage1Cutoff);
-            await billingEngine.ProcessDailyStage1Async(billingDate, stage1CutoffUtc, cancellationToken);
-            _lastStage1Processed = today;
-            _logger.LogInformation("Processed Stage 1 DLP charge for {BillingDate}.", billingDate);
+            var results = await billingEngine.ProcessDailyStage1Async(billingDate, stage1CutoffUtc, cancellationToken);
+            if (RunningElsewhere(results))
+                _logger.LogInformation("Stage 1 for {BillingDate} is running on another instance; will check again.", billingDate);
+            else
+            {
+                _lastStage1Processed = today;
+                _logger.LogInformation("Processed Stage 1 DLP charge for {BillingDate}.", billingDate);
+            }
         }
 
         if (timeOfDay >= Stage2WindowStart && timeOfDay <= Stage2WindowEnd && _lastStage2Processed != today)
@@ -81,9 +88,17 @@ public class BillingProcessingWorker : BackgroundService
             using var scope = _scopeFactory.CreateScope();
             var billingEngine = scope.ServiceProvider.GetRequiredService<IBillingEngineService>();
             var stage2CutoffUtc = today.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc).Add(Stage2Cutoff);
-            await billingEngine.ProcessDailyStage2Async(billingDate, stage2CutoffUtc, cancellationToken);
-            _lastStage2Processed = today;
-            _logger.LogInformation("Processed Stage 2 DLP charge (+ provisional) for {BillingDate}.", billingDate);
+            var results = await billingEngine.ProcessDailyStage2Async(billingDate, stage2CutoffUtc, cancellationToken);
+            if (RunningElsewhere(results))
+                _logger.LogInformation("Stage 2 for {BillingDate} is running on another instance; will check again.", billingDate);
+            else
+            {
+                _lastStage2Processed = today;
+                _logger.LogInformation("Processed Stage 2 DLP charge (+ provisional) for {BillingDate}.", billingDate);
+            }
         }
     }
+
+    private static bool RunningElsewhere(IReadOnlyList<DailyProcessingResult> results)
+        => results.Count == 1 && results[0].Skipped && results[0].SkipReason?.Contains("already running", StringComparison.Ordinal) == true;
 }
