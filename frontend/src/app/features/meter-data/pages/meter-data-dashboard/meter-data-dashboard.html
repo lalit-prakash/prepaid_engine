@@ -10,148 +10,150 @@
     <a routerLink="/billing-holds" class="page-header__cross-link">Billing Holds →</a>
   </div>
 
-  <div class="tabs">
-    <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'dlp'" (click)="selectTab('dlp')">DLP</button>
-    <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'bp'" (click)="selectTab('bp')">BP</button>
-    <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'ls'" (click)="selectTab('ls')">LS</button>
-    <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'ip'" (click)="selectTab('ip')">IP</button>
-    <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'events'" (click)="selectTab('events')">Events</button>
-    <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'alarms'" (click)="selectTab('alarms')">Alarms</button>
+  <div class="tabs" role="tablist" aria-label="Meter data profiles">
+    <button type="button" role="tab" class="tabs__item" [class.tabs__item--active]="activeTab() === 'dlp'" (click)="selectTab('dlp')">DLP</button>
+    <button type="button" role="tab" class="tabs__item" [class.tabs__item--active]="activeTab() === 'bp'" (click)="selectTab('bp')">BP</button>
+    <button type="button" role="tab" class="tabs__item" [class.tabs__item--active]="activeTab() === 'ls'" (click)="selectTab('ls')">LS</button>
+    <button type="button" role="tab" class="tabs__item" [class.tabs__item--active]="activeTab() === 'ip'" (click)="selectTab('ip')">IP</button>
+    <button type="button" role="tab" class="tabs__item" [class.tabs__item--active]="activeTab() === 'events'" (click)="selectTab('events')">Events</button>
+    <button type="button" role="tab" class="tabs__item" [class.tabs__item--active]="activeTab() === 'alarms'" (click)="selectTab('alarms')">Alarms</button>
   </div>
 
   <div class="toolbar">
     <input
+      #searchBox
       type="search"
-      placeholder="Search account number, name, or meter number…"
+      aria-label="Search meter data"
+      placeholder="Search account or meter number, or consumer name…"
       [value]="searchTerm()"
-      (input)="searchTerm.set($any($event.target).value)"
+      (input)="onSearchInput($any($event.target).value)"
     />
-  </div>
-
-  <!-- ==================================================================== DLP -->
-  @if (activeTab() === 'dlp') {
-    @if (dlpLoading()) {
-      <div class="skeleton-row">
-        @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
-      </div>
-    } @else if (dlpError()) {
-      <div class="error-panel">{{ dlpError() }}</div>
-    } @else {
-      <section class="kpi-row">
-        <pe-kpi-card label="Total Profiles" [value]="profiles().length" tone="primary" />
-        <pe-kpi-card label="Provisional" [value]="provisionalCount" tone="warning" />
-        <pe-kpi-card label="Billed" [value]="billedCount" tone="success" />
-      </section>
-
-      @if (filteredProfiles.length === 0) {
-        <div class="empty-panel">No Daily Load Profiles matched your search.</div>
-      } @else {
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Profile Date</th><th>Account</th><th>Consumer</th><th>Meter</th>
-                <th class="num">Total kWh</th><th>Status</th><th>Received</th><th>Billing Stage</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (p of filteredProfiles; track p.id) {
-                <tr>
-                  <td>{{ p.profileDate | date: 'mediumDate' }}</td>
-                  <td><a [routerLink]="['/consumers', p.accountNumber]">{{ p.accountNumber }}</a></td>
-                  <td>{{ p.name }}</td>
-                  <td class="mono">{{ p.meterNumber }}</td>
-                  <td class="num">{{ p.totalKwh | number: '1.2-2' }}</td>
-                  <td>
-                    @if (p.isProvisional) {
-                      <pe-status-badge label="Provisional" tone="warning" />
-                    } @else {
-                      @switch (p.status) {
-                        @case (DailyProfileStatus.Billed) { <pe-status-badge label="Billed" tone="success" /> }
-                        @case (DailyProfileStatus.Rejected) { <pe-status-badge label="Rejected" tone="danger" /> }
-                        @case (DailyProfileStatus.Validated) { <pe-status-badge label="Validated" tone="info" /> }
-                        @default { <pe-status-badge label="Received" tone="neutral" /> }
-                      }
-                    }
-                  </td>
-                  <td>{{ p.receivedAt | date: 'medium' }}</td>
-                  <td>{{ p.isProvisional ? '—' : receivedStageLabel(p.receivedAt) }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+    @if (activeTab() !== 'ip') {
+      <label class="toolbar__date">From
+        <input #fromBox type="date" (change)="onDateChange('from', $any($event.target).value)" />
+      </label>
+      <label class="toolbar__date">To
+        <input #toBox type="date" (change)="onDateChange('to', $any($event.target).value)" />
+      </label>
+      @if (statusOptions[activeTab()]; as options) {
+        <select aria-label="Filter by status" (change)="onStatusChange($any($event.target).value)">
+          <option value="" [selected]="!statusFilter()">All statuses</option>
+          @for (o of options; track o.value) {
+            <option [value]="o.value" [selected]="statusFilter() === o.value">{{ o.label }}</option>
+          }
+        </select>
       }
     }
+    @if (hasActiveFilters) {
+      <button type="button" class="toolbar__clear" (click)="clearFilters()">Clear filters</button>
+    }
+  </div>
+
+  @if (active; as pager) {
+    @if (pager.error()) {
+      <div class="error-panel">
+        {{ pager.error() }}
+        <button type="button" class="toolbar__clear" (click)="retry()">Retry</button>
+      </div>
+    } @else if (pager.loading() && pager.items().length === 0) {
+      <div class="skeleton-row" aria-busy="true">
+        @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
+      </div>
+    } @else if (pager.items().length === 0) {
+      <div class="empty-panel">{{ hasActiveFilters ? 'No records match these filters.' : 'No records have been received for this profile yet.' }}</div>
+    }
+  }
+
+  <!-- ==================================================================== DLP -->
+  @if (activeTab() === 'dlp' && dlp.items().length > 0) {
+    <div class="table-wrap" [class.table-wrap--loading]="dlp.loading()">
+      <table>
+        <thead>
+          <tr>
+            <th>Profile Date</th><th>Account</th><th>Consumer</th><th>Meter</th>
+            <th class="num">Total kWh</th><th>Status</th><th>Received</th><th>Billing Stage</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (p of dlp.items(); track p.id) {
+            <tr>
+              <td>{{ p.profileDate | date: 'mediumDate' }}</td>
+              <td><a [routerLink]="['/consumers', p.accountNumber]">{{ p.accountNumber }}</a></td>
+              <td>{{ p.name }}</td>
+              <td class="mono">{{ p.meterNumber }}</td>
+              <td class="num">{{ p.totalKwh | number: '1.2-2' }}</td>
+              <td>
+                @if (p.isProvisional) {
+                  <pe-status-badge label="Provisional" tone="warning" />
+                } @else {
+                  @switch (p.status) {
+                    @case (DailyProfileStatus.Billed) { <pe-status-badge label="Billed" tone="success" /> }
+                    @case (DailyProfileStatus.Rejected) { <pe-status-badge label="Rejected" tone="danger" /> }
+                    @case (DailyProfileStatus.Validated) { <pe-status-badge label="Validated" tone="info" /> }
+                    @default { <pe-status-badge label="Received" tone="neutral" /> }
+                  }
+                }
+              </td>
+              <td>{{ p.receivedAt | date: 'medium' }}</td>
+              <td>{{ p.isProvisional ? '—' : receivedStageLabel(p.receivedAt) }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
   }
 
   <!-- ===================================================================== BP -->
-  @if (activeTab() === 'bp') {
-    @if (bpLoading()) {
-      <div class="skeleton-row"><div class="skeleton-card"></div></div>
-    } @else if (bpError()) {
-      <div class="error-panel">{{ bpError() }}</div>
-    } @else if (filteredRegisterReadings.length === 0) {
-      <div class="empty-panel">No Billing Profile register readings matched your search.</div>
-    } @else {
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Reading Time</th><th>Account</th><th>Consumer</th><th>Meter</th><th class="num">Cumulative kWh</th><th>Status</th><th>Received</th></tr>
-          </thead>
-          <tbody>
-            @for (r of filteredRegisterReadings; track r.id) {
-              <tr>
-                <td>{{ r.readingTimestamp | date: 'medium' }}</td>
-                <td><a [routerLink]="['/consumers', r.accountNumber]">{{ r.accountNumber }}</a></td>
-                <td>{{ r.name }}</td>
-                <td class="mono">{{ r.meterNumber }}</td>
-                <td class="num">{{ r.cumulativeImportKwh | number: '1.2-2' }}</td>
-                <td>
-                  @switch (r.status) {
-                    @case (1) { <pe-status-badge label="Validated" tone="success" /> }
-                    @case (2) { <pe-status-badge label="Rejected" tone="danger" /> }
-                    @default { <pe-status-badge label="Received" tone="neutral" /> }
-                  }
-                </td>
-                <td>{{ r.receivedAt | date: 'medium' }}</td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    }
+  @if (activeTab() === 'bp' && bp.items().length > 0) {
+    <div class="table-wrap" [class.table-wrap--loading]="bp.loading()">
+      <table>
+        <thead>
+          <tr><th>Reading Time</th><th>Account</th><th>Consumer</th><th>Meter</th><th class="num">Cumulative kWh</th><th>Status</th><th>Received</th></tr>
+        </thead>
+        <tbody>
+          @for (r of bp.items(); track r.id) {
+            <tr>
+              <td>{{ r.readingTimestamp | date: 'medium' }}</td>
+              <td><a [routerLink]="['/consumers', r.accountNumber]">{{ r.accountNumber }}</a></td>
+              <td>{{ r.name }}</td>
+              <td class="mono">{{ r.meterNumber }}</td>
+              <td class="num">{{ r.cumulativeImportKwh | number: '1.2-2' }}</td>
+              <td>
+                @switch (r.status) {
+                  @case (1) { <pe-status-badge label="Validated" tone="success" /> }
+                  @case (2) { <pe-status-badge label="Rejected" tone="danger" /> }
+                  @default { <pe-status-badge label="Received" tone="neutral" /> }
+                }
+              </td>
+              <td>{{ r.receivedAt | date: 'medium' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
   }
 
   <!-- ===================================================================== LS -->
-  @if (activeTab() === 'ls') {
-    @if (lsLoading()) {
-      <div class="skeleton-row"><div class="skeleton-card"></div></div>
-    } @else if (lsError()) {
-      <div class="error-panel">{{ lsError() }}</div>
-    } @else if (filteredLoadSurveyIntervals.length === 0) {
-      <div class="empty-panel">No Load Survey intervals matched your search.</div>
-    } @else {
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Interval Start</th><th>Interval End</th><th>Account</th><th>Consumer</th><th>Meter</th><th class="num">Import kWh</th></tr>
-          </thead>
-          <tbody>
-            @for (l of filteredLoadSurveyIntervals; track l.id) {
-              <tr>
-                <td>{{ l.intervalStart | date: 'medium' }}</td>
-                <td>{{ l.intervalEnd | date: 'medium' }}</td>
-                <td><a [routerLink]="['/consumers', l.accountNumber]">{{ l.accountNumber }}</a></td>
-                <td>{{ l.name }}</td>
-                <td class="mono">{{ l.meterNumber }}</td>
-                <td class="num">{{ l.importKwh | number: '1.2-2' }}</td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    }
+  @if (activeTab() === 'ls' && ls.items().length > 0) {
+    <div class="table-wrap" [class.table-wrap--loading]="ls.loading()">
+      <table>
+        <thead>
+          <tr><th>Interval Start</th><th>Interval End</th><th>Account</th><th>Consumer</th><th>Meter</th><th class="num">Import kWh</th></tr>
+        </thead>
+        <tbody>
+          @for (l of ls.items(); track l.id) {
+            <tr>
+              <td>{{ l.intervalStart | date: 'medium' }}</td>
+              <td>{{ l.intervalEnd | date: 'medium' }}</td>
+              <td><a [routerLink]="['/consumers', l.accountNumber]">{{ l.accountNumber }}</a></td>
+              <td>{{ l.name }}</td>
+              <td class="mono">{{ l.meterNumber }}</td>
+              <td class="num">{{ l.importKwh | number: '1.2-2' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
   }
 
   <!-- ===================================================================== IP -->
@@ -163,6 +165,7 @@
     } @else if (filteredInstantaneousReadings.length === 0) {
       <div class="empty-panel">No Instantaneous Profile readings matched your search.</div>
     } @else {
+      <p class="ip-note">Latest reading per meter.</p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -197,103 +200,100 @@
   }
 
   <!-- ================================================================= Events -->
-  @if (activeTab() === 'events') {
-    @if (eventsLoading()) {
-      <div class="skeleton-row"><div class="skeleton-card"></div></div>
-    } @else if (eventsError()) {
-      <div class="error-panel">{{ eventsError() }}</div>
-    } @else if (filteredMeterEvents.length === 0) {
-      <div class="empty-panel">No meter events matched your search.</div>
-    } @else {
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Event Time</th><th>Account</th><th>Consumer</th><th>Meter</th><th>Event</th><th>Description</th><th>Status</th></tr>
-          </thead>
-          <tbody>
-            @for (e of filteredMeterEvents; track e.id) {
-              <tr>
-                <td>{{ e.eventTimestamp | date: 'medium' }}</td>
-                <td><a [routerLink]="['/consumers', e.accountNumber]">{{ e.accountNumber }}</a></td>
-                <td>{{ e.name }}</td>
-                <td class="mono">{{ e.meterNumber }}</td>
-                <td>{{ eventCodeLabel(e.eventCode) }}</td>
-                <td>{{ e.description || '—' }}</td>
-                <td>
-                  @if (e.status === 1) { <pe-status-badge label="Processed" tone="success" /> }
-                  @else { <pe-status-badge label="Received" tone="neutral" /> }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    }
+  @if (activeTab() === 'events' && events.items().length > 0) {
+    <div class="table-wrap" [class.table-wrap--loading]="events.loading()">
+      <table>
+        <thead>
+          <tr><th>Event Time</th><th>Account</th><th>Consumer</th><th>Meter</th><th>Event</th><th>Description</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          @for (e of events.items(); track e.id) {
+            <tr>
+              <td>{{ e.eventTimestamp | date: 'medium' }}</td>
+              <td><a [routerLink]="['/consumers', e.accountNumber]">{{ e.accountNumber }}</a></td>
+              <td>{{ e.name }}</td>
+              <td class="mono">{{ e.meterNumber }}</td>
+              <td>{{ eventCodeLabel(e.eventCode) }}</td>
+              <td>{{ e.description || '—' }}</td>
+              <td>
+                @if (e.status === 1) { <pe-status-badge label="Processed" tone="success" /> }
+                @else { <pe-status-badge label="Received" tone="neutral" /> }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
   }
 
   <!-- ================================================================= Alarms -->
-  @if (activeTab() === 'alarms') {
-    @if (alarmsLoading()) {
-      <div class="skeleton-row"><div class="skeleton-card"></div></div>
-    } @else if (alarmsError()) {
-      <div class="error-panel">{{ alarmsError() }}</div>
-    } @else if (filteredMeterAlarms.length === 0) {
-      <div class="empty-panel">No meter alarms matched your search.</div>
-    } @else {
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Raised</th><th>Account</th><th>Consumer</th><th>Meter</th><th>Alarm</th><th>Severity</th><th>Status</th><th>Action</th></tr>
-          </thead>
-          <tbody>
-            @for (a of filteredMeterAlarms; track a.id) {
-              <tr>
-                <td>{{ a.raisedAt | date: 'medium' }}</td>
-                <td><a [routerLink]="['/consumers', a.accountNumber]">{{ a.accountNumber }}</a></td>
-                <td>{{ a.name }}</td>
-                <td class="mono">{{ a.meterNumber }}</td>
-                <td>{{ alarmCodeLabel(a.alarmCode) }}</td>
-                <td>
-                  @switch (a.severity) {
-                    @case (2) { <pe-status-badge label="Critical" tone="danger" /> }
-                    @case (1) { <pe-status-badge label="Warning" tone="warning" /> }
-                    @default { <pe-status-badge label="Info" tone="info" /> }
-                  }
-                </td>
-                <td>
-                  @switch (a.status) {
-                    @case (MeterAlarmStatus.Resolved) { <pe-status-badge label="Resolved" tone="success" /> }
-                    @case (MeterAlarmStatus.Acknowledged) { <pe-status-badge label="Acknowledged" tone="info" /> }
-                    @default { <pe-status-badge label="Open" tone="danger" /> }
-                  }
-                </td>
-                <td>
-                  @if (actingAlarmId() === a.id) {
-                    <div class="alarm-action">
-                      <input
-                        type="text"
-                        [placeholder]="actingAlarmMode() === 'resolve' ? 'Resolution note…' : 'Your operator identity…'"
-                        [value]="alarmNote()"
-                        (input)="alarmNote.set($any($event.target).value)"
-                      />
-                      <button type="button" class="btn-sm" [disabled]="alarmActionSubmitting()" (click)="submitAlarmAction(a.id)">Submit</button>
-                      <button type="button" class="btn-sm btn-sm--ghost" (click)="cancelAlarmAction()">Cancel</button>
-                      @if (alarmActionError()) { <div class="alarm-action__error">{{ alarmActionError() }}</div> }
-                    </div>
+  @if (activeTab() === 'alarms' && alarms.items().length > 0) {
+    <div class="table-wrap" [class.table-wrap--loading]="alarms.loading()">
+      <table>
+        <thead>
+          <tr><th>Raised</th><th>Account</th><th>Consumer</th><th>Meter</th><th>Alarm</th><th>Severity</th><th>Status</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          @for (a of alarms.items(); track a.id) {
+            <tr>
+              <td>{{ a.raisedAt | date: 'medium' }}</td>
+              <td><a [routerLink]="['/consumers', a.accountNumber]">{{ a.accountNumber }}</a></td>
+              <td>{{ a.name }}</td>
+              <td class="mono">{{ a.meterNumber }}</td>
+              <td>{{ alarmCodeLabel(a.alarmCode) }}</td>
+              <td>
+                @switch (a.severity) {
+                  @case (2) { <pe-status-badge label="Critical" tone="danger" /> }
+                  @case (1) { <pe-status-badge label="Warning" tone="warning" /> }
+                  @default { <pe-status-badge label="Info" tone="info" /> }
+                }
+              </td>
+              <td>
+                @switch (a.status) {
+                  @case (MeterAlarmStatus.Resolved) { <pe-status-badge label="Resolved" tone="success" /> }
+                  @case (MeterAlarmStatus.Acknowledged) { <pe-status-badge label="Acknowledged" tone="info" /> }
+                  @default { <pe-status-badge label="Open" tone="danger" /> }
+                }
+              </td>
+              <td>
+                @if (actingAlarmId() === a.id) {
+                  <div class="alarm-action">
+                    <input
+                      type="text"
+                      [placeholder]="actingAlarmMode() === 'resolve' ? 'Resolution note…' : 'Your operator identity…'"
+                      [value]="alarmNote()"
+                      (input)="alarmNote.set($any($event.target).value)"
+                    />
+                    <button type="button" class="btn-sm" [disabled]="alarmActionSubmitting()" (click)="submitAlarmAction(a.id)">Submit</button>
+                    <button type="button" class="btn-sm btn-sm--ghost" (click)="cancelAlarmAction()">Cancel</button>
+                    @if (alarmActionError()) { <div class="alarm-action__error">{{ alarmActionError() }}</div> }
+                  </div>
+                } @else {
+                  @if (a.status === MeterAlarmStatus.Open) {
+                    <button type="button" class="btn-sm" (click)="startAcknowledge(a.id)">Acknowledge</button>
+                  } @else if (a.status === MeterAlarmStatus.Acknowledged) {
+                    <button type="button" class="btn-sm" (click)="startResolve(a.id)">Resolve</button>
                   } @else {
-                    @if (a.status === MeterAlarmStatus.Open) {
-                      <button type="button" class="btn-sm" (click)="startAcknowledge(a.id)">Acknowledge</button>
-                    } @else if (a.status === MeterAlarmStatus.Acknowledged) {
-                      <button type="button" class="btn-sm" (click)="startResolve(a.id)">Resolve</button>
-                    } @else {
-                      <span class="mono">{{ a.resolutionNote }}</span>
-                    }
+                    <span class="mono">{{ a.resolutionNote }}</span>
                   }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- ============================================================ shared pager -->
+  @if (active; as pager) {
+    @if (pager.items().length > 0) {
+      <div class="pager">
+        <span>{{ pager.totalCount() }} record(s){{ hasActiveFilters ? ' match' : '' }} · page {{ pager.pageIndex() + 1 }}</span>
+        <span class="pager__buttons">
+          <button type="button" (click)="previousPage()" [disabled]="pager.pageIndex() === 0 || pager.loading()">Previous</button>
+          <button type="button" (click)="nextPage()" [disabled]="!pager.nextCursor() || pager.loading()">Next</button>
+        </span>
       </div>
     }
   }

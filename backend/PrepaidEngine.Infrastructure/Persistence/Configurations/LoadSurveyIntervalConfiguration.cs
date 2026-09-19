@@ -19,6 +19,7 @@ public class LoadSurveyIntervalConfiguration : IEntityTypeConfiguration<LoadSurv
 
         builder.HasIndex(l => new { l.ConsumerId, l.MeterId, l.IntervalStart }).IsUnique();
         builder.HasIndex(l => l.MeterId);
+        builder.HasIndex(l => l.IntervalStart);
 
         builder.HasOne<Consumer>().WithMany().HasForeignKey(l => l.ConsumerId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<SmartMeter>().WithMany().HasForeignKey(l => l.MeterId).OnDelete(DeleteBehavior.Restrict);

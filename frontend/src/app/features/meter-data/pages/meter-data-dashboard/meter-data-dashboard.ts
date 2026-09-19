@@ -1,5 +1,7 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, signal, viewChild } from '@angular/core';
+import { Subject, Subscription, debounceTime } from 'rxjs';
+import { PagedTab } from './paged-tab';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MeterDataService } from '../../../../core/services/meter-data.service';
@@ -14,58 +16,47 @@ import {
   MeterAlarmSummary,
   MeterAlarmStatus,
   MeterAlarmCode,
+  MeterDataQuery,
 } from '../../../../core/models/meter-data.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
 
 type MeterDataTab = 'dlp' | 'bp' | 'ls' | 'ip' | 'events' | 'alarms';
+type PagedTabId = Exclude<MeterDataTab, 'ip'>;
 
 /**
- * Real, API-backed Meter Data views — one tab per MDMS profile type, each with its own role (see
- * each entity's own doc comment on the backend): DLP is the sole driver of ongoing prepaid
- * billing; BP/LS/IP are register-validation/consumption-intelligence/meter-health only, never a
- * billing input; Events/Alarms are kept as separate tabs matching their separate backend tables.
- * Read-only except acknowledging/resolving an alarm. Every tab loads its data lazily, on first
- * activation, to avoid firing five API calls for tabs the operator never opens.
+ * Meter Data views - one tab per MDMS profile type, each with its own role (see each entity's
+ * doc comment on the backend): DLP is the sole driver of ongoing prepaid billing; BP/LS/IP are
+ * register-validation / consumption-intelligence / meter-health only, never a billing input;
+ * Events and Alarms stay separate, matching their separate backend tables. DLP, BP, LS, Events and
+ * Alarms are searched, filtered and paged on the server (keyset pagination), so the browser holds
+ * one page at a time and a search can never miss rows that a row cap would have hidden. IP is the
+ * latest reading per meter. Read-only except acknowledging/resolving an alarm.
  */
 @Component({
   selector: 'pe-meter-data-dashboard',
-  imports: [StatusBadge, KpiCard, DecimalPipe, DatePipe, FormsModule, RouterLink],
+  imports: [StatusBadge, DecimalPipe, DatePipe, FormsModule, RouterLink],
   templateUrl: './meter-data-dashboard.html',
   styleUrl: './meter-data-dashboard.scss',
 })
-export class MeterDataDashboard implements OnInit {
+export class MeterDataDashboard implements OnInit, OnDestroy {
   protected readonly activeTab = signal<MeterDataTab>('dlp');
+
   protected readonly searchTerm = signal('');
+  protected readonly fromDate = signal('');
+  protected readonly toDate = signal('');
+  protected readonly statusFilter = signal('');
 
-  protected readonly profiles = signal<DailyLoadProfileSummary[]>([]);
-  protected readonly dlpLoading = signal(true);
-  protected readonly dlpError = signal<string | null>(null);
-
-  protected readonly registerReadings = signal<RegisterReadingSummary[]>([]);
-  protected readonly bpLoading = signal(false);
-  protected readonly bpError = signal<string | null>(null);
-  protected bpLoaded = false;
-
-  protected readonly loadSurveyIntervals = signal<LoadSurveyIntervalSummary[]>([]);
-  protected readonly lsLoading = signal(false);
-  protected readonly lsError = signal<string | null>(null);
-  protected lsLoaded = false;
+  protected readonly dlp: PagedTab<DailyLoadProfileSummary>;
+  protected readonly bp: PagedTab<RegisterReadingSummary>;
+  protected readonly ls: PagedTab<LoadSurveyIntervalSummary>;
+  protected readonly events: PagedTab<MeterEventSummary>;
+  protected readonly alarms: PagedTab<MeterAlarmSummary>;
 
   protected readonly instantaneousReadings = signal<InstantaneousReadingSummary[]>([]);
   protected readonly ipLoading = signal(false);
   protected readonly ipError = signal<string | null>(null);
   protected ipLoaded = false;
-
-  protected readonly meterEvents = signal<MeterEventSummary[]>([]);
-  protected readonly eventsLoading = signal(false);
-  protected readonly eventsError = signal<string | null>(null);
-  protected eventsLoaded = false;
-
-  protected readonly meterAlarms = signal<MeterAlarmSummary[]>([]);
-  protected readonly alarmsLoading = signal(false);
-  protected readonly alarmsError = signal<string | null>(null);
-  protected alarmsLoaded = false;
 
   protected readonly actingAlarmId = signal<string | null>(null);
   protected readonly actingAlarmMode = signal<'acknowledge' | 'resolve' | null>(null);
@@ -76,107 +67,155 @@ export class MeterDataDashboard implements OnInit {
   protected readonly DailyProfileStatus = DailyProfileStatus;
   protected readonly MeterAlarmStatus = MeterAlarmStatus;
 
+  /** Status filter options per tab (enum names understood by the API); tabs without one omit it. */
+  protected readonly statusOptions: Partial<Record<MeterDataTab, { label: string; value: string }[]>> = {
+    dlp: [
+      { label: 'Received', value: 'Received' },
+      { label: 'Validated', value: 'Validated' },
+      { label: 'Rejected', value: 'Rejected' },
+      { label: 'Billed', value: 'Billed' },
+      { label: 'Provisional', value: 'Provisional' },
+      { label: 'Reconciled', value: 'Reconciled' },
+    ],
+    bp: [
+      { label: 'Received', value: 'Received' },
+      { label: 'Validated', value: 'Validated' },
+      { label: 'Rejected', value: 'Rejected' },
+    ],
+    alarms: [
+      { label: 'Open', value: 'Open' },
+      { label: 'Acknowledged', value: 'Acknowledged' },
+      { label: 'Resolved', value: 'Resolved' },
+    ],
+  };
+
+  private readonly searchBox = viewChild<ElementRef<HTMLInputElement>>('searchBox');
+  private readonly fromBox = viewChild<ElementRef<HTMLInputElement>>('fromBox');
+  private readonly toBox = viewChild<ElementRef<HTMLInputElement>>('toBox');
+  private readonly search$ = new Subject<string>();
+  private searchSub?: Subscription;
+
   constructor(
     private readonly meterDataService: MeterDataService,
     private readonly route: ActivatedRoute,
-  ) {}
+  ) {
+    this.dlp = new PagedTab((q) => this.meterDataService.searchDailyLoadProfiles(q), 'Could not load Daily Load Profile data from the API.');
+    this.bp = new PagedTab((q) => this.meterDataService.searchRegisterReadings(q), 'Could not load Billing Profile data from the API.');
+    this.ls = new PagedTab((q) => this.meterDataService.searchLoadSurveyIntervals(q), 'Could not load Load Survey data from the API.');
+    this.events = new PagedTab((q) => this.meterDataService.searchMeterEvents(q), 'Could not load meter event data from the API.');
+    this.alarms = new PagedTab((q) => this.meterDataService.searchMeterAlarms(q), 'Could not load meter alarm data from the API.');
+  }
 
   ngOnInit(): void {
-    // Prefills from a cross-link (e.g. Billing Holds' "View DLP data →") — real reuse of this
-    // page's own search state, not a separate filtered endpoint.
+    // Prefills from a cross-link (e.g. Billing Holds' "View DLP data") - the same server-side search.
     const initialQuery = this.route.snapshot.queryParamMap.get('q');
     if (initialQuery) this.searchTerm.set(initialQuery);
 
-    this.meterDataService.listDailyLoadProfiles().subscribe({
-      next: (profiles) => {
-        this.profiles.set(profiles);
-        this.dlpLoading.set(false);
-      },
-      error: () => {
-        this.dlpError.set('Could not load Daily Load Profile data from the API.');
-        this.dlpLoading.set(false);
-      },
+    this.searchSub = this.search$.pipe(debounceTime(300)).subscribe((term) => {
+      if (term === this.searchTerm()) return;
+      this.searchTerm.set(term);
+      this.reloadActive();
     });
+
+    this.dlp.reset(this.filters());
+  }
+
+  ngOnDestroy(): void {
+    this.searchSub?.unsubscribe();
+    for (const t of [this.dlp, this.bp, this.ls, this.events, this.alarms]) t.destroy();
+  }
+
+  protected get active(): PagedTab<unknown> | null {
+    return this.activeTab() === 'ip' ? null : (this.pagedTab(this.activeTab() as PagedTabId) as PagedTab<unknown>);
+  }
+
+  private pagedTab(tab: PagedTabId): PagedTab<unknown> {
+    return { dlp: this.dlp, bp: this.bp, ls: this.ls, events: this.events, alarms: this.alarms }[tab] as PagedTab<unknown>;
+  }
+
+  private filters(): Omit<MeterDataQuery, 'after' | 'pageSize'> {
+    return { q: this.searchTerm(), from: this.fromDate(), to: this.toDate(), status: this.statusFilter() };
   }
 
   selectTab(tab: MeterDataTab): void {
     this.activeTab.set(tab);
-    this.searchTerm.set('');
+    this.clearFilterState();
 
-    if (tab === 'bp' && !this.bpLoaded) {
-      this.bpLoaded = true;
-      this.bpLoading.set(true);
-      this.meterDataService.listRegisterReadings().subscribe({
-        next: (rows) => { this.registerReadings.set(rows); this.bpLoading.set(false); },
-        error: () => { this.bpError.set('Could not load Billing Profile data from the API.'); this.bpLoading.set(false); },
-      });
-    } else if (tab === 'ls' && !this.lsLoaded) {
-      this.lsLoaded = true;
-      this.lsLoading.set(true);
-      this.meterDataService.listLoadSurveyIntervals().subscribe({
-        next: (rows) => { this.loadSurveyIntervals.set(rows); this.lsLoading.set(false); },
-        error: () => { this.lsError.set('Could not load Load Survey data from the API.'); this.lsLoading.set(false); },
-      });
-    } else if (tab === 'ip' && !this.ipLoaded) {
-      this.ipLoaded = true;
-      this.ipLoading.set(true);
-      this.meterDataService.listLatestInstantaneousReadings().subscribe({
-        next: (rows) => { this.instantaneousReadings.set(rows); this.ipLoading.set(false); },
-        error: () => { this.ipError.set('Could not load Instantaneous Profile data from the API.'); this.ipLoading.set(false); },
-      });
-    } else if (tab === 'events' && !this.eventsLoaded) {
-      this.eventsLoaded = true;
-      this.eventsLoading.set(true);
-      this.meterDataService.listMeterEvents().subscribe({
-        next: (rows) => { this.meterEvents.set(rows); this.eventsLoading.set(false); },
-        error: () => { this.eventsError.set('Could not load meter event data from the API.'); this.eventsLoading.set(false); },
-      });
-    } else if (tab === 'alarms' && !this.alarmsLoaded) {
-      this.loadAlarms();
+    if (tab === 'ip') {
+      if (!this.ipLoaded) this.loadIp();
+      return;
     }
+    // Filters were reset, so always start this tab from its first page.
+    this.pagedTab(tab).reset(this.filters());
   }
 
-  private loadAlarms(): void {
-    this.alarmsLoaded = true;
-    this.alarmsLoading.set(true);
-    this.meterDataService.listMeterAlarms().subscribe({
-      next: (rows) => { this.meterAlarms.set(rows); this.alarmsLoading.set(false); },
-      error: () => { this.alarmsError.set('Could not load meter alarm data from the API.'); this.alarmsLoading.set(false); },
+  private loadIp(): void {
+    this.ipLoaded = true;
+    this.ipLoading.set(true);
+    this.meterDataService.listLatestInstantaneousReadings().subscribe({
+      next: (rows) => { this.instantaneousReadings.set(rows); this.ipLoading.set(false); },
+      error: () => { this.ipError.set('Could not load Instantaneous Profile data from the API.'); this.ipLoading.set(false); },
     });
   }
 
-  protected get filteredProfiles(): DailyLoadProfileSummary[] {
-    return this.filterByAccountNameMeter(this.profiles());
-  }
-  protected get filteredRegisterReadings(): RegisterReadingSummary[] {
-    return this.filterByAccountNameMeter(this.registerReadings());
-  }
-  protected get filteredLoadSurveyIntervals(): LoadSurveyIntervalSummary[] {
-    return this.filterByAccountNameMeter(this.loadSurveyIntervals());
-  }
-  protected get filteredInstantaneousReadings(): InstantaneousReadingSummary[] {
-    return this.filterByAccountNameMeter(this.instantaneousReadings());
-  }
-  protected get filteredMeterEvents(): MeterEventSummary[] {
-    return this.filterByAccountNameMeter(this.meterEvents());
-  }
-  protected get filteredMeterAlarms(): MeterAlarmSummary[] {
-    return this.filterByAccountNameMeter(this.meterAlarms());
+  onSearchInput(term: string): void {
+    this.search$.next(term);
   }
 
-  private filterByAccountNameMeter<T extends { accountNumber: string; name: string; meterNumber: string }>(rows: T[]): T[] {
+  onDateChange(which: 'from' | 'to', value: string): void {
+    (which === 'from' ? this.fromDate : this.toDate).set(value);
+    this.reloadActive();
+  }
+
+  onStatusChange(value: string): void {
+    this.statusFilter.set(value);
+    this.reloadActive();
+  }
+
+  clearFilters(): void {
+    this.clearFilterState();
+    this.reloadActive();
+  }
+
+  private clearFilterState(): void {
+    for (const box of [this.searchBox(), this.fromBox(), this.toBox()]) {
+      if (box) box.nativeElement.value = '';
+    }
+    this.searchTerm.set('');
+    this.fromDate.set('');
+    this.toDate.set('');
+    this.statusFilter.set('');
+  }
+
+  protected get hasActiveFilters(): boolean {
+    return !!(this.searchTerm().trim() || this.fromDate() || this.toDate() || this.statusFilter());
+  }
+
+  private reloadActive(): void {
+    if (this.activeTab() === 'ip') return;
+    this.pagedTab(this.activeTab() as PagedTabId).reset(this.filters());
+  }
+
+  nextPage(): void {
+    this.active?.next(this.filters());
+  }
+
+  previousPage(): void {
+    this.active?.previous(this.filters());
+  }
+
+  retry(): void {
+    this.active?.load(this.filters());
+  }
+
+  /** IP has one row per meter and is filtered in the browser over that small snapshot. */
+  protected get filteredInstantaneousReadings(): InstantaneousReadingSummary[] {
     const term = this.searchTerm().trim().toLowerCase();
+    const rows = this.instantaneousReadings();
     if (!term) return rows;
     return rows.filter(
       (r) => r.accountNumber.toLowerCase().includes(term) || r.name.toLowerCase().includes(term) || r.meterNumber.toLowerCase().includes(term),
     );
-  }
-
-  protected get provisionalCount(): number {
-    return this.profiles().filter((p) => p.isProvisional).length;
-  }
-  protected get billedCount(): number {
-    return this.profiles().filter((p) => p.status === DailyProfileStatus.Billed).length;
   }
 
   /** Which of the two daily billing stages this profile's receipt time would have qualified
@@ -252,8 +291,7 @@ export class MeterDataDashboard implements OnInit {
       next: () => {
         this.alarmActionSubmitting.set(false);
         this.cancelAlarmAction();
-        this.alarmsLoaded = false;
-        this.loadAlarms();
+        this.alarms.load(this.filters());
       },
       error: () => {
         this.alarmActionSubmitting.set(false);

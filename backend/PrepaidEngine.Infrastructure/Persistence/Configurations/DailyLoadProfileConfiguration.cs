@@ -22,6 +22,7 @@ public class DailyLoadProfileConfiguration : IEntityTypeConfiguration<DailyLoadP
 
         // One DLP per Consumer+Meter+ProfileDate (spec §11.3).
         builder.HasIndex(d => new { d.ConsumerId, d.MeterId, d.ProfileDate }).IsUnique();
+        builder.HasIndex(d => d.ProfileDate);
 
         builder.HasOne<Consumer>().WithMany().HasForeignKey(d => d.ConsumerId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<SmartMeter>().WithMany().HasForeignKey(d => d.MeterId).OnDelete(DeleteBehavior.Restrict);

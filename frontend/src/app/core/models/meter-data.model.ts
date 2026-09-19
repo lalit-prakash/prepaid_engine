@@ -147,3 +147,20 @@ export interface MeterAlarmSummary {
   resolvedAt: string | null;
   resolutionNote: string | null;
 }
+
+/** Filters for the server-paginated meter-data search endpoints (GET /api/v1/meter-data/{profile}/search). */
+export interface MeterDataQuery {
+  q?: string;
+  from?: string;
+  to?: string;
+  /** Profile status / alarm status, by enum name. */
+  status?: string;
+  after?: string | null;
+  pageSize?: number;
+}
+
+export interface MeterDataPage<T> {
+  items: T[];
+  nextCursor: string | null;
+  totalCount: number;
+}

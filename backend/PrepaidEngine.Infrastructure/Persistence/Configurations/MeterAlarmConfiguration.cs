@@ -23,6 +23,7 @@ public class MeterAlarmConfiguration : IEntityTypeConfiguration<MeterAlarm>
         builder.HasIndex(a => new { a.MeterId, a.AlarmCode, a.RaisedAt }).IsUnique();
         builder.HasIndex(a => a.ConsumerId);
         builder.HasIndex(a => a.Status);
+        builder.HasIndex(a => a.RaisedAt);
 
         builder.HasOne<Consumer>().WithMany().HasForeignKey(a => a.ConsumerId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<SmartMeter>().WithMany().HasForeignKey(a => a.MeterId).OnDelete(DeleteBehavior.Restrict);

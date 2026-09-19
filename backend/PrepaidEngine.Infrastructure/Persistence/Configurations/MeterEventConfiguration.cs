@@ -20,6 +20,7 @@ public class MeterEventConfiguration : IEntityTypeConfiguration<MeterEvent>
 
         builder.HasIndex(e => new { e.MeterId, e.EventCode, e.EventTimestamp }).IsUnique();
         builder.HasIndex(e => e.ConsumerId);
+        builder.HasIndex(e => e.EventTimestamp);
 
         builder.HasOne<Consumer>().WithMany().HasForeignKey(e => e.ConsumerId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<SmartMeter>().WithMany().HasForeignKey(e => e.MeterId).OnDelete(DeleteBehavior.Restrict);

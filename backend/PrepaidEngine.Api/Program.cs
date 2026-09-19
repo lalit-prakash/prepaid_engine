@@ -2836,6 +2836,242 @@ app.MapPost("/api/v1/meter-data/dlp", async (DailyLoadProfileIngestRequest reque
 
 // Cross-consumer operator visibility into every Daily Load Profile — real, provisional, or
 // billed — never hidden behind the daily settlement result alone.
+// --- Meter Data: server-side paged search for the time-series profiles ---------------------------
+// Each endpoint is keyset-paginated newest first ("<sort key>_<Id>" cursor), filters and counts in the
+// database, and never caps silently: the old list endpoints returned at most 500/1000 rows and the
+// browser then searched within those, which could hide older data. q matches account and meter number
+// by prefix and consumer name by substring; from/to are inclusive calendar dates.
+static (DateTime? From, DateTime? ToExclusive) MeterDataRange(DateTime? from, DateTime? to) =>
+    (from.HasValue ? DateTime.SpecifyKind(from.Value.Date, DateTimeKind.Utc) : null,
+     to.HasValue ? DateTime.SpecifyKind(to.Value.Date.AddDays(1), DateTimeKind.Utc) : null);
+
+static (string Prefix, string Contains) MeterDataTerms(string q)
+{
+    var term = q.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+    return (term + "%", "%" + term + "%");
+}
+
+static bool TryParseCursor(string? after, out long key, out Guid id)
+{
+    key = 0; id = Guid.Empty;
+    if (string.IsNullOrEmpty(after)) return true;
+    var parts = after.Split('_', 2);
+    return parts.Length == 2 && long.TryParse(parts[0], out key) && Guid.TryParse(parts[1], out id);
+}
+
+app.MapGet("/api/v1/meter-data/dlp/search", async (
+    string? q, DateTime? from, DateTime? to, DailyProfileStatus? status, string? after, int? pageSize, PrepaidEngineDbContext db) =>
+{
+    var size = Math.Clamp(pageSize ?? 25, 1, 100);
+    if (!TryParseCursor(after, out var key, out var afterId)) return Results.BadRequest(new { error = "Invalid cursor." });
+
+    var query =
+        from d in db.DailyLoadProfiles.AsNoTracking()
+        join c in db.Consumers.AsNoTracking() on d.ConsumerId equals c.Id
+        join m in db.Meters.AsNoTracking() on d.MeterId equals m.Id
+        select new { d, c, m };
+    if (!string.IsNullOrWhiteSpace(q))
+    {
+        var (prefix, contains) = MeterDataTerms(q);
+        query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix) || EF.Functions.ILike(x.m.MeterNumber, prefix) || EF.Functions.ILike(x.c.Name, contains));
+    }
+    if (from.HasValue) { var f = DateOnly.FromDateTime(from.Value); query = query.Where(x => x.d.ProfileDate >= f); }
+    if (to.HasValue) { var t = DateOnly.FromDateTime(to.Value); query = query.Where(x => x.d.ProfileDate <= t); }
+    if (status.HasValue) query = query.Where(x => x.d.Status == status.Value);
+
+    var totalCount = await query.CountAsync();
+    if (!string.IsNullOrEmpty(after))
+    {
+        var afterDate = DateOnly.FromDayNumber((int)key);
+        query = query.Where(x => x.d.ProfileDate < afterDate || (x.d.ProfileDate == afterDate && x.d.Id.CompareTo(afterId) < 0));
+    }
+
+    var rows = await query
+        .OrderByDescending(x => x.d.ProfileDate).ThenByDescending(x => x.d.Id)
+        .Take(size + 1)
+        .Select(x => new
+        {
+            x.d.Id, x.c.AccountNumber, x.c.Name, x.m.MeterNumber, x.d.ProfileDate, x.d.GeneratedAt, x.d.ReceivedAt,
+            x.d.StartCumulativeKwh, x.d.EndCumulativeKwh, x.d.TotalKwh, x.d.Status, x.d.IsProvisional, x.d.SourceReference,
+        })
+        .ToListAsync();
+
+    var hasMore = rows.Count > size;
+    var items = hasMore ? rows.Take(size).ToList() : rows;
+    return Results.Ok(new { items, nextCursor = hasMore ? $"{items[^1].ProfileDate.DayNumber}_{items[^1].Id}" : null, totalCount });
+})
+.WithName("SearchDailyLoadProfiles")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/meter-data/bp/search", async (
+    string? q, DateTime? from, DateTime? to, RegisterReadingStatus? status, string? after, int? pageSize, PrepaidEngineDbContext db) =>
+{
+    var size = Math.Clamp(pageSize ?? 25, 1, 100);
+    if (!TryParseCursor(after, out var key, out var afterId)) return Results.BadRequest(new { error = "Invalid cursor." });
+    var (start, endExclusive) = MeterDataRange(from, to);
+
+    var query =
+        from r in db.RegisterReadings.AsNoTracking()
+        join c in db.Consumers.AsNoTracking() on r.ConsumerId equals c.Id
+        join m in db.Meters.AsNoTracking() on r.MeterId equals m.Id
+        select new { r, c, m };
+    if (!string.IsNullOrWhiteSpace(q))
+    {
+        var (prefix, contains) = MeterDataTerms(q);
+        query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix) || EF.Functions.ILike(x.m.MeterNumber, prefix) || EF.Functions.ILike(x.c.Name, contains));
+    }
+    if (start.HasValue) query = query.Where(x => x.r.ReadingTimestamp >= start.Value);
+    if (endExclusive.HasValue) query = query.Where(x => x.r.ReadingTimestamp < endExclusive.Value);
+    if (status.HasValue) query = query.Where(x => x.r.Status == status.Value);
+
+    var totalCount = await query.CountAsync();
+    if (!string.IsNullOrEmpty(after))
+    {
+        var afterAt = new DateTime(key, DateTimeKind.Utc);
+        query = query.Where(x => x.r.ReadingTimestamp < afterAt || (x.r.ReadingTimestamp == afterAt && x.r.Id.CompareTo(afterId) < 0));
+    }
+
+    var rows = await query
+        .OrderByDescending(x => x.r.ReadingTimestamp).ThenByDescending(x => x.r.Id)
+        .Take(size + 1)
+        .Select(x => new { x.r.Id, x.c.AccountNumber, x.c.Name, x.m.MeterNumber, x.r.ReadingTimestamp, x.r.CumulativeImportKwh, x.r.Status, x.r.ReceivedAt, x.r.SourceReference })
+        .ToListAsync();
+
+    var hasMore = rows.Count > size;
+    var items = hasMore ? rows.Take(size).ToList() : rows;
+    return Results.Ok(new { items, nextCursor = hasMore ? $"{items[^1].ReadingTimestamp.Ticks}_{items[^1].Id}" : null, totalCount });
+})
+.WithName("SearchRegisterReadings")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/meter-data/ls/search", async (
+    string? q, DateTime? from, DateTime? to, string? after, int? pageSize, PrepaidEngineDbContext db) =>
+{
+    var size = Math.Clamp(pageSize ?? 25, 1, 100);
+    if (!TryParseCursor(after, out var key, out var afterId)) return Results.BadRequest(new { error = "Invalid cursor." });
+    var (start, endExclusive) = MeterDataRange(from, to);
+
+    var query =
+        from l in db.LoadSurveyIntervals.AsNoTracking()
+        join c in db.Consumers.AsNoTracking() on l.ConsumerId equals c.Id
+        join m in db.Meters.AsNoTracking() on l.MeterId equals m.Id
+        select new { l, c, m };
+    if (!string.IsNullOrWhiteSpace(q))
+    {
+        var (prefix, contains) = MeterDataTerms(q);
+        query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix) || EF.Functions.ILike(x.m.MeterNumber, prefix) || EF.Functions.ILike(x.c.Name, contains));
+    }
+    if (start.HasValue) query = query.Where(x => x.l.IntervalStart >= start.Value);
+    if (endExclusive.HasValue) query = query.Where(x => x.l.IntervalStart < endExclusive.Value);
+
+    var totalCount = await query.CountAsync();
+    if (!string.IsNullOrEmpty(after))
+    {
+        var afterAt = new DateTime(key, DateTimeKind.Utc);
+        query = query.Where(x => x.l.IntervalStart < afterAt || (x.l.IntervalStart == afterAt && x.l.Id.CompareTo(afterId) < 0));
+    }
+
+    var rows = await query
+        .OrderByDescending(x => x.l.IntervalStart).ThenByDescending(x => x.l.Id)
+        .Take(size + 1)
+        .Select(x => new { x.l.Id, x.c.AccountNumber, x.c.Name, x.m.MeterNumber, x.l.IntervalStart, x.l.IntervalEnd, x.l.ImportKwh, x.l.SourceReference })
+        .ToListAsync();
+
+    var hasMore = rows.Count > size;
+    var items = hasMore ? rows.Take(size).ToList() : rows;
+    return Results.Ok(new { items, nextCursor = hasMore ? $"{items[^1].IntervalStart.Ticks}_{items[^1].Id}" : null, totalCount });
+})
+.WithName("SearchLoadSurveyIntervals")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/meter-data/events/search", async (
+    string? q, DateTime? from, DateTime? to, MeterEventCode? eventCode, string? after, int? pageSize, PrepaidEngineDbContext db) =>
+{
+    var size = Math.Clamp(pageSize ?? 25, 1, 100);
+    if (!TryParseCursor(after, out var key, out var afterId)) return Results.BadRequest(new { error = "Invalid cursor." });
+    var (start, endExclusive) = MeterDataRange(from, to);
+
+    var query =
+        from e in db.MeterEvents.AsNoTracking()
+        join c in db.Consumers.AsNoTracking() on e.ConsumerId equals c.Id
+        join m in db.Meters.AsNoTracking() on e.MeterId equals m.Id
+        select new { e, c, m };
+    if (!string.IsNullOrWhiteSpace(q))
+    {
+        var (prefix, contains) = MeterDataTerms(q);
+        query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix) || EF.Functions.ILike(x.m.MeterNumber, prefix) || EF.Functions.ILike(x.c.Name, contains));
+    }
+    if (start.HasValue) query = query.Where(x => x.e.EventTimestamp >= start.Value);
+    if (endExclusive.HasValue) query = query.Where(x => x.e.EventTimestamp < endExclusive.Value);
+    if (eventCode.HasValue) query = query.Where(x => x.e.EventCode == eventCode.Value);
+
+    var totalCount = await query.CountAsync();
+    if (!string.IsNullOrEmpty(after))
+    {
+        var afterAt = new DateTime(key, DateTimeKind.Utc);
+        query = query.Where(x => x.e.EventTimestamp < afterAt || (x.e.EventTimestamp == afterAt && x.e.Id.CompareTo(afterId) < 0));
+    }
+
+    var rows = await query
+        .OrderByDescending(x => x.e.EventTimestamp).ThenByDescending(x => x.e.Id)
+        .Take(size + 1)
+        .Select(x => new { x.e.Id, x.c.AccountNumber, x.c.Name, x.m.MeterNumber, x.e.EventCode, x.e.EventTimestamp, x.e.Description, x.e.Status })
+        .ToListAsync();
+
+    var hasMore = rows.Count > size;
+    var items = hasMore ? rows.Take(size).ToList() : rows;
+    return Results.Ok(new { items, nextCursor = hasMore ? $"{items[^1].EventTimestamp.Ticks}_{items[^1].Id}" : null, totalCount });
+})
+.WithName("SearchMeterEvents")
+.RequireAuthorization();
+
+app.MapGet("/api/v1/meter-data/alarms/search", async (
+    string? q, DateTime? from, DateTime? to, MeterAlarmStatus? status, MeterAlarmSeverity? severity, string? after, int? pageSize,
+    PrepaidEngineDbContext db) =>
+{
+    var size = Math.Clamp(pageSize ?? 25, 1, 100);
+    if (!TryParseCursor(after, out var key, out var afterId)) return Results.BadRequest(new { error = "Invalid cursor." });
+    var (start, endExclusive) = MeterDataRange(from, to);
+
+    var query =
+        from a in db.MeterAlarms.AsNoTracking()
+        join c in db.Consumers.AsNoTracking() on a.ConsumerId equals c.Id
+        join m in db.Meters.AsNoTracking() on a.MeterId equals m.Id
+        select new { a, c, m };
+    if (!string.IsNullOrWhiteSpace(q))
+    {
+        var (prefix, contains) = MeterDataTerms(q);
+        query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix) || EF.Functions.ILike(x.m.MeterNumber, prefix) || EF.Functions.ILike(x.c.Name, contains));
+    }
+    if (start.HasValue) query = query.Where(x => x.a.RaisedAt >= start.Value);
+    if (endExclusive.HasValue) query = query.Where(x => x.a.RaisedAt < endExclusive.Value);
+    if (status.HasValue) query = query.Where(x => x.a.Status == status.Value);
+    if (severity.HasValue) query = query.Where(x => x.a.Severity == severity.Value);
+
+    var totalCount = await query.CountAsync();
+    if (!string.IsNullOrEmpty(after))
+    {
+        var afterAt = new DateTime(key, DateTimeKind.Utc);
+        query = query.Where(x => x.a.RaisedAt < afterAt || (x.a.RaisedAt == afterAt && x.a.Id.CompareTo(afterId) < 0));
+    }
+
+    var rows = await query
+        .OrderByDescending(x => x.a.RaisedAt).ThenByDescending(x => x.a.Id)
+        .Take(size + 1)
+        .Select(x => new
+        {
+            x.a.Id, x.c.AccountNumber, x.c.Name, x.m.MeterNumber, x.a.AlarmCode, x.a.Severity, x.a.RaisedAt,
+            x.a.Status, x.a.AcknowledgedAt, x.a.AcknowledgedBy, x.a.ResolvedAt, x.a.ResolutionNote,
+        })
+        .ToListAsync();
+
+    var hasMore = rows.Count > size;
+    var items = hasMore ? rows.Take(size).ToList() : rows;
+    return Results.Ok(new { items, nextCursor = hasMore ? $"{items[^1].RaisedAt.Ticks}_{items[^1].Id}" : null, totalCount });
+})
+.WithName("SearchMeterAlarms")
+.RequireAuthorization();
+
 app.MapGet("/api/v1/meter-data/dlp", async (Guid? consumerId, PrepaidEngineDbContext db) =>
 {
     var query = db.DailyLoadProfiles.AsQueryable();
