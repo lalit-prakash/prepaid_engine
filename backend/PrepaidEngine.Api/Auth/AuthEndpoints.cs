@@ -33,7 +33,7 @@ public static class AuthEndpoints
             throttle.RecordSuccess(request.Username);
             log.LogInformation("{User} signed in as {Role}.", user.Username, user.Role);
             return Results.Ok(Response(tokens.Issue(user, now, now), user));
-        }).AllowAnonymous().WithName("Login");
+        }).AllowAnonymous().RequireRateLimiting(PrepaidEngine.Api.Security.SecurityExtensions.LoginLimiter).WithName("Login");
 
         // Sliding renewal: a still-valid token is swapped for a fresh one until the session reaches its absolute limit.
         app.MapPost("/api/v1/auth/refresh", (ClaimsPrincipal principal, TokenService tokens) =>
