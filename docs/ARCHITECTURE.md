@@ -160,6 +160,7 @@ filtered in the database, page size 1–100 (default 25).
 | Analytics | `GET analytics/overview` — database-side aggregates over a bounded range |
 | Paged lists | `GET .../search` (keyset, newest first, `q` plus a status/type filter) and `GET .../summary` (counts in SQL) for `meter-commands`, `connectivity-commands`, `notifications`, `exceptions`, `conversions`, `reconciliation-adjustments` and `meter-replacements` |
 | Dashboard | `GET dashboard/summary` — consumer/wallet counts and sums, latest-day billing progress, attention counts plus the newest 10 items, and the 4 latest connectivity commands, all computed in SQL |
+| System | `GET system/health` (times a real database round trip, applied and pending migrations, each background worker's last success/failure and state, queue depths, recent billing runs, overall Healthy/Degraded/Down) and `GET system/integrations` (each outbound adapter with its class, Mock or Live, last activity and 24-hour OK/failed counts from the database; when each inbound MDMS/RMS feed last arrived) |
 | Platform | `GET /health`, `POST auth/login`, `POST auth/refresh`, `POST auth/logout` (records the event), `GET auth/whoami`, Swagger in Development |
 
 Several endpoints exist for external systems (RMS conversions, MDMS ingestion, billing daily-export)
@@ -169,6 +170,7 @@ and have no UI caller by design.
 | Worker | Behaviour |
 |---|---|
 | `BillingProcessingWorker` | Polls every minute; runs DLP billing Stage 1 (8:30–9:30) and Stage 2 (12:30–13:30, plus provisional billing) once per day. Safe on several API instances: a stage that is running elsewhere is retried on later ticks. |
+| *Worker status* | All three workers report each round to `WorkerStatusRegistry` (in memory, per API instance): healthy means a success within three expected intervals plus 30 s. It feeds System Health |
 | `MeterCommandWorker` | Polls every 2 s; sends queued meter credit commands (claimed, so safe on several instances) and times out commands stuck in `Sent`. See section 4.1. |
 | `TariffActivationWorker` | Runs at startup and every minute; calls `TariffActivationService.ActivateDueAsync`. |
 
@@ -285,12 +287,13 @@ src/app/
 - **Standard list page:** debounced server search, filters, keyset Previous/Next, record count, and
   loading / empty / error-with-retry states. KPI tiles drill into the filtered list.
 - **Honest data rules:** a missing source shows "Data unavailable", never a made-up number; payment
-  status and meter-credit status are always separate; system health reflects a live `/health` probe.
-- **Placeholders:** System Health, Service Requests, User Management, Roles & Permissions, Integrations,
+  status and meter-credit status are always separate; system health is measured by the API (`GET system/health`).
+- **Placeholders:** Service Requests, User Management, Roles & Permissions,
   System Settings and Automation route to a `ModuleStub` page that says nothing is built behind them.
 
 | Module | Pages |
 |---|---|
+| System Health, Integrations | System Health refreshes every 15 s: overall status, API uptime and version, database latency and migrations, worker table, work waiting, recent billing runs. Integrations lists outbound adapters (Mock adapters are labelled as simulated) and inbound feeds. The dashboard's System Health panel uses the same endpoint |
 | Network Hierarchy | Counts per level and mapped/unmapped consumers; CSV upload with a mandatory dry run (per-line errors, what would be created or renamed) before an admin confirms; template download; import controls only for Admin/IT |
 | Dashboard | KPIs, consumption, billing progress, health, attention list (with drill-down), recent recharges/operations, all from `dashboard/summary`, `analytics/overview`, `risk-indicators` and `recharges/search` |
 | Consumers | server-searched list; tabbed detail (overview, wallet, billing, recharge, meter operations, meter data, timeline) |
@@ -350,7 +353,7 @@ Tracked on the project board: https://github.com/users/lalit-prakash/projects/5
 - Audit entries are not tamper-evident (no hash chain) and have no retention or archiving policy; system actions carry no role or address.
 - Real MDM/HES adapter for meter credit and RC/DC (needs the endpoint and command contract); the outbox and worker exist, the adapter behind them is still the mock. RC/DC connectivity commands are still sent inline.
 - Report jobs for large exports; a scheduler with billing run history and alerting (the billing run itself is now batched, claimed and resumable).
-- System Health, Integrations and Service Requests modules; tariff fields (code, taxes, thresholds).
+- Service Requests module; health checks that call the real RMS/MDM/HES endpoints (today those adapters are simulators, so the Integrations page reports database activity, not remote reachability); tariff fields (code, taxes, thresholds).
 - Balance history: daily balance snapshots so low-balance and disconnection trends can be charted (the low-balance threshold itself is now configurable).
 - Network hierarchy can be loaded and consumers mapped from CSV (Network Hierarchy screen), but there is no screen to edit or delete a single node, files are limited to 10,000 rows each, and development still seeds a labelled demo network; area analytics on the Analytics page, balance history and abnormal-consumption detection are still open.
 - Capped (1,000-row) lists on Billing Holds and Consumer-based lookups (the charge-calculation report loads consumers) need keyset paging and search; the cap keeps them safe but not complete.

@@ -10,6 +10,8 @@ import { ConnectivityCommandStatus } from '../../../../core/models/connectivity-
 import { RiskIndicatorsSummary } from '../../../../core/models/sla.model';
 import { AnalyticsService } from '../../../../core/services/analytics.service';
 import { AuthService } from '../../../../core/services/auth.service';
+import { SystemService } from '../../../../core/services/system.service';
+import { SystemHealth } from '../../../../core/models/system.model';
 import { DashboardService } from '../../../../core/services/dashboard.service';
 import { RechargeService } from '../../../../core/services/recharge.service';
 import { SlaService } from '../../../../core/services/sla.service';
@@ -72,6 +74,8 @@ export class Overview implements OnInit, OnDestroy {
   protected readonly trendDays = signal(30);
 
   /** Result of a real GET /health probe, with the measured round-trip time. */
+  /** The API's own measurements: database round trip, workers and queues (GET /api/v1/system/health). */
+  protected readonly systemHealth = signal<SystemHealth | null>(null);
   protected readonly apiHealth = signal<'checking' | 'healthy' | 'down'>('checking');
   protected readonly apiLatencyMs = signal<number | null>(null);
 
@@ -98,6 +102,7 @@ export class Overview implements OnInit, OnDestroy {
 
   constructor(
     private readonly dashboardService: DashboardService,
+    private readonly systemService: SystemService,
     private readonly rechargeService: RechargeService,
     private readonly slaService: SlaService,
     private readonly analyticsService: AnalyticsService,
@@ -130,6 +135,7 @@ export class Overview implements OnInit, OnDestroy {
       error: () => this.riskError.set(true),
     });
 
+    this.systemService.health().subscribe({ next: (h) => this.systemHealth.set(h), error: () => this.systemHealth.set(null) });
     const started = performance.now();
     this.http.get(`${environment.apiBaseUrl}/health`).subscribe({
       next: () => {
@@ -375,5 +381,15 @@ export class Overview implements OnInit, OnDestroy {
       case MeterCommandStatus.Queued: return 'info';
       default: return 'neutral';
     }
+  }
+
+  protected get workersHealthy(): string {
+    const w = this.systemHealth()?.workers ?? [];
+    return `${w.filter((x) => x.state === 'Healthy').length} of ${w.length} healthy`;
+  }
+
+  protected get workersOk(): boolean {
+    const w = this.systemHealth()?.workers ?? [];
+    return w.length > 0 && w.every((x) => x.state === 'Healthy');
   }
 }

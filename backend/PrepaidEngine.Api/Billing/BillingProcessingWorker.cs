@@ -29,13 +29,17 @@ public class BillingProcessingWorker : BackgroundService
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<BillingProcessingWorker> _logger;
+    private readonly PrepaidEngine.Api.Health.WorkerStatusRegistry _status;
+    private const string StatusName = "BillingProcessingWorker";
     private DateOnly? _lastStage1Processed;
     private DateOnly? _lastStage2Processed;
 
-    public BillingProcessingWorker(IServiceScopeFactory scopeFactory, ILogger<BillingProcessingWorker> logger)
+    public BillingProcessingWorker(IServiceScopeFactory scopeFactory, ILogger<BillingProcessingWorker> logger, PrepaidEngine.Api.Health.WorkerStatusRegistry status)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _status = status;
+        _status.Expect(StatusName, 60);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -45,10 +49,12 @@ public class BillingProcessingWorker : BackgroundService
             try
             {
                 await TickAsync(stoppingToken);
+                _status.Success(StatusName, 60);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Billing processing worker tick failed.");
+                _status.Failure(StatusName, 60, ex);
             }
 
             try

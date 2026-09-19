@@ -28,8 +28,8 @@ Conversion, Reconciliation, Exceptions, Billing (with tariff-version bill detail
 governance (IT drafts, Utility approves, automatic activation), Meter data (DLP/BP/LS/IP/events/alarms),
 Reports (with zone-to-DTR network filters and breakdowns), Network hierarchy import, Audit logs, Analytics, SLA monitoring, Billing holds, Notifications, Meter replacements and the
 calculation workbench. RMS, meter-command and connectivity integrations are **mock adapters** for local
-and UAT use; System Health, Service Requests, User Management, Roles & Permissions, Integrations and
-System Settings are placeholders. See [ARCHITECTURE.md](docs/ARCHITECTURE.md) §12 for the full gap list.
+and UAT use (the Integrations page says so per adapter); Service Requests, User Management, Roles & Permissions
+and System Settings are placeholders. See [ARCHITECTURE.md](docs/ARCHITECTURE.md) §12 for the full gap list.
 
 ## Requirements
 

@@ -1,0 +1,59 @@
+<div class="integrations">
+  <div class="page-header">
+    <h1>Integrations</h1>
+    <p class="page-header__subtitle">The systems this one sends work to and receives data from. See <a routerLink="/system-health">System Health</a> for the platform itself.</p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-block"></div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }} <button type="button" class="link-btn" (click)="load()">Retry</button></div>
+  } @else if (data(); as d) {
+    @if (anyMock) {
+      <div class="mock-note" role="note">
+        Adapters marked <strong>Mock</strong> are simulators: what they report is not real payment, meter or head-end activity.
+        A live adapter replaces each one once its endpoint and command contract are supplied.
+      </div>
+    }
+
+    <section class="panel">
+      <h2>Outbound: systems this one calls</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Integration</th><th>Adapter</th><th>Mode</th><th>Last activity</th><th class="num">Last 24 h OK</th><th class="num">Last 24 h failed</th></tr></thead>
+          <tbody>
+            @for (o of d.outbound; track o.name) {
+              <tr>
+                <td>{{ o.name }}<div class="cell-meta">{{ o.purpose }}</div></td>
+                <td class="mono">{{ o.adapter }}</td>
+                <td><pe-status-badge [label]="o.mode === 'Mock' ? 'Mock (simulated)' : 'Live'" [tone]="o.mode === 'Mock' ? 'warning' : 'success'" /></td>
+                <td>{{ o.lastActivityAt ? (o.lastActivityAt | date: 'd MMM y, HH:mm') : 'Never' }}</td>
+                <td class="num">{{ o.last24hOk | number }}</td>
+                <td class="num" [class.bad]="o.last24hFailed > 0">{{ o.last24hFailed | number }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Inbound: data pushed to this system</h2>
+      <p class="panel__hint">Nothing here is polled, so the signal is when each kind of data last arrived. "Latest" is the newest record's own timestamp.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Feed</th><th>Latest</th><th class="num">Records in the last 24 h</th></tr></thead>
+          <tbody>
+            @for (f of d.inbound; track f.name) {
+              <tr>
+                <td>{{ f.name }}</td>
+                <td>{{ f.latestAt ? (f.latestAt | date: 'd MMM y, HH:mm') : 'Nothing received yet' }}</td>
+                <td class="num">{{ f.last24h | number }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
+</div>
