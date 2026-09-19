@@ -79,8 +79,9 @@ exceptions to 400/409.
 - Options: `EnergyValidation`, `SlaMonitoring` (targets are configuration, not constants).
 - Hosted services: `BillingProcessingWorker`, `TariffActivationWorker` (section 3.5).
 - In **Development only** the app applies pending migrations and seeds demo data (`DbSeeder`:
-  `DEMO-0001` plus six more consumers, idempotent per account number). CORS allows `http://localhost:4200`
-  in Development only.
+  `DEMO-0001` plus six more consumers, idempotent per account number).
+- `Security/` wires CORS (`Security:AllowedOrigins`), the rate limiters, security headers, HSTS, the request body
+  cap and optional forwarded-header handling; `UseApiSecurity` runs before authentication.
 - `/health` is open; every `/api/v1/*` endpoint requires authentication.
 
 ### 3.2 Authentication and authorization
@@ -285,6 +286,10 @@ and audit entries lack actor role and correlation id.
 | `DemoAuth:Users:{n}:{Username,DisplayName,PasswordHash,Role}` | Sign-in users (`IT`, `Utility`) via user-secrets |
 | `Jwt:Key` | Token signing key, 32+ characters (secret; Development falls back to a random per-run key) |
 | `Jwt:AccessTokenMinutes`, `Jwt:MaxSessionHours` | Token lifetime (30) and absolute session limit (8) |
+| `Security:AllowedOrigins` | Browser origins allowed by CORS (Development defaults to `http://localhost:4200`; no wildcard) |
+| `Security:RequestsPerMinutePerIp`, `Security:LoginAttemptsPerMinutePerIp` | Rate limits per client IP (600 and 10) |
+| `Security:MaxRequestBodyBytes`, `Security:TrustForwardedHeaders` | Body cap (5 MB); trust proxy headers only behind a trusted proxy |
+| `AllowedHosts` | Host names the API will answer for (`localhost;127.0.0.1` by default) |
 | `EnergyValidation:{WarningTolerancePct,FailTolerancePct}` | DLP vs BP energy validation thresholds |
 | `SlaMonitoring:*TargetMinutes` | SLA targets |
 | `environment.apiBaseUrl` (frontend) | API base URL, default `http://localhost:5043` |
@@ -311,7 +316,7 @@ See the repository [README](../README.md).
 ## 12. Known gaps
 Tracked on the project board: https://github.com/users/lalit-prakash/projects/5
 
-- Real authentication (tokens/MFA) and RBAC beyond IT/Utility; user and role management.
+- MFA, token revocation, and a user/role management screen with users stored in the database.
 - Audit entries lack actor role, correlation id and source; login events go to the application log but are not audited.
 - Recharge outbox and a background MDM command worker; real MDM/HES adapter (needs the endpoint and
   command contract).

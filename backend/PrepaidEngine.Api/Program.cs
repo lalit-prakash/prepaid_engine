@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Api.Auth;
+using PrepaidEngine.Api.Security;
 using PrepaidEngine.Application.Billing;
 using PrepaidEngine.Application.Connectivity;
 using PrepaidEngine.Application.Conversion;
@@ -139,17 +140,8 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("TariffGovernanceRole", policy => policy.RequireRole(admin, it, utility));
 });
 
-// Local-dev-only CORS so the Angular dev server (ng serve, default port 4200) can call this
-// API cross-origin. Never widen this beyond the dev server's own origin, and never enable it
-// outside Development — see docs/assumptions-and-security.md.
-const string AngularDevCorsPolicy = "AngularDev";
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy(AngularDevCorsPolicy, policy =>
-        policy.WithOrigins("http://localhost:4200")
-              .AllowAnyHeader()
-              .AllowAnyMethod());
-});
+// CORS, rate limiting, request size limits and forwarded-header handling (see Security/ and docs/assumptions-and-security.md).
+var securityOptions = builder.AddApiSecurity();
 
 // --- Local helpers: audit / operational-exception / reconciliation wiring ------------------
 // These are plain local functions (no external port needed) called from the endpoints below at
@@ -257,11 +249,9 @@ if (app.Environment.IsDevelopment())
     await DbSeeder.SeedAsync(db);
     await DbSeeder.SeedExtraConsumersAsync(db);
 
-    app.UseCors(AngularDevCorsPolicy);
 }
 
-app.UseHttpsRedirection();
-
+app.UseApiSecurity(securityOptions);
 
 app.UseAuthentication();
 app.UseAuthorization();
