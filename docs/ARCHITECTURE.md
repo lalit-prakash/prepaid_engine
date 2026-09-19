@@ -121,7 +121,7 @@ endpoints have their own folders.
 
 ### 3.3 Persistence
 - One `PrepaidEngineDbContext`; entity configuration in `Persistence/Configurations`, migrations in
-  `Persistence/Migrations` (21 so far, latest `AddDailyWalletStats`).
+  `Persistence/Migrations` (22 so far, latest `AddReportJobs`).
 - **UTC everywhere:** a model convention converts every `DateTime` to UTC on write and marks it UTC on
   read. This fixes Npgsql rejecting `Kind=Unspecified` values (date-only JSON or query inputs) for the
   whole API in one place.
@@ -157,6 +157,7 @@ filtered in the database, page size 1–100 (default 25).
 | Audit | `GET audit-entries` (optional `entityId`), `audit-entries/search` (rows carry `actorRole`, `sourceIp`, `correlationId`; `q` also matches a correlation id), `audit-entries/summary` |
 | Reports | `GET reports/billing`, `day-wise-rc-dc`, `day-wise-recharge`, `recharge-failures`, `meter-credit-failures` — each `{ rows, truncated, generatedAt, totals? }`, 5,000-row cap. **Network hierarchy on every report:** all accept `zoneId`, `circleId`, `divisionId`, `subDivisionId`, `substationId`, `feederId`, `dtrId` filters; the three row-level reports return `zone`, `circle`, `division`, `subDivision`, `substation`, `feeder`, `dtr` on each row; the two day-wise reports take `level` (`zone`…`dtr`) and break each day down by that level in a `group` column |
 | Network | `GET network/nodes?level=&parentId=` — the nodes at one level under a parent, for the cascading report filters; `GET network/summary` — counts per level and mapped/unmapped consumers; `POST network/import` — load the hierarchy from flat rows (one path down to a DTR per row); `POST network/consumer-mapping` — map consumers to DTRs by account number and DTR code. Both POSTs take `{ rows, dryRun }`, need the `DataAdmin` policy, accept up to 10,000 rows, match nodes by code (new code creates, changed name renames, a code under a different parent is an error), are **all-or-nothing** (any bad row saves nothing), report every problem by row, and write one audit entry when saved. `GET consumers/{account}` also returns the consumer's `network` path |
+| Report exports | `POST report-jobs` (request a full CSV of `billing`, `recharge-failures` or `meter-credit-failures` with the report's date, status and network filters; `Operations` policy), `GET report-jobs` and `GET report-jobs/{id}` (your own; Admin/IT see all), `GET report-jobs/{id}/download` (`Operations`; requester or Admin/IT) |
 | Analytics | `GET analytics/overview` — database-side aggregates over a bounded range; `GET analytics/balance-history` — the recorded daily wallet totals (consumers, active, disconnected, low balance, wallet total), oldest first, at most 366 days |
 | Paged lists | `GET .../search` (keyset, newest first, `q` plus a status/type filter) and `GET .../summary` (counts in SQL) for `meter-commands`, `connectivity-commands`, `notifications`, `exceptions`, `conversions`, `reconciliation-adjustments` and `meter-replacements` |
 | Dashboard | `GET dashboard/summary` — consumer/wallet counts and sums, latest-day billing progress, attention counts plus the newest 10 items, and the 4 latest connectivity commands, all computed in SQL |
@@ -171,7 +172,8 @@ and have no UI caller by design.
 |---|---|
 | `BillingProcessingWorker` | Polls every minute; runs DLP billing Stage 1 (8:30–9:30) and Stage 2 (12:30–13:30, plus provisional billing) once per day. Safe on several API instances: a stage that is running elsewhere is retried on later ticks. |
 | `WalletStatsWorker` | Records today's wallet totals at start-up and every hour into `DailyWalletStats` (one row per day, overwritten through the day, so the last reading stands). Counts come from one grouped SQL query with the dashboard's low-balance definition, so the two always agree. Totals only, never one row per consumer, so it stays small at any size. History starts at the first recorded day and is never back-filled. Safe on several instances (the date is the key) |
-| *Worker status* | All four workers report each round to `WorkerStatusRegistry` (in memory, per API instance): healthy means a success within three expected intervals plus 30 s. It feeds System Health |
+| `ReportJobWorker` | Polls every 5 s; builds queued report exports (see below) and, every 10 minutes, removes expired files and fails jobs left Running for over 2 hours |
+| *Worker status* | All five workers report each round to `WorkerStatusRegistry` (in memory, per API instance): healthy means a success within three expected intervals plus 30 s. It feeds System Health |
 | `MeterCommandWorker` | Polls every 2 s; sends queued meter credit commands (claimed, so safe on several instances) and times out commands stuck in `Sent`. See section 4.1. |
 | `TariffActivationWorker` | Runs at startup and every minute; calls `TariffActivationService.ActivateDueAsync`. |
 
@@ -250,6 +252,9 @@ acknowledgement. Postpaid→prepaid conversions arrive in batches from RMS and d
 `PaymentModeChangeCommand` (MDMS→HES→meter). Reconciliation adjustments are signed wallet entries tagged
 distinctly in the ledger. All three write audit entries.
 
+### Report exports (background jobs)
+Report pages show at most 5,000 rows. A full export is a `ReportJob`: the request (report key plus filters) is stored as JSON and a worker builds a CSV in the background. It is claimed with a conditional update (Queued to Running, so several instances never build one file twice), fetched a chunk at a time with a keyset cursor (5,000 rows per chunk, so memory stays flat), written to `<name>.csv.part` and renamed only when complete (a download never sees a half-written file), and its row count is updated after every chunk. A job stops with an error over `ReportJobs:MaxRows` (5,000,000), a person may have 3 exports queued or running at once, and a file is removed after `ReportJobs:RetentionDays` (7). The CSV matches the report on screen including the seven network levels, is UTF-8 with a byte-order mark, and cells that a spreadsheet would run as a formula (starting `=`, `+`, `-`, `@`) are prefixed with a quote. Requesting and downloading need the `Operations` policy (an export can hold every consumer's details), and both are audited (`REPORT_EXPORT_REQUESTED`, `REPORT_EXPORT_DOWNLOADED`). The web app has "Export everything (background)" on the three row-level reports and a Report exports page that follows the jobs. **Storage is a local directory** (`ReportJobs:OutputDirectory`), so with several API instances the file lives on the instance that built it; use a shared volume (or object storage) before running more than one. There is no e-mail or SMS when an export finishes; the page shows it. The day-wise reports are small (one row per day) and are not exportable this way.
+
 ### Consumer mobile numbers
 A consumer's mobile number is captured with `PUT consumers/{account}/mobile` (`Operations` policy; the Consumer 360 profile has a Change/Add control for those roles). The number is normalised to `+91` and ten digits starting 6 to 9 (spaces, dashes, brackets and a leading `+91`, `91` or `0` are accepted), a bad number gets a 400 with a message, and only the last four digits go into the audit trail (`MOBILE_UPDATED`). It is searchable from the Consumers list. There is no bulk import for mobile numbers yet.
 
@@ -319,6 +324,7 @@ and audit entries are not tamper-evident.
 | `DemoAuth:Users:{n}:{Username,DisplayName,PasswordHash,Role}` | Sign-in users (`IT`, `Utility`) via user-secrets |
 | `Jwt:Key` | Token signing key, 32+ characters (secret; Development falls back to a random per-run key) |
 | `Jwt:AccessTokenMinutes`, `Jwt:MaxSessionHours` | Token lifetime (30) and absolute session limit (8) |
+| `ReportJobs:OutputDirectory`, `RetentionDays`, `ChunkSize`, `MaxRows`, `MaxActivePerUser`, `PollSeconds` | Report export storage folder (`report-exports`), file retention (7 days), rows per chunk (5,000), row limit per export (5,000,000), exports per person at once (3), worker poll (5 s) |
 | `LowBalance:ThresholdRs` | What counts as a low balance, in rupees (zero or more). Unset keeps the defaults: screens and counts flag a wallet below its own emergency credit limit, and billing warns below Rs.100. Set, it replaces both, so the dashboard, consumer list, consumer page and the low-balance SMS agree. A negative value stops the API starting |
 | `Security:AllowedOrigins` | Browser origins allowed by CORS (Development defaults to `http://localhost:4200`; no wildcard) |
 | `Security:RequestsPerMinutePerIp`, `Security:LoginAttemptsPerMinutePerIp` | Rate limits per client IP (600 and 10) |
@@ -353,7 +359,7 @@ Tracked on the project board: https://github.com/users/lalit-prakash/projects/5
 - MFA, token revocation, and a user/role management screen with users stored in the database.
 - Audit entries are not tamper-evident (no hash chain) and have no retention or archiving policy; system actions carry no role or address.
 - Real MDM/HES adapter for meter credit and RC/DC (needs the endpoint and command contract); the outbox and worker exist, the adapter behind them is still the mock. RC/DC connectivity commands are still sent inline.
-- Report jobs for large exports; a scheduler with billing run history and alerting (the billing run itself is now batched, claimed and resumable).
+- A scheduler with billing run history and alerting (the billing run is batched, claimed and resumable, and large report exports are background jobs). Export files live on one instance's disk and finishing an export sends no notification.
 - Service Requests module; health checks that call the real RMS/MDM/HES endpoints (today those adapters are simulators, so the Integrations page reports database activity, not remote reachability); tariff fields (code, taxes, thresholds).
 - Balance history covers totals only (no per-consumer balance history) and starts from the first recorded day.
 - Network hierarchy can be loaded and consumers mapped from CSV (Network Hierarchy screen), but there is no screen to edit or delete a single node, files are limited to 10,000 rows each, and development still seeds a labelled demo network; area analytics on the Analytics page, balance history and abnormal-consumption detection are still open.

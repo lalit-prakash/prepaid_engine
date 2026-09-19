@@ -6,6 +6,7 @@ using PrepaidEngine.Api.Dashboard;
 using PrepaidEngine.Api.Health;
 using PrepaidEngine.Api.Endpoints;
 using PrepaidEngine.Api.Reports;
+using PrepaidEngine.Api.Reports.ReportJobs;
 using PrepaidEngine.Application.Billing;
 using PrepaidEngine.Application.Connectivity;
 using PrepaidEngine.Application.Conversion;
@@ -77,6 +78,11 @@ builder.Services.Configure<PrepaidEngine.Application.Wallets.LowBalanceOptions>(
 if (!(builder.Configuration.GetSection(PrepaidEngine.Application.Wallets.LowBalanceOptions.SectionName).Get<PrepaidEngine.Application.Wallets.LowBalanceOptions>() ?? new()).IsValid)
     throw new InvalidOperationException("LowBalance:ThresholdRs must be zero or more.");
 builder.Services.AddScoped<IBillingEngineService, BillingEngineService>();
+
+// Full report exports built in the background (see Reports/ReportJobs).
+builder.Services.Configure<PrepaidEngine.Api.Reports.ReportJobs.ReportJobOptions>(builder.Configuration.GetSection(PrepaidEngine.Api.Reports.ReportJobs.ReportJobOptions.SectionName));
+builder.Services.AddScoped<PrepaidEngine.Api.Reports.ReportJobs.ReportJobRunner>();
+builder.Services.AddHostedService<PrepaidEngine.Api.Reports.ReportJobs.ReportJobWorker>();
 
 // Daily wallet totals for the balance-history chart (see DailyWalletStat).
 builder.Services.AddScoped<PrepaidEngine.Infrastructure.Wallets.WalletStatsService>();
@@ -190,6 +196,7 @@ app.UseAuthorization();
 app.MapAuthEndpoints();
 app.MapDashboardEndpoints();
 app.MapReportEndpoints();
+app.MapReportJobEndpoints();
 app.MapNetworkEndpoints();
 app.MapPlatformEndpoints();
 app.MapConsumerEndpoints();

@@ -141,6 +141,10 @@ export const routes: Routes = [
         redirectTo: 'reports/view/daily-billing',
       },
       {
+        path: 'reports/exports',
+        loadComponent: () => import('./features/reports/pages/report-exports/report-exports').then((m) => m.ReportExports),
+      },
+      {
         path: 'reports/view/:id',
         loadComponent: () =>
           import('./features/reports/pages/report-viewer/report-viewer').then((m) => m.ReportViewer),

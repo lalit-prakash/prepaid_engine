@@ -21,6 +21,7 @@ public class PrepaidEngineDbContext : DbContext
     }
 
     public DbSet<Consumer> Consumers => Set<Consumer>();
+    public DbSet<ReportJob> ReportJobs => Set<ReportJob>();
     public DbSet<DailyWalletStat> DailyWalletStats => Set<DailyWalletStat>();
     public DbSet<Zone> Zones => Set<Zone>();
     public DbSet<Circle> Circles => Set<Circle>();

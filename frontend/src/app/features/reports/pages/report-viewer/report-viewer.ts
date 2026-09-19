@@ -4,6 +4,8 @@ import { Component, OnInit, computed, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { environment } from '../../../../../environments/environment';
 import { NETWORK_LEVELS, NetworkLevelId, NetworkNode, NetworkService } from '../../../../core/services/network.service';
+import { ReportJobService } from '../../../../core/services/report-job.service';
+import { OperateOnly } from '../../../../shared/directives/operate-only';
 import { exportToCsv } from '../../../../shared/utils/csv-export';
 import { REPORT_DEFINITIONS, ReportColumn, ReportDefinition } from './report-definitions';
 
@@ -21,7 +23,7 @@ interface ReportResponse {
  */
 @Component({
   selector: 'pe-report-viewer',
-  imports: [DatePipe, DecimalPipe, RouterLink],
+  imports: [DatePipe, DecimalPipe, RouterLink, OperateOnly],
   templateUrl: './report-viewer.html',
   styleUrl: './report-viewer.scss',
 })
@@ -31,6 +33,9 @@ export class ReportViewer implements OnInit {
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
   protected readonly notFound = signal(false);
+  protected readonly exportRequested = signal(false);
+  protected readonly exportRequesting = signal(false);
+  protected readonly exportError = signal<string | null>(null);
 
   protected readonly fromDate = signal('');
   protected readonly toDate = signal('');
@@ -53,6 +58,7 @@ export class ReportViewer implements OnInit {
     private readonly route: ActivatedRoute,
     private readonly http: HttpClient,
     private readonly network: NetworkService,
+    private readonly reportJobs: ReportJobService,
   ) {}
 
   ngOnInit(): void {
@@ -67,6 +73,8 @@ export class ReportViewer implements OnInit {
       this.selected.set({});
       this.options.set({});
       this.groupBy.set('');
+      this.exportRequested.set(false);
+      this.exportError.set(null);
       this.notFound.set(!definition);
       this.definition.set(definition);
       if (!definition) {
@@ -156,6 +164,23 @@ export class ReportViewer implements OnInit {
 
   protected link(row: Record<string, unknown>, col: ReportColumn): string | null {
     return col.link ? col.link(row) : null;
+  }
+
+  /** Asks the API to build the whole report as a CSV in the background, with the filters currently applied. */
+  requestFullExport(): void {
+    const d = this.definition();
+    if (!d?.exportKey) return;
+    this.exportRequesting.set(true);
+    this.exportError.set(null);
+    const body: Record<string, string | null> = { report: d.exportKey, from: this.fromDate() || null, to: this.toDate() || null, status: this.status() || null };
+    for (const level of NETWORK_LEVELS) body[level.param] = this.selected()[level.id] || null;
+    this.reportJobs.request(body as never).subscribe({
+      next: () => { this.exportRequesting.set(false); this.exportRequested.set(true); },
+      error: (err) => {
+        this.exportRequesting.set(false);
+        this.exportError.set(err?.error?.error ?? (err?.status === 403 ? 'Your role cannot export reports.' : 'Could not request the export.'));
+      },
+    });
   }
 
   export(): void {
