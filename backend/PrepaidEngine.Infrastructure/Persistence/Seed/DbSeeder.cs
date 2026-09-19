@@ -95,4 +95,66 @@ public static class DbSeeder
 
         await context.SaveChangesAsync(cancellationToken);
     }
+
+    private static readonly (string Account, string Name, string Address, MeterPhase Phase, decimal LoadKw, decimal Recharge, decimal Kwh)[] ExtraConsumers =
+    {
+        ("DEMO-0002", "Ribha Marbaniang", "12 Laitumkhrah, Shillong", MeterPhase.SinglePhase, 3m, 1000m, 120m),
+        ("DEMO-0003", "Daniel Syiem", "45 Nongthymmai, Shillong", MeterPhase.SinglePhase, 2m, 600m, 60m),
+        ("DEMO-0004", "Bandari Lyngdoh", "8 Mawlai Mawroh, Shillong", MeterPhase.ThreePhase, 6m, 3000m, 310m),
+        ("DEMO-0005", "Ioanis Khongwir", "23 Rilbong, Shillong", MeterPhase.SinglePhase, 2m, 500m, 90m),
+        ("DEMO-0006", "Phida Nongrum", "5 Umpling, Shillong", MeterPhase.SinglePhase, 4m, 2000m, 180m),
+        ("DEMO-0007", "Wanshan Kharkongor", "17 Jaiaw, Shillong", MeterPhase.ThreePhase, 8m, 5000m, 420m),
+    };
+
+    /// <summary>
+    /// Adds six more demo consumers (DEMO-0002..0007) on top of the original DEMO-0001, each with
+    /// a meter, a successful recharge, a billed reading and a wallet balance. Idempotent per
+    /// account number; does nothing if no Active Domestic tariff exists yet.
+    /// </summary>
+    public static async Task SeedExtraConsumersAsync(PrepaidEngineDbContext context, CancellationToken cancellationToken = default)
+    {
+        var tariff = await context.Tariffs
+            .FirstOrDefaultAsync(t => t.Status == TariffLifecycleStatus.Active && t.Category == ConsumerCategory.Domestic, cancellationToken);
+        if (tariff is null)
+            return;
+
+        var existing = await context.Consumers.Select(c => c.AccountNumber).ToListAsync(cancellationToken);
+        var now = DateTime.UtcNow;
+
+        foreach (var (account, name, address, phase, loadKw, rechargeAmount, kwh) in ExtraConsumers)
+        {
+            if (existing.Contains(account))
+                continue;
+
+            var meter = new SmartMeter(Guid.NewGuid(), account.Replace("DEMO", "MTR-DEMO"), phase);
+            var consumer = new Consumer(Guid.NewGuid(), account, name, address, meter, loadKw);
+
+            var recharge = new RechargeTransaction(Guid.NewGuid(), consumer.Id, rechargeAmount, $"RMS-{account}", now.AddDays(-10));
+            recharge.MarkSuccessful(now.AddDays(-10));
+            consumer.Wallet.SetEmergencyCreditLimit(tariff.EmergencyCreditLimit);
+            consumer.Wallet.Credit(recharge.Amount, WalletTransactionType.Recharge, recharge.RmsReferenceId);
+
+            var reading = new ConsumptionReading(Guid.NewGuid(), consumer.Id, kwh, now.AddDays(-10), now);
+            meter.RecordReading(kwh, reading.PeriodEnd);
+
+            var energy = tariff.CalculateEnergyCharge(kwh);
+            var bill = new PrepaidBill(
+                Guid.NewGuid(), consumer.Id, reading.Id, tariff.Id,
+                energyChargeGross: energy,
+                prepaidRebateAmount: energy * (tariff.PrepaidEnergyRebatePercent / 100m),
+                fixedCharge: tariff.CalculateFixedCharge(loadKw),
+                electricityDutyAmount: ElectricityDuty.Calculate(tariff.Category, kwh),
+                generatedAt: now);
+            var debit = consumer.Wallet.Debit(bill.Amount, WalletTransactionType.BillDebit, bill.Id.ToString());
+            bill.ApplyPayment(-debit.Amount);
+
+            context.Meters.Add(meter);
+            context.Consumers.Add(consumer);
+            context.RechargeTransactions.Add(recharge);
+            context.ConsumptionReadings.Add(reading);
+            context.Bills.Add(bill);
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+    }
 }

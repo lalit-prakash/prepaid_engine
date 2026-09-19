@@ -173,6 +173,7 @@ if (app.Environment.IsDevelopment())
     var db = scope.ServiceProvider.GetRequiredService<PrepaidEngineDbContext>();
     await db.Database.MigrateAsync();
     await DbSeeder.SeedAsync(db);
+    await DbSeeder.SeedExtraConsumersAsync(db);
 
     app.UseCors(AngularDevCorsPolicy);
 }
