@@ -28,6 +28,10 @@ interface ReportDefinition {
   styleUrl: './reports-center.scss',
 })
 export class ReportsCenter {
+  protected get reportPageCount(): number {
+    return this.reports.filter((r) => r.linkKind === 'report').length;
+  }
+
   protected get enabledCount(): number {
     return this.reports.filter((r) => r.path).length;
   }
@@ -37,8 +41,8 @@ export class ReportsCenter {
       id: 'daily-billing',
       title: 'Daily Billing Report',
       category: 'Billing',
-      description: 'Every bill generated, with the full charge breakdown, filterable by date range, category, and status.',
-      path: '/reports/daily-billing',
+      description: 'Every bill generated, with the full charge breakdown and totals, filterable by date range and status.',
+      path: '/reports/view/daily-billing',
       linkKind: 'report',
     },
     {
@@ -53,15 +57,17 @@ export class ReportsCenter {
       id: 'day-wise-rc',
       title: 'Day-wise RC Report',
       category: 'RC/DC',
-      description: 'Daily remote reconnection operations.',
-      path: null,
+      description: 'Daily remote reconnection operations and their outcomes.',
+      path: '/reports/view/day-wise-rc',
+      linkKind: 'report',
     },
     {
       id: 'day-wise-dc',
       title: 'Day-wise DC Report',
       category: 'RC/DC',
-      description: 'Daily remote disconnection operations.',
-      path: null,
+      description: 'Daily remote disconnection operations and their outcomes.',
+      path: '/reports/view/day-wise-dc',
+      linkKind: 'report',
     },
     {
       id: 'postpaid-to-prepaid',
@@ -82,8 +88,9 @@ export class ReportsCenter {
       id: 'recharge-summary',
       title: 'Day-wise Recharge Summary',
       category: 'Recharge',
-      description: 'Daily recharge volumes and outcomes.',
-      path: null,
+      description: 'Daily recharge volumes, with payment outcome and meter-credit outcome shown separately.',
+      path: '/reports/view/day-wise-recharge',
+      linkKind: 'report',
     },
     {
       id: 'billing-failure',
@@ -97,14 +104,16 @@ export class ReportsCenter {
       title: 'Recharge Failure Report',
       category: 'Recharge',
       description: 'Recharge attempts that failed or were declined.',
-      path: null,
+      path: '/reports/view/recharge-failure',
+      linkKind: 'report',
     },
     {
       id: 'meter-credit-failure',
       title: 'Meter Credit Failure Report',
       category: 'Meter Credit',
-      description: 'Meter credit commands that failed or timed out.',
-      path: null,
+      description: 'Meter credit commands that failed or timed out after payment was received.',
+      path: '/reports/view/meter-credit-failure',
+      linkKind: 'report',
     },
     {
       id: 'reconciliation',
@@ -142,19 +151,10 @@ export class ReportsCenter {
 
   protected unavailableReason(report: ReportDefinition): string {
     switch (report.id) {
-      case 'day-wise-rc':
-      case 'day-wise-dc':
-        return 'Per-command connectivity data exists (see the RC/DC dashboard), but a day-wise aggregation endpoint is not built yet';
       case 'prepaid-to-postpaid':
         return 'No reverse-conversion domain model exists — every ConversionRequest handled here is postpaid→prepaid';
-      case 'recharge-summary':
-        return 'Per-transaction recharge data exists (see Recharge Operations), but a day-wise aggregation endpoint is not built yet';
       case 'billing-failure':
         return 'No billing-failure tracking domain model exists yet — a rejected bill has no distinct failure record';
-      case 'recharge-failure':
-        return 'Recharge failures are visible per-transaction in Recharge Operations, but not yet as a dedicated report';
-      case 'meter-credit-failure':
-        return 'Meter command failures are visible per-transaction in Meter Credit, but not yet as a dedicated report';
       default:
         return 'Not yet available';
     }

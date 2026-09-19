@@ -111,7 +111,7 @@ export class Overview implements OnInit, OnDestroy {
   protected readonly ConnectivityCommandStatus = ConnectivityCommandStatus;
 
   protected readonly quickReports = [
-    { label: 'Daily Billing Report', path: '/reports/daily-billing' },
+    { label: 'Daily Billing Report', path: '/reports/view/daily-billing' },
     { label: 'Charge Calculation Report', path: '/reports/charge-calculation' },
     { label: 'Reconciliation Summary', path: '/reconciliation' },
     { label: 'Exceptions Register', path: '/exceptions' },

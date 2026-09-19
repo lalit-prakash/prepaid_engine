@@ -2501,21 +2501,29 @@ app.MapGet("/api/v1/tariffs/{id:guid}/versions", async (Guid id, PrepaidEngineDb
 .WithName("ListTariffVersions")
 .RequireAuthorization();
 
-// --- Reports: honest aggregation endpoints over data that now genuinely exists -----------------
-// Day-wise RC/DC report: ConnectivityCommand counts grouped by calendar day and command type.
+// --- Reports -----------------------------------------------------------------------------------
+// Every report endpoint filters and aggregates in the database, and returns
+// { rows, truncated, generatedAt } (plus totals where meaningful). Detail reports are capped at
+// ReportRowCap rows and say so via `truncated`; a full-population export needs the background
+// report-job model, which does not exist yet, rather than loading unbounded rows.
+const int ReportRowCap = 5000;
+
+static (DateTime? From, DateTime? ToExclusive) ReportRange(DateTime? from, DateTime? to) =>
+    (from.HasValue ? DateTime.SpecifyKind(from.Value.Date, DateTimeKind.Utc) : null,
+     to.HasValue ? DateTime.SpecifyKind(to.Value.Date.AddDays(1), DateTimeKind.Utc) : null);
+
+// Day-wise RC/DC report: ConnectivityCommand counts grouped by calendar day (database-side).
 app.MapGet("/api/v1/reports/day-wise-rc-dc", async (PrepaidEngineDbContext db, DateTime? from, DateTime? to) =>
 {
-    var query = db.ConnectivityCommands.AsQueryable();
-    if (from.HasValue)
-        query = query.Where(c => c.CreatedAt >= from.Value);
-    if (to.HasValue)
-        query = query.Where(c => c.CreatedAt <= to.Value);
+    var (start, endExclusive) = ReportRange(from, to);
+    var query = db.ConnectivityCommands.AsNoTracking().AsQueryable();
+    if (start.HasValue) query = query.Where(c => c.CreatedAt >= start.Value);
+    if (endExclusive.HasValue) query = query.Where(c => c.CreatedAt < endExclusive.Value);
 
-    var commands = await query.ToListAsync();
-
-    var dayWise = commands
+    var rows = await query
         .GroupBy(c => c.CreatedAt.Date)
         .OrderBy(g => g.Key)
+        .Take(ReportRowCap)
         .Select(g => new
         {
             Date = g.Key,
@@ -2526,62 +2534,181 @@ app.MapGet("/api/v1/reports/day-wise-rc-dc", async (PrepaidEngineDbContext db, D
             TimedOutCount = g.Count(c => c.Status == ConnectivityCommandStatus.TimedOut),
             TotalCount = g.Count(),
         })
-        .ToList();
+        .ToListAsync();
 
-    return Results.Ok(dayWise);
+    return Results.Ok(new { rows, truncated = rows.Count >= ReportRowCap, generatedAt = DateTime.UtcNow });
 })
 .WithName("DayWiseRcDcReport")
 .RequireAuthorization();
 
-// Meter Credit Failure Report: every MeterCommand that is Failed or TimedOut.
-app.MapGet("/api/v1/reports/meter-credit-failures", async (PrepaidEngineDbContext db) =>
+// Day-wise recharge summary: payment outcomes and meter-credit outcomes per calendar day.
+app.MapGet("/api/v1/reports/day-wise-recharge", async (PrepaidEngineDbContext db, DateTime? from, DateTime? to) =>
 {
-    var failures = await (
-        from m in db.MeterCommands
-        join c in db.Consumers on m.ConsumerId equals c.Id
-        where m.Status == MeterCommandStatus.Failed || m.Status == MeterCommandStatus.TimedOut
-        orderby m.CreatedAt descending
-        select new
+    var (start, endExclusive) = ReportRange(from, to);
+    var query =
+        from r in db.RechargeTransactions.AsNoTracking()
+        join mcOuter in db.MeterCommands.AsNoTracking() on r.Id equals mcOuter.RechargeTransactionId into mcGroup
+        from mc in mcGroup.DefaultIfEmpty()
+        select new { r, mc };
+    if (start.HasValue) query = query.Where(x => x.r.InitiatedAt >= start.Value);
+    if (endExclusive.HasValue) query = query.Where(x => x.r.InitiatedAt < endExclusive.Value);
+
+    var rows = await query
+        .GroupBy(x => x.r.InitiatedAt.Date)
+        .OrderBy(g => g.Key)
+        .Take(ReportRowCap)
+        .Select(g => new
         {
-            m.Id,
-            c.AccountNumber,
-            c.Name,
-            m.CreditAmount,
-            m.Status,
-            m.RetryCount,
-            m.ErrorMessage,
-            m.CreatedAt,
+            Date = g.Key,
+            TotalCount = g.Count(),
+            PaymentReceivedCount = g.Count(x => x.r.Status == RechargeStatus.Success),
+            PaymentFailedCount = g.Count(x => x.r.Status == RechargeStatus.Failed),
+            PaymentPendingCount = g.Count(x => x.r.Status == RechargeStatus.Initiated),
+            MeterCreditedCount = g.Count(x => x.mc != null && x.mc.Status == MeterCommandStatus.Acknowledged),
+            MeterCreditFailedCount = g.Count(x => x.mc != null && (x.mc.Status == MeterCommandStatus.Failed || x.mc.Status == MeterCommandStatus.TimedOut)),
+            AmountReceived = g.Where(x => x.r.Status == RechargeStatus.Success).Sum(x => x.r.Amount),
         })
         .ToListAsync();
 
-    return Results.Ok(failures);
+    return Results.Ok(new
+    {
+        rows,
+        truncated = rows.Count >= ReportRowCap,
+        generatedAt = DateTime.UtcNow,
+        totals = new
+        {
+            TotalCount = rows.Sum(x => x.TotalCount),
+            PaymentReceivedCount = rows.Sum(x => x.PaymentReceivedCount),
+            PaymentFailedCount = rows.Sum(x => x.PaymentFailedCount),
+            MeterCreditedCount = rows.Sum(x => x.MeterCreditedCount),
+            MeterCreditFailedCount = rows.Sum(x => x.MeterCreditFailedCount),
+            AmountReceived = rows.Sum(x => x.AmountReceived),
+        },
+    });
+})
+.WithName("DayWiseRechargeReport")
+.RequireAuthorization();
+
+// Meter Credit Failure Report: every MeterCommand that is Failed or TimedOut.
+app.MapGet("/api/v1/reports/meter-credit-failures", async (PrepaidEngineDbContext db, DateTime? from, DateTime? to) =>
+{
+    var (start, endExclusive) = ReportRange(from, to);
+    var query =
+        from m in db.MeterCommands.AsNoTracking()
+        join c in db.Consumers.AsNoTracking() on m.ConsumerId equals c.Id
+        where m.Status == MeterCommandStatus.Failed || m.Status == MeterCommandStatus.TimedOut
+        select new { m, c };
+    if (start.HasValue) query = query.Where(x => x.m.CreatedAt >= start.Value);
+    if (endExclusive.HasValue) query = query.Where(x => x.m.CreatedAt < endExclusive.Value);
+
+    var rows = await query
+        .OrderByDescending(x => x.m.CreatedAt)
+        .Take(ReportRowCap + 1)
+        .Select(x => new
+        {
+            x.m.Id,
+            x.c.AccountNumber,
+            x.c.Name,
+            x.m.CreditAmount,
+            x.m.Status,
+            x.m.RetryCount,
+            x.m.ErrorMessage,
+            x.m.ResponseCode,
+            x.m.CreatedAt,
+        })
+        .ToListAsync();
+
+    var truncated = rows.Count > ReportRowCap;
+    return Results.Ok(new { rows = truncated ? rows.Take(ReportRowCap).ToList() : rows, truncated, generatedAt = DateTime.UtcNow });
 })
 .WithName("MeterCreditFailureReport")
 .RequireAuthorization();
 
 // Recharge Failure Report: every RechargeTransaction that Failed.
-app.MapGet("/api/v1/reports/recharge-failures", async (PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/reports/recharge-failures", async (PrepaidEngineDbContext db, DateTime? from, DateTime? to) =>
 {
-    var failures = await (
-        from r in db.RechargeTransactions
-        join c in db.Consumers on r.ConsumerId equals c.Id
+    var (start, endExclusive) = ReportRange(from, to);
+    var query =
+        from r in db.RechargeTransactions.AsNoTracking()
+        join c in db.Consumers.AsNoTracking() on r.ConsumerId equals c.Id
         where r.Status == RechargeStatus.Failed
-        orderby r.InitiatedAt descending
-        select new
+        select new { r, c };
+    if (start.HasValue) query = query.Where(x => x.r.InitiatedAt >= start.Value);
+    if (endExclusive.HasValue) query = query.Where(x => x.r.InitiatedAt < endExclusive.Value);
+
+    var rows = await query
+        .OrderByDescending(x => x.r.InitiatedAt)
+        .Take(ReportRowCap + 1)
+        .Select(x => new { x.r.Id, x.c.AccountNumber, x.c.Name, x.r.Amount, x.r.RmsReferenceId, x.r.Status, x.r.InitiatedAt })
+        .ToListAsync();
+
+    var truncated = rows.Count > ReportRowCap;
+    return Results.Ok(new { rows = truncated ? rows.Take(ReportRowCap).ToList() : rows, truncated, generatedAt = DateTime.UtcNow });
+})
+.WithName("RechargeFailureReport")
+.RequireAuthorization();
+
+// Daily Billing Report: bills in a date range with their full charge breakdown, plus totals
+// computed over the whole filtered set in the database (not just the capped rows).
+app.MapGet("/api/v1/reports/billing", async (PrepaidEngineDbContext db, DateTime? from, DateTime? to, BillStatus? status) =>
+{
+    var (start, endExclusive) = ReportRange(from, to);
+    var query =
+        from b in db.Bills.AsNoTracking()
+        join c in db.Consumers.AsNoTracking() on b.ConsumerId equals c.Id
+        join t in db.Tariffs.AsNoTracking() on b.TariffId equals t.Id
+        select new { b, c, t };
+    if (start.HasValue) query = query.Where(x => x.b.GeneratedAt >= start.Value);
+    if (endExclusive.HasValue) query = query.Where(x => x.b.GeneratedAt < endExclusive.Value);
+    if (status.HasValue) query = query.Where(x => x.b.Status == status.Value);
+
+    var totals = await query
+        .GroupBy(_ => 1)
+        .Select(g => new
         {
-            r.Id,
-            c.AccountNumber,
-            c.Name,
-            r.Amount,
-            r.RmsReferenceId,
-            r.Status,
-            r.InitiatedAt,
+            BillCount = g.Count(),
+            ConsumerCount = g.Select(x => x.c.Id).Distinct().Count(),
+            TotalBilled = g.Sum(x => x.b.Amount),
+            TotalSettled = g.Sum(x => x.b.AmountPaid),
+        })
+        .FirstOrDefaultAsync();
+
+    var rows = await query
+        .OrderByDescending(x => x.b.GeneratedAt)
+        .Take(ReportRowCap)
+        .Select(x => new
+        {
+            x.b.Id,
+            x.b.GeneratedAt,
+            x.c.AccountNumber,
+            x.c.Name,
+            Category = x.t.Category,
+            TariffName = x.t.Name,
+            EnergyChargeNet = x.b.EnergyChargeGross - x.b.PrepaidRebateAmount,
+            x.b.FixedCharge,
+            x.b.ElectricityDutyAmount,
+            x.b.FppasAmount,
+            x.b.Amount,
+            x.b.AmountPaid,
+            x.b.Status,
         })
         .ToListAsync();
 
-    return Results.Ok(failures);
+    return Results.Ok(new
+    {
+        rows,
+        truncated = (totals?.BillCount ?? 0) > rows.Count,
+        generatedAt = DateTime.UtcNow,
+        totals = new
+        {
+            BillCount = totals?.BillCount ?? 0,
+            ConsumerCount = totals?.ConsumerCount ?? 0,
+            TotalBilled = totals?.TotalBilled ?? 0m,
+            TotalSettled = totals?.TotalSettled ?? 0m,
+        },
+    });
 })
-.WithName("RechargeFailureReport")
+.WithName("BillingReport")
 .RequireAuthorization();
 
 // --- SLA monitoring (Phase 3): real performance against configurable targets, computed from ---

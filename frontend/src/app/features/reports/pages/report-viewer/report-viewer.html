@@ -1,0 +1,101 @@
+<div class="report-viewer">
+  <a routerLink="/reports" class="back-link">← Back to Reports</a>
+
+  @if (notFound()) {
+    <div class="error-panel">This report does not exist.</div>
+  } @else if (definition(); as d) {
+    <header class="report-header">
+      <div>
+        <h1>{{ d.title }}</h1>
+        <p class="report-header__subtitle">{{ d.description }}</p>
+        @if (response(); as r) {
+          <span class="generated-note">Generated {{ r.generatedAt | date: 'd MMM y, HH:mm:ss' }}</span>
+        }
+      </div>
+      <button type="button" class="export-btn" (click)="export()" [disabled]="loading() || rows().length === 0">
+        Export CSV (rows shown)
+      </button>
+    </header>
+
+    <div class="report-filters">
+      <label>From <input type="date" (change)="onDateChange('from', $any($event.target).value)" /></label>
+      <label>To <input type="date" (change)="onDateChange('to', $any($event.target).value)" /></label>
+      @if (d.statusFilter; as sf) {
+        <label>{{ sf.label }}
+          <select (change)="onStatusChange($any($event.target).value)">
+            <option value="" [selected]="!status()">All</option>
+            @for (o of sf.options; track o.value) { <option [value]="o.value" [selected]="status() === o.value">{{ o.label }}</option> }
+          </select>
+        </label>
+      }
+      @if (hasFilters) { <button type="button" class="filters-clear" (click)="clearFilters()">Clear filters</button> }
+    </div>
+
+    @if (loading() && !response()) {
+      <div class="skeleton-block" aria-busy="true"></div>
+    } @else if (error()) {
+      <div class="error-panel">
+        {{ error() }}
+        <button type="button" class="filters-clear" (click)="retry()">Retry</button>
+      </div>
+    } @else if (rows().length === 0) {
+      <div class="empty-panel">{{ hasFilters ? 'No data matches these filters.' : 'This report has no data yet.' }}</div>
+    } @else {
+      @if (response()?.truncated) {
+        <div class="truncated-note">
+          Showing the first {{ rows().length }} rows only. Narrow the date range to see the rest; a full export needs a background report job, which is not built yet.
+        </div>
+      }
+      <div class="table-wrap" [class.table-wrap--loading]="loading()">
+        <table>
+          <thead>
+            <tr>
+              @for (c of d.columns; track c.key) {
+                <th [class.num]="c.type === 'number' || c.type === 'money'">{{ c.label }}</th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of rows(); track $index) {
+              <tr>
+                @for (c of d.columns; track c.key) {
+                  <td [class.num]="c.type === 'number' || c.type === 'money'">
+                    @let v = cell(row, c);
+                    @if (v === null) { <span class="muted">—</span> }
+                    @else {
+                      @let href = link(row, c);
+                      @if (href) { <a [routerLink]="href">{{ c.type === 'money' ? '₹' + (v | number: '1.2-2') : v }}</a> }
+                      @else {
+                        @switch (c.type) {
+                          @case ('money') { ₹{{ v | number: '1.2-2' }} }
+                          @case ('number') { {{ v | number: '1.0-0' }} }
+                          @case ('date') { {{ v | date: 'd MMM y' }} }
+                          @case ('datetime') { {{ v | date: 'd MMM y, HH:mm' }} }
+                          @default { {{ v }} }
+                        }
+                      }
+                    }
+                  </td>
+                }
+              </tr>
+            }
+          </tbody>
+          @if (hasTotals) {
+            <tfoot>
+              <tr>
+                @for (c of d.columns; track c.key; let first = $first) {
+                  <td [class.num]="c.type === 'number' || c.type === 'money'">
+                    @if (first) { <strong>Total</strong> }
+                    @else if (total(c) !== null) {
+                      <strong>{{ c.type === 'money' ? '₹' + (total(c) | number: '1.2-2') : (total(c) | number: '1.0-0') }}</strong>
+                    }
+                  </td>
+                }
+              </tr>
+            </tfoot>
+          }
+        </table>
+      </div>
+    }
+  }
+</div>
