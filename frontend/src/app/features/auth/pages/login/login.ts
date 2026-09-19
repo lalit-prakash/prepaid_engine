@@ -9,9 +9,8 @@ import { Icon } from '../../../../shared/components/icon/icon';
 /**
  * Sign-in gate for the demo API's stop-gap HTTP Basic auth (see
  * docs/assumptions-and-security.md). Verifies the credential against a real
- * endpoint before caching it, exactly like the static wwwroot/index.html
- * console does, so a typo doesn't silently propagate into every subsequent
- * API call.
+ * endpoint (whoami, which also returns the user's role) before caching it, so a
+ * typo doesn't silently propagate into every subsequent API call.
  */
 @Component({
   selector: 'pe-login',

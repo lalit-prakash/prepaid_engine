@@ -17,6 +17,7 @@ using PrepaidEngine.Infrastructure.MeterCommands;
 using PrepaidEngine.Infrastructure.MeterData;
 using PrepaidEngine.Infrastructure.Persistence;
 using PrepaidEngine.Infrastructure.Sla;
+using PrepaidEngine.Infrastructure.Tariffs;
 using PrepaidEngine.Application.Sla;
 using PrepaidEngine.Infrastructure.Persistence.Seed;
 using PrepaidEngine.Infrastructure.Rms;
@@ -70,6 +71,10 @@ builder.Services.AddScoped<ISlaMonitoringService, SlaMonitoringService>();
 // comment for why this is intentionally simple.
 builder.Services.AddHostedService<PrepaidEngine.Api.Billing.BillingProcessingWorker>();
 
+// Activates approved tariff changes when their commencement date arrives (see TariffActivationService).
+builder.Services.AddScoped<TariffActivationService>();
+builder.Services.AddHostedService<PrepaidEngine.Api.Tariffs.TariffActivationWorker>();
+
 // Basic auth for the demo endpoints only — a stop-gap, not a substitute for real
 // authentication before any shared/production exposure (see docs/assumptions-and-security.md).
 builder.Services.AddAuthentication("Basic")
@@ -82,6 +87,7 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("ITRole", policy => policy.RequireRole(nameof(UserRole.IT)));
     options.AddPolicy("UtilityRole", policy => policy.RequireRole(nameof(UserRole.Utility)));
+    options.AddPolicy("TariffGovernanceRole", policy => policy.RequireRole(nameof(UserRole.IT), nameof(UserRole.Utility)));
 });
 
 // Local-dev-only CORS so the Angular dev server (ng serve, default port 4200) can call this
@@ -118,6 +124,33 @@ static bool IsWithinDisconnectWindow(DateTime utcNow)
 {
     var istHour = utcNow.Add(TimeSpan.FromHours(5.5)).Hour;
     return istHour >= 9 && istHour < 14;
+}
+
+// Why a change request cannot proceed, or null. Checked at create, submit and approve so two requests
+// can never both retire the same tariff, and a new tariff can never reuse the name of a different
+// Active one (the unique index on Active names would otherwise fail later, at activation).
+static async Task<string?> TariffChangeConflictAsync(PrepaidEngineDbContext db, Guid? selfId, Guid? supersedesId, string proposedName)
+{
+    if (supersedesId.HasValue)
+    {
+        var superseded = await db.Tariffs.AsNoTracking().FirstOrDefaultAsync(t => t.Id == supersedesId.Value);
+        if (superseded is null)
+            return $"No tariff found with id '{supersedesId}' to revise.";
+        if (superseded.Status == TariffLifecycleStatus.Retired)
+            return "Cannot revise a tariff that has already been retired.";
+
+        var otherOpen = await db.TariffChangeRequests.AnyAsync(r =>
+            r.Id != selfId && r.SupersedesTariffId == supersedesId.Value &&
+            (r.Status == TariffChangeRequestStatus.PendingApproval || r.Status == TariffChangeRequestStatus.Scheduled));
+        if (otherOpen)
+            return "This tariff already has a pending-approval or scheduled change request. Resolve it before creating another.";
+    }
+
+    var nameClash = await db.Tariffs.AnyAsync(t => t.Status == TariffLifecycleStatus.Active && t.Name == proposedName && t.Id != supersedesId);
+    if (nameClash)
+        return $"An active tariff named '{proposedName}' already exists. Revise it instead, or choose a different name.";
+
+    return null;
 }
 
 static AuditEntry Audit(PrepaidEngineDbContext db, string entityType, string entityId, string action, string actor,
@@ -180,12 +213,6 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-// Minimal hand-built demo console (wwwroot/index.html) that drives the recharge flow against
-// this same API — static files only, no build step, no framework. It is not the Angular
-// frontend (still paused, see README) and calls the API endpoints below directly, using the
-// same Basic auth the API itself enforces (entered by the demo user, never hard-coded here).
-app.UseDefaultFiles();
-app.UseStaticFiles();
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -361,6 +388,7 @@ app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, Pre
 app.MapPost("/api/v1/consumers/{accountNumber}/disconnect", async (
     string accountNumber,
     ConnectivityRequest request,
+    ClaimsPrincipal user,
     PrepaidEngineDbContext db,
     IConnectivityCommandClient connectivityClient) =>
 {
@@ -410,7 +438,7 @@ app.MapPost("/api/v1/consumers/{accountNumber}/disconnect", async (
             break;
     }
 
-    Audit(db, nameof(ConnectivityCommand), command.Id.ToString(), "Dispatched", "system",
+    Audit(db, nameof(ConnectivityCommand), command.Id.ToString(), "Dispatched", user.Identity?.Name ?? "unknown",
         newValue: command.Status.ToString(), details: $"Disconnect for {consumer.AccountNumber}: {request.Reason}");
 
     await db.SaveChangesAsync();
@@ -428,6 +456,7 @@ app.MapPost("/api/v1/consumers/{accountNumber}/disconnect", async (
 app.MapPost("/api/v1/consumers/{accountNumber}/reconnect", async (
     string accountNumber,
     ConnectivityRequest request,
+    ClaimsPrincipal user,
     PrepaidEngineDbContext db,
     IConnectivityCommandClient connectivityClient) =>
 {
@@ -479,7 +508,7 @@ app.MapPost("/api/v1/consumers/{accountNumber}/reconnect", async (
             break;
     }
 
-    Audit(db, nameof(ConnectivityCommand), command.Id.ToString(), "Dispatched", "system",
+    Audit(db, nameof(ConnectivityCommand), command.Id.ToString(), "Dispatched", user.Identity?.Name ?? "unknown",
         newValue: command.Status.ToString(), details: $"Reconnect for {consumer.AccountNumber}: {request.Reason}");
 
     await db.SaveChangesAsync();
@@ -563,6 +592,7 @@ app.MapGet("/api/v1/connectivity-commands/{id:guid}", async (Guid id, PrepaidEng
 // this time, advances the consumer's connection status just like the original dispatch would have.
 app.MapPost("/api/v1/connectivity-commands/{id:guid}/retry", async (
     Guid id,
+    ClaimsPrincipal user,
     PrepaidEngineDbContext db,
     IConnectivityCommandClient connectivityClient) =>
 {
@@ -634,7 +664,7 @@ app.MapPost("/api/v1/connectivity-commands/{id:guid}/retry", async (
             break;
     }
 
-    Audit(db, nameof(ConnectivityCommand), command.Id.ToString(), "Retried", "system",
+    Audit(db, nameof(ConnectivityCommand), command.Id.ToString(), "Retried", user.Identity?.Name ?? "unknown",
         newValue: command.Status.ToString(), details: $"Retry #{command.RetryCount} for {consumer.AccountNumber}");
 
     await db.SaveChangesAsync();
@@ -1022,25 +1052,9 @@ app.MapPost("/api/v1/tariff-change-requests", async (CreateTariffChangeRequestBo
 {
     var actor = user.Identity?.Name ?? "unknown";
 
-    if (request.SupersedesTariffId.HasValue)
-    {
-        var superseded = await db.Tariffs.FirstOrDefaultAsync(t => t.Id == request.SupersedesTariffId.Value);
-        if (superseded is null)
-            return Results.BadRequest(new { error = $"No tariff found with id '{request.SupersedesTariffId}' to revise." });
-        if (superseded.Status == PrepaidEngine.Domain.Enums.TariffLifecycleStatus.Retired)
-            return Results.BadRequest(new { error = "Cannot revise a tariff that has already been retired." });
-
-        var conflictingPending = await db.TariffChangeRequests.AnyAsync(r =>
-            r.SupersedesTariffId == request.SupersedesTariffId.Value &&
-            (r.Status == TariffChangeRequestStatus.PendingApproval || r.Status == TariffChangeRequestStatus.Scheduled));
-        if (conflictingPending)
-        {
-            return Results.Conflict(new
-            {
-                error = "This tariff already has a pending-approval or scheduled change request. Resolve it before creating another.",
-            });
-        }
-    }
+    var conflict = await TariffChangeConflictAsync(db, null, request.SupersedesTariffId, request.ProposedName);
+    if (conflict is not null)
+        return Results.Conflict(new { error = conflict });
 
     TariffChangeRequest changeRequest;
     try
@@ -1114,6 +1128,10 @@ app.MapPost("/api/v1/tariff-change-requests/{id:guid}/submit", async (Guid id, S
     var validationErrors = changeRequest.ValidateForSubmission();
     if (validationErrors.Count > 0)
         return Results.BadRequest(new { errors = validationErrors });
+
+    var conflict = await TariffChangeConflictAsync(db, changeRequest.Id, changeRequest.SupersedesTariffId, changeRequest.ProposedName);
+    if (conflict is not null)
+        return Results.Conflict(new { error = conflict });
 
     try
     {
@@ -1223,8 +1241,10 @@ app.MapPost("/api/v1/tariff-change-requests/{id:guid}/approve", async (Guid id, 
     if (changeRequest is null)
         return Results.NotFound();
 
-    // Postgres timestamptz columns require Kind=Utc; a date-only value from JSON model
-    // binding comes back as Kind=Unspecified, which Npgsql rejects at save time.
+    var conflict = await TariffChangeConflictAsync(db, changeRequest.Id, changeRequest.SupersedesTariffId, changeRequest.ProposedName);
+    if (conflict is not null)
+        return Results.Conflict(new { error = conflict });
+
     var commencementDate = DateTime.SpecifyKind(request.CommencementDate.Date, DateTimeKind.Utc);
 
     try
@@ -1269,63 +1289,56 @@ app.MapPost("/api/v1/tariff-change-requests/{id:guid}/reject", async (Guid id, R
 .WithName("RejectTariffChangeRequest")
 .RequireAuthorization("UtilityRole");
 
-// Activates every Scheduled request whose commencement date has arrived — materializes the new
-// immutable Tariff row and retires the superseded one (if any). Idempotent/atomic per request via
-// the same Status guard TariffChangeRequest.Activate already enforces (a request can only ever be
-// Activated once). Exposed as a real endpoint (rather than only a background job) so the demo can
-// trigger it deterministically instead of waiting on wall-clock time.
-app.MapPost("/api/v1/tariff-change-requests/activate-due", async (PrepaidEngineDbContext db) =>
+// Manual trigger for the same activation the TariffActivationWorker performs every minute; useful to
+// activate a change on demand instead of waiting up to a minute. Each due request is activated in its
+// own transaction, so one that cannot activate is reported in `failed` and never blocks the rest.
+app.MapPost("/api/v1/tariff-change-requests/activate-due", async (TariffActivationService activation, CancellationToken cancellationToken) =>
+    Results.Ok(await activation.ActivateDueAsync(DateTime.UtcNow, cancellationToken)))
+.WithName("ActivateDueTariffChangeRequests")
+.RequireAuthorization("UtilityRole");
+
+// Cancels a change request that will not proceed (including an approved one that is Scheduled and
+// would otherwise sit until its commencement date). IT may cancel its own Draft/Rejected requests;
+// Utility may cancel PendingApproval/Scheduled ones. A reason is mandatory and audited.
+app.MapPost("/api/v1/tariff-change-requests/{id:guid}/cancel", async (Guid id, CancelTariffChangeRequestBody request, ClaimsPrincipal user, PrepaidEngineDbContext db) =>
 {
-    var today = DateTime.UtcNow;
-    var due = await db.TariffChangeRequests
-        .Where(r => r.Status == TariffChangeRequestStatus.Scheduled && r.CommencementDate!.Value.Date <= today.Date)
-        .ToListAsync();
+    if (string.IsNullOrWhiteSpace(request.Reason))
+        return Results.BadRequest(new { error = "A reason is required to cancel a change request." });
 
-    var activated = new List<object>();
-    foreach (var changeRequest in due)
+    var actor = user.Identity?.Name ?? "unknown";
+    var changeRequest = await db.TariffChangeRequests.FirstOrDefaultAsync(r => r.Id == id);
+    if (changeRequest is null)
+        return Results.NotFound();
+
+    var isUtility = user.IsInRole(nameof(UserRole.Utility));
+    var allowed = isUtility
+        ? changeRequest.Status is TariffChangeRequestStatus.PendingApproval or TariffChangeRequestStatus.Scheduled
+        : changeRequest.Status is TariffChangeRequestStatus.Draft or TariffChangeRequestStatus.Rejected;
+    if (!allowed)
+        return Results.Json(new { error = $"A {(isUtility ? "Utility" : "IT")} user cannot cancel a request that is {changeRequest.Status}." },
+            statusCode: StatusCodes.Status403Forbidden);
+
+    try
     {
-        // AsNoTracking is required here: EF Core cannot track an owned-entity collection queried
-        // on its own without its owner also present in the same result set.
-        var proposedSlabs = await db.Entry(changeRequest).Collection(r => r.ProposedSlabs).Query().AsNoTracking().ToListAsync();
-        var proposedTou = await db.Entry(changeRequest).Collection(r => r.ProposedTouPeriods).Query().AsNoTracking().ToListAsync();
-
-        var newTariff = new Tariff(
-            Guid.NewGuid(), changeRequest.ProposedName, changeRequest.ProposedCategory,
-            proposedSlabs.Select(s => new TariffSlab(s.FromKwh, s.UpToKwh, s.RatePerKwh)),
-            changeRequest.ProposedFixedChargePerUnitPerMonth, changeRequest.ProposedPrepaidEnergyRebatePercent, changeRequest.ProposedEmergencyCreditLimit,
-            changeRequest.ProposedMinVendAmountSinglePhase, changeRequest.ProposedMaxVendAmountSinglePhase,
-            changeRequest.ProposedMinVendAmountThreePhase, changeRequest.ProposedMaxVendAmountThreePhase,
-            proposedTou.Select(p => new TouPeriod(p.Label, p.StartTime, p.EndTime, p.RatePerKvah)));
-        db.Tariffs.Add(newTariff);
-
-        if (changeRequest.SupersedesTariffId.HasValue)
-        {
-            var superseded = await db.Tariffs.FirstOrDefaultAsync(t => t.Id == changeRequest.SupersedesTariffId.Value);
-            superseded?.Retire();
-        }
-
-        changeRequest.Activate(newTariff.Id, today);
-        Audit(db, nameof(TariffChangeRequest), changeRequest.Id.ToString(), "ACTIVATED", "system",
-            details: $"New tariff {newTariff.Id} ('{newTariff.Name}') is now active.");
-        if (changeRequest.SupersedesTariffId.HasValue)
-            Audit(db, nameof(Tariff), changeRequest.SupersedesTariffId.Value.ToString(), "RETIRED", "system");
-
-        activated.Add(new { changeRequest.Id, NewTariffId = newTariff.Id, newTariff.Name });
+        changeRequest.Cancel();
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
     }
 
-    if (activated.Count > 0)
-        await db.SaveChangesAsync();
-
-    return Results.Ok(activated);
+    Audit(db, nameof(TariffChangeRequest), changeRequest.Id.ToString(), "CANCELLED", actor, details: request.Reason);
+    await db.SaveChangesAsync();
+    return Results.Ok(new { changeRequest.Id, changeRequest.Status });
 })
-.WithName("ActivateDueTariffChangeRequests")
-.RequireAuthorization();
+.WithName("CancelTariffChangeRequest")
+.RequireAuthorization("TariffGovernanceRole");
 
 // Calculation Workbench — a SIMULATION-ONLY preview of a charge calculation for an arbitrary
 // (tariff, consumption, load) combination, not tied to any real consumer/bill. Delegates every
 // figure to the same domain methods (Tariff.CalculateEnergyCharge/CalculateFixedCharge/
 // CalculateDailyFixedCharge, ElectricityDuty.Calculate) that production billing uses — the
-// frontend must not duplicate this arithmetic itself (see docs/frontend-scope.md's frontend
+// frontend must not duplicate this arithmetic itself (see docs/ARCHITECTURE.md's frontend
 // calculation rule), it only renders whatever this endpoint returns.
 app.MapPost("/api/v1/calculation-workbench/simulate", async (SimulateChargeRequest request, PrepaidEngineDbContext db) =>
 {
@@ -2210,7 +2223,7 @@ app.MapGet("/api/v1/conversions/reverse", async (PrepaidEngineDbContext db) =>
 // the consumer's wallet exactly like a recharge, plus the daily billing-data export AMISP needs
 // to give RMS so it can compute its own shadow monthly bill and find any gap in the first place.
 app.MapPost("/api/v1/consumers/{accountNumber}/reconciliation-adjustments", async (
-    string accountNumber, ReconciliationAdjustmentRequest request, PrepaidEngineDbContext db,
+    string accountNumber, ReconciliationAdjustmentRequest request, ClaimsPrincipal user, PrepaidEngineDbContext db,
     IEmergencyCreditGuard emergencyCreditGuard) =>
 {
     if (request.Amount == 0)
@@ -2225,7 +2238,7 @@ app.MapPost("/api/v1/consumers/{accountNumber}/reconciliation-adjustments", asyn
 
     var adjustment = ApplyReconciliationAdjustment(db, consumer, request.Amount, request.ReconciliationDate, request.Reference);
 
-    Audit(db, nameof(ReconciliationAdjustment), adjustment.Id.ToString(), "Applied", "system",
+    Audit(db, nameof(ReconciliationAdjustment), adjustment.Id.ToString(), "Applied", user.Identity?.Name ?? "unknown",
         newValue: adjustment.Amount.ToString("0.00"), details: $"For {consumer.AccountNumber}: {request.Reference}");
 
     // A reconciliation adjustment can move the balance in either direction — let the guard decide
@@ -2402,7 +2415,7 @@ app.MapGet("/api/v1/exceptions/{id:guid}", async (Guid id, PrepaidEngineDbContex
 .WithName("GetOperationalExceptionById")
 .RequireAuthorization();
 
-app.MapPost("/api/v1/exceptions/{id:guid}/resolve", async (Guid id, ResolutionRequest request, PrepaidEngineDbContext db) =>
+app.MapPost("/api/v1/exceptions/{id:guid}/resolve", async (Guid id, ResolutionRequest request, ClaimsPrincipal user, PrepaidEngineDbContext db) =>
 {
     var exception = await db.OperationalExceptions.FirstOrDefaultAsync(e => e.Id == id);
     if (exception is null)
@@ -2420,7 +2433,7 @@ app.MapPost("/api/v1/exceptions/{id:guid}/resolve", async (Guid id, ResolutionRe
         return Results.Conflict(new { error = ex.Message });
     }
 
-    Audit(db, nameof(OperationalException), exception.Id.ToString(), "Resolved", "system", details: request.Note);
+    Audit(db, nameof(OperationalException), exception.Id.ToString(), "Resolved", user.Identity?.Name ?? "unknown", details: request.Note);
     await db.SaveChangesAsync();
 
     return Results.Ok(new { exception.Id, exception.Status, exception.ResolutionNote, exception.ResolvedAt });
@@ -2536,7 +2549,7 @@ app.MapGet("/api/v1/audit-entries", async (PrepaidEngineDbContext db, string? en
 // --- Tariff version history: append-only record of parameter changes, enabling a Tariff -------
 // Change Report even though Tariff itself still only exposes its single current version (see
 // README's Tariff Management section for why there is no tariff update endpoint yet).
-app.MapPost("/api/v1/tariffs/{id:guid}/versions", async (Guid id, TariffVersionRequest request, PrepaidEngineDbContext db) =>
+app.MapPost("/api/v1/tariffs/{id:guid}/versions", async (Guid id, TariffVersionRequest request, ClaimsPrincipal user, PrepaidEngineDbContext db) =>
 {
     var tariff = await db.Tariffs.FirstOrDefaultAsync(t => t.Id == id);
     if (tariff is null)
@@ -2557,7 +2570,7 @@ app.MapPost("/api/v1/tariffs/{id:guid}/versions", async (Guid id, TariffVersionR
     }
 
     db.TariffVersions.Add(version);
-    Audit(db, nameof(Tariff), tariff.Id.ToString(), "VersionRecorded", "system",
+    Audit(db, nameof(Tariff), tariff.Id.ToString(), "VersionRecorded", user.Identity?.Name ?? "unknown",
         oldValue: request.OldValue, newValue: request.NewValue, details: $"{request.FieldName}: {request.ChangeNote}");
 
     await db.SaveChangesAsync();
@@ -3680,7 +3693,7 @@ app.MapGet("/api/v1/meter-data/billing-holds", async (bool? activeOnly, PrepaidE
 // mandatory-reason discipline — see ConnectivityCommand.Reason) and leaves an audit trail; actual
 // billing for the meter resumes (both hourly LS and daily DLP) the moment the hold clears.
 app.MapPost("/api/v1/meter-data/{meterId:guid}/billing-hold/clear", async (
-    Guid meterId, ResolutionRequest request, PrepaidEngineDbContext db) =>
+    Guid meterId, ResolutionRequest request, ClaimsPrincipal user, PrepaidEngineDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(request.Note))
         return Results.BadRequest(new { error = "A resolution note is required to clear a billing hold." });
@@ -3691,7 +3704,7 @@ app.MapPost("/api/v1/meter-data/{meterId:guid}/billing-hold/clear", async (
 
     control.Clear(DateTime.UtcNow);
 
-    Audit(db, nameof(MeterBillingControl), control.Id.ToString(), "BillingHoldCleared", "system", details: request.Note);
+    Audit(db, nameof(MeterBillingControl), control.Id.ToString(), "BillingHoldCleared", user.Identity?.Name ?? "unknown", details: request.Note);
     await db.SaveChangesAsync();
 
     return Results.Ok(new { control.Id, control.MeterId, control.ActualBillingBlocked, control.ClearedAt });
@@ -3708,7 +3721,7 @@ app.MapPost("/api/v1/meter-data/{meterId:guid}/billing-hold/clear", async (
 // the rest — each is independently validated and reported, matching the batch-processing pattern
 // already used by POST /api/v1/conversions.
 app.MapPost("/api/v1/meter-data/billing-holds/clear-bulk", async (
-    BulkClearBillingHoldsRequest request, PrepaidEngineDbContext db) =>
+    BulkClearBillingHoldsRequest request, ClaimsPrincipal user, PrepaidEngineDbContext db) =>
 {
     if (request.MeterIds is null || request.MeterIds.Count == 0)
         return Results.BadRequest(new { error = "At least one meter ID is required." });
@@ -3727,7 +3740,7 @@ app.MapPost("/api/v1/meter-data/billing-holds/clear-bulk", async (
         }
 
         control.Clear(DateTime.UtcNow);
-        Audit(db, nameof(MeterBillingControl), control.Id.ToString(), "BillingHoldCleared", "system", details: request.Note);
+        Audit(db, nameof(MeterBillingControl), control.Id.ToString(), "BillingHoldCleared", user.Identity?.Name ?? "unknown", details: request.Note);
         results.Add(new { MeterId = meterId, Cleared = true, Error = (string?)null, control.Id, control.ClearedAt });
     }
 
@@ -3862,6 +3875,7 @@ public record SubmitTariffChangeRequestBody(string ChangeReason);
 public record ApproveTariffChangeRequestBody(DateTime CommencementDate);
 
 public record RejectTariffChangeRequestBody(string RejectionReason);
+public record CancelTariffChangeRequestBody(string Reason);
 
 /// <summary>POST /api/v1/meter-data/dlp request body.</summary>
 public record DailyLoadProfileIngestRequest(

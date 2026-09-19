@@ -169,7 +169,7 @@ export class KpiCard {
   /** Compact icon-left row layout (used by the Dashboard's KPI strip) instead of the
    * default icon-on-top stacked card used elsewhere. */
   readonly horizontal = input(false);
-  /** True when this number has no real backend source yet (see docs/frontend-scope.md). */
+  /** True when this number has no real backend source yet (see docs/ARCHITECTURE.md). */
   readonly illustrative = input(false);
   /** True when the metric is real but genuinely cannot be computed right now (e.g. no rows
    * for today yet) — shows "Data unavailable" instead of a fabricated or stale value. */

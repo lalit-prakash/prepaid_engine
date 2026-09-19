@@ -19,7 +19,7 @@ interface ReportDefinition {
  * section. Cards link to a real dedicated report page where one exists, or to that module's
  * real dashboard where the underlying data exists but no dedicated report page has been built
  * yet; only cards with neither are shown disabled with an honest reason — never a fake page
- * with invented numbers. See docs/frontend-scope.md for the current real-vs-planned boundary.
+ * with invented numbers. See docs/ARCHITECTURE.md for the current real-vs-planned boundary.
  */
 @Component({
   selector: 'pe-reports-center',

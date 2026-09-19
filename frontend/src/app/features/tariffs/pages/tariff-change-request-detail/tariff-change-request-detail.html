@@ -109,6 +109,20 @@
       </section>
     }
 
+    @if (canCancel(d.status)) {
+      <section class="card">
+        <h2>Cancel this request</h2>
+        <p class="hint">
+          {{ d.status === Status.Scheduled ? 'This change is approved and scheduled; cancelling stops it from activating.' : 'The request will be closed and cannot be resumed.' }}
+        </p>
+        <label class="field">
+          <span>Reason (required)</span>
+          <textarea rows="2" [(ngModel)]="cancelReason" name="cancelReason"></textarea>
+        </label>
+        <button type="button" class="btn-danger" (click)="cancelRequest()" [disabled]="acting()">Cancel request</button>
+      </section>
+    }
+
     @if (d.status === Status.Rejected && isIt()) {
       <section class="card">
         <button type="button" class="btn-primary" (click)="reviseAndResubmit()">Revise &amp; Resubmit</button>

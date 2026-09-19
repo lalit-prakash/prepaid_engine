@@ -12,7 +12,7 @@ import { categoryLabel } from '../../../../shared/utils/category-label';
  * combination. Never touches a real consumer, bill, or wallet, and never computes anything
  * itself: every figure comes from POST /api/v1/calculation-workbench/simulate, which delegates
  * to the same domain methods production billing uses (see CalculationService's doc comment).
- * The frontend calculation rule (docs/frontend-scope.md) is why this isn't computed in TS.
+ * The frontend calculation rule (docs/ARCHITECTURE.md) is why this isn't computed in TS.
  */
 @Component({
   selector: 'pe-workbench',

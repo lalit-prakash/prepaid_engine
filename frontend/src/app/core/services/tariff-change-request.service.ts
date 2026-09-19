@@ -50,6 +50,10 @@ export class TariffChangeRequestService {
     );
   }
 
+  cancel(id: string, reason: string): Observable<{ id: string; status: TariffChangeRequestStatus }> {
+    return this.http.post<{ id: string; status: TariffChangeRequestStatus }>(`${this.baseUrl}/${encodeURIComponent(id)}/cancel`, { reason });
+  }
+
   reject(id: string, rejectionReason: string): Observable<{ id: string; status: TariffChangeRequestStatus }> {
     return this.http.post<{ id: string; status: TariffChangeRequestStatus }>(`${this.baseUrl}/${encodeURIComponent(id)}/reject`, {
       rejectionReason,

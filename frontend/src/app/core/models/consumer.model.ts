@@ -1,7 +1,7 @@
 // Domain models mirroring the real Prepaid Engine API contracts
 // (backend/PrepaidEngine.Api/Program.cs). Anything not yet exposed by the API
 // is marked "Illustrative" at the point it's used, never modeled here as if
-// it were real — see docs/frontend-scope.md for the real-vs-mock boundary.
+// it were real — see docs/ARCHITECTURE.md for the real-vs-mock boundary.
 
 /** Mirrors ConnectionStatus (backend/PrepaidEngine.Domain/Enums/ConnectionStatus.cs). The
  * *Pending values record local intent only — see the "no fake success states" rule: a consumer
