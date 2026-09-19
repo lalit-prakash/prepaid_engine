@@ -94,8 +94,9 @@ endpoints have their own folders.
 - `/health` is open; every `/api/v1/*` endpoint requires authentication.
 
 ### 3.2 Authentication and authorization
-- JWT bearer auth (`Auth/`): `AuthEndpoints` (`POST auth/login`, `POST auth/refresh`), `UserStore` (users from
-  `DemoAuth:Users`: login id, display name, role, PBKDF2 `PasswordHash`), `PasswordHasher`, `TokenService`
+- JWT bearer auth (`Auth/`): `AuthEndpoints` (`POST auth/login`, `POST auth/refresh`, `POST auth/forgot-password`, `POST auth/reset-password`), `PasswordResetService`
+  (e-mailed one-time codes, `IEmailSender` with SMTP/console/none implementations, `PasswordPolicy`), `UserStore` (users from
+  `DemoAuth:Users`: login id, display name, e-mail, role, PBKDF2 `PasswordHash`; a reset password in `UserPasswordOverrides` wins), `PasswordHasher`, `TokenService`
   (HS256, claims: name, display_name, role, auth_time), and `LoginThrottle` (5 failures, 15-minute lock).
   `Jwt:Key` is a secret; the legacy single `DemoAuth:Username/Password` pair still works as one `IT` user.
   `dotnet run --project backend/PrepaidEngine.Api -- hash-password "<pw>"` prints a hash for the config.
@@ -162,7 +163,7 @@ filtered in the database, page size 1–100 (default 25).
 | Paged lists | `GET .../search` (keyset, newest first, `q` plus a status/type filter) and `GET .../summary` (counts in SQL) for `meter-commands`, `connectivity-commands`, `notifications`, `exceptions`, `conversions`, `reconciliation-adjustments` and `meter-replacements` |
 | Dashboard | `GET dashboard/summary` — consumer/wallet counts and sums, latest-day billing progress, attention counts plus the newest 10 items, and the 4 latest connectivity commands, all computed in SQL |
 | System | `GET system/health` (times a real database round trip, applied and pending migrations, each background worker's last success/failure and state, queue depths, recent billing runs, overall Healthy/Degraded/Down) and `GET system/integrations` (each outbound adapter with its class, Mock or Live, last activity and 24-hour OK/failed counts from the database; when each inbound MDMS/RMS feed last arrived) |
-| Platform | `GET /health`, `POST auth/login`, `POST auth/refresh`, `POST auth/logout` (records the event), `GET auth/whoami`, Swagger in Development |
+| Platform | `GET /health`, `POST auth/login`, `POST auth/forgot-password`, `POST auth/reset-password`, `POST auth/refresh`, `POST auth/logout` (records the event), `GET auth/whoami`, Swagger in Development |
 
 Several endpoints exist for external systems (RMS conversions, MDMS ingestion, billing daily-export)
 and have no UI caller by design.

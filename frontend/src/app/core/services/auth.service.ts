@@ -63,6 +63,16 @@ export class AuthService implements OnDestroy {
       .pipe(tap((res) => this.store(res)));
   }
 
+  /** Asks the API to e-mail a one-time reset code to the address registered for this login id. */
+  requestPasswordReset(username: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${environment.apiBaseUrl}/api/v1/auth/forgot-password`, { username });
+  }
+
+  /** Chooses a new password using the code from the e-mail. */
+  resetPassword(username: string, code: string, newPassword: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${environment.apiBaseUrl}/api/v1/auth/reset-password`, { username, code, newPassword });
+  }
+
   /** Signs out on request: tells the API (so the sign-out is audited), then clears the local session. */
   logout(): void {
     if (this.hasLiveToken()) {

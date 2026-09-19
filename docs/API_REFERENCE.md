@@ -1,7 +1,7 @@
 # API reference
 
 Every HTTP endpoint the Prepaid Engine API exposes: method, path, who may call it, and its parameters.
-Generated from the running app (121 endpoints), so it matches the code. Do not edit by hand; regenerate with:
+Generated from the running app (123 endpoints), so it matches the code. Do not edit by hand; regenerate with:
 
 ```
 ASPNETCORE_ENVIRONMENT=Production Jwt__Key=<any 32+ characters> dotnet run --project backend/PrepaidEngine.Api -- dump-endpoints docs/API_REFERENCE.md
@@ -49,9 +49,11 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 
 | Method | Path | Access | Parameters |
 |---|---|---|---|
+| POST | `/api/v1/auth/forgot-password` | Anonymous | **body** `ForgotPasswordRequest` { `username` string? } |
 | POST | `/api/v1/auth/login` | Anonymous | **body** `LoginRequest` { `username` string?, `password` string? } |
 | POST | `/api/v1/auth/logout` | `Authenticated` (any signed-in user) | none |
 | POST | `/api/v1/auth/refresh` | `Authenticated` (any signed-in user) | none |
+| POST | `/api/v1/auth/reset-password` | Anonymous | **body** `ResetPasswordRequest` { `username` string?, `code` string?, `newPassword` string? } |
 | GET | `/api/v1/auth/whoami` | Any signed-in user | none |
 
 ## Billing
