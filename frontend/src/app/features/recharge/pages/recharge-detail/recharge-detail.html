@@ -12,16 +12,40 @@
         <div class="detail-header__meta">
           <span>{{ r.consumer.accountNumber }}</span>
           <span>·</span>
+          <span>Meter {{ r.consumer.meterNumber }}</span>
+          <span>·</span>
           <span class="mono">{{ r.rmsReferenceId }}</span>
         </div>
       </div>
-      @switch (r.status) {
-        @case (RechargeStatus.Success) { <pe-status-badge label="RMS Confirmed" tone="success" /> }
-        @case (RechargeStatus.Failed) { <pe-status-badge label="Failed" tone="danger" /> }
-        @case (RechargeStatus.Reversed) { <pe-status-badge label="Reversed" tone="neutral" /> }
-        @default { <pe-status-badge label="Pending" tone="warning" /> }
-      }
+      <div class="detail-header__badges">
+        @switch (r.status) {
+          @case (RechargeStatus.Success) { <pe-status-badge label="Payment received" tone="success" /> }
+          @case (RechargeStatus.Failed) { <pe-status-badge label="Payment failed" tone="danger" /> }
+          @case (RechargeStatus.Reversed) { <pe-status-badge label="Reversed" tone="neutral" /> }
+          @default { <pe-status-badge label="Payment pending" tone="warning" /> }
+        }
+        @if (r.status === RechargeStatus.Success) {
+          @switch (r.meterCommand?.status) {
+            @case (MeterCommandStatus.Acknowledged) { <pe-status-badge label="Meter credited" tone="success" /> }
+            @case (MeterCommandStatus.Failed) { <pe-status-badge label="Meter credit failed" tone="danger" /> }
+            @case (MeterCommandStatus.TimedOut) { <pe-status-badge label="Meter credit timed out" tone="danger" /> }
+            @case (MeterCommandStatus.Sent) { <pe-status-badge label="Awaiting meter ack" tone="info" /> }
+            @case (MeterCommandStatus.Queued) { <pe-status-badge label="Meter credit queued" tone="info" /> }
+            @default { <pe-status-badge label="No meter credit" tone="neutral" /> }
+          }
+        }
+      </div>
     </header>
+
+    @if (r.status === RechargeStatus.Success && r.meterCommand && r.meterCommand.status !== MeterCommandStatus.Acknowledged) {
+      <div class="credit-banner" [class.credit-banner--danger]="r.meterCommand.status === MeterCommandStatus.Failed || r.meterCommand.status === MeterCommandStatus.TimedOut">
+        <strong>Payment received — meter credit {{ r.meterCommand.status === MeterCommandStatus.Failed || r.meterCommand.status === MeterCommandStatus.TimedOut ? 'not completed' : 'pending' }}.</strong>
+        The consumer has paid; the meter has not confirmed the credit.
+        @if (r.meterCommand.status === MeterCommandStatus.Failed || r.meterCommand.status === MeterCommandStatus.TimedOut) {
+          <a [routerLink]="['/meter-credit', r.meterCommand.id]">Review and retry the meter credit →</a>
+        }
+      </div>
+    }
 
     <div class="detail-grid">
       <section class="panel">
@@ -73,7 +97,7 @@
                     <span class="workflow__dot">⏱</span>
                     <div>
                       <div class="workflow__label">Meter Credit Command Timed Out</div>
-                      <div class="workflow__note">No acknowledgement arrived from the meter — retry required (not yet wired to a UI action).</div>
+                      <div class="workflow__note">No acknowledgement arrived from the meter. Open the meter command to review and retry.</div>
                     </div>
                   </li>
                 }
@@ -151,6 +175,9 @@
             @if (mc.errorMessage) {
               <dt>Error</dt><dd>{{ mc.errorMessage }}</dd>
             }
+            <dt>MDM command ID</dt><dd class="mono">{{ mc.externalCommandId ?? 'Not assigned yet' }}</dd>
+            <dt>Response code</dt><dd class="mono">{{ mc.responseCode ?? '—' }}</dd>
+            <dt>Response message</dt><dd>{{ mc.responseMessage ?? '—' }}</dd>
             <dt>Sent</dt><dd>{{ mc.sentAt ? (mc.sentAt | date: 'medium') : '—' }}</dd>
             <dt>Acknowledged</dt><dd>{{ mc.acknowledgedAt ? (mc.acknowledgedAt | date: 'medium') : '—' }}</dd>
           </dl>

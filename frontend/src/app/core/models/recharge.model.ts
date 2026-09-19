@@ -39,10 +39,34 @@ export interface RechargeSummary {
   meterCommandStatus: MeterCommandStatus | null;
 }
 
+/** One row of GET /api/v1/recharges/search. */
+export interface RechargeListItem extends RechargeSummary {
+  meterNumber: string;
+}
+
+export interface RechargeSearchPage {
+  items: RechargeListItem[];
+  nextCursor: string | null;
+  totalCount: number;
+}
+
+/** GET /api/v1/recharges/summary - database-side aggregates for the KPI strip. */
+export interface RechargeSummaryStats {
+  total: number;
+  paymentSuccess: number;
+  paymentFailed: number;
+  paymentPending: number;
+  paymentReversed: number;
+  amountSucceeded: number;
+  meterCredited: number;
+  meterCreditAwaiting: number;
+  meterCreditFailed: number;
+}
+
 /** GET /api/v1/recharges/{id}. */
 export interface RechargeDetail {
   id: string;
-  consumer: { accountNumber: string; name: string };
+  consumer: { accountNumber: string; name: string; meterNumber: string };
   amount: number;
   rmsReferenceId: string;
   status: RechargeStatus;
@@ -54,6 +78,9 @@ export interface RechargeDetail {
     status: MeterCommandStatus;
     retryCount: number;
     errorMessage: string | null;
+    externalCommandId: string | null;
+    responseCode: string | null;
+    responseMessage: string | null;
     createdAt: string;
     sentAt: string | null;
     acknowledgedAt: string | null;

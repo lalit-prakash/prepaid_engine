@@ -26,6 +26,9 @@ export interface MeterCommandDetail {
   status: MeterCommandStatus;
   retryCount: number;
   errorMessage: string | null;
+  externalCommandId: string | null;
+  responseCode: string | null;
+  responseMessage: string | null;
   createdAt: string;
   sentAt: string | null;
   acknowledgedAt: string | null;

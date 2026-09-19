@@ -109,3 +109,14 @@
   font-size: var(--font-size-meta);
   color: var(--text-link);
 }
+
+.detail-header__badges { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+.credit-banner {
+  background: var(--color-warning-light);
+  color: var(--color-warning-dark);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.credit-banner--danger { background: var(--color-danger-light); color: var(--color-danger-dark); }
+.credit-banner a { margin-left: var(--space-2); font-weight: var(--font-weight-medium); }
