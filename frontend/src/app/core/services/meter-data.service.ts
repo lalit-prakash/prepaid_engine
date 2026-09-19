@@ -28,18 +28,6 @@ export class MeterDataService {
     return this.http.get<DailyLoadProfileSummary[]>(`${this.baseUrl}/dlp`, { params: consumerId ? { consumerId } : {} });
   }
 
-  /** GET /api/v1/meter-data/bp — Billing Profile register readings (register validation only,
-   * never a billing input). */
-  listRegisterReadings(): Observable<RegisterReadingSummary[]> {
-    return this.http.get<RegisterReadingSummary[]>(`${this.baseUrl}/bp`);
-  }
-
-  /** GET /api/v1/meter-data/ls — Load Survey intervals (consumption intelligence only, never a
-   * billing input). */
-  listLoadSurveyIntervals(): Observable<LoadSurveyIntervalSummary[]> {
-    return this.http.get<LoadSurveyIntervalSummary[]>(`${this.baseUrl}/ls`);
-  }
-
   /** GET /api/v1/meter-data/ip/latest — the latest Instantaneous Profile reading per meter
    * (meter-health intelligence only). */
   listLatestInstantaneousReadings(): Observable<InstantaneousReadingSummary[]> {

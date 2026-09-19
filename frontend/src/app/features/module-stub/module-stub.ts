@@ -6,7 +6,7 @@ import { Component, input } from '@angular/core';
  * Reconciliation, Tariffs, Calculation Workbench, Reports, Automation,
  * Audit, System Health) that have no backing domain model or API yet.
  * Deliberately not a fake dashboard with invented data pretending those
- * workflows exist — see docs/frontend-scope.md for what's real vs. planned.
+ * workflows exist — see docs/ARCHITECTURE.md for what's real vs. planned.
  */
 @Component({
   selector: 'pe-module-stub',
@@ -17,7 +17,7 @@ import { Component, input } from '@angular/core';
         This module is defined in the Prepaid Engine UI/UX specification but has no backing
         domain model or API endpoint in the backend yet. Building it now would mean inventing
         a shadow set of entities, services, and mock data with no real system behind them —
-        see <code>docs/frontend-scope.md</code> for the current real-vs-planned boundary and
+        see <code>docs/ARCHITECTURE.md</code> for the current real-vs-planned boundary and
         the build order this frontend is following.
       </p>
     </div>

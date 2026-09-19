@@ -1,59 +1,19 @@
 # Frontend
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 22.1.7.
-
-## Development server
-
-To start a local development server, run:
+Angular 22 operations UI for the Prepaid Engine. Standalone components, lazy-routed pages, signals for
+local state, plain SCSS design tokens (`src/styles/_tokens.scss`), no UI library.
 
 ```bash
-ng serve
+npm install
+npm start        # http://localhost:4200 (expects the API on http://localhost:5043)
+npm run build    # production build into dist/
+npm test         # Vitest (currently a scaffold spec only)
 ```
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+The API base URL is `src/environments/environment.ts`. Sign in with a demo user configured on the
+backend (see the repository README).
 
-## Code scaffolding
-
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
-
-```bash
-ng generate component component-name
-```
-
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
-
-```bash
-ng generate --help
-```
-
-## Building
-
-To build the project run:
-
-```bash
-ng build
-```
-
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
-
-## Running unit tests
-
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
-
-```bash
-ng test
-```
-
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+Structure and conventions are described in [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) §6:
+`core/` (API contracts and services), `shared/` (icon, status badge, KPI card, bar chart, utilities),
+`layouts/shell/`, and `features/<module>/pages/`. List pages use server-side search and keyset paging;
+a page shows "Data unavailable" rather than an invented number.

@@ -54,6 +54,7 @@ export class TariffChangeRequestDetailPage implements OnInit {
 
   protected commencementDate = '';
   protected rejectionReason = '';
+  protected cancelReason = '';
 
   private requestId = '';
 
@@ -199,6 +200,39 @@ export class TariffChangeRequestDetailPage implements OnInit {
       error: (err) => {
         this.acting.set(false);
         this.actionError.set(err?.error?.error ?? 'Could not reject this change request.');
+      },
+    });
+  }
+
+  /** Who may cancel which state mirrors the backend rule: IT its Draft/Rejected requests, Utility the
+   * PendingApproval/Scheduled ones. Hiding the section is convenience only; the API enforces it. */
+  protected canCancel(status: TariffChangeRequestStatus): boolean {
+    if (this.isUtility()) {
+      return status === TariffChangeRequestStatus.PendingApproval || status === TariffChangeRequestStatus.Scheduled;
+    }
+    if (this.isIt()) {
+      return status === TariffChangeRequestStatus.Draft || status === TariffChangeRequestStatus.Rejected;
+    }
+    return false;
+  }
+
+  cancelRequest(): void {
+    if (!this.cancelReason.trim()) {
+      this.actionError.set('A reason is required to cancel this request.');
+      return;
+    }
+    if (!window.confirm('Cancel this change request? This cannot be undone.')) return;
+    this.actionError.set(null);
+    this.acting.set(true);
+    this.changeRequestService.cancel(this.requestId, this.cancelReason.trim()).subscribe({
+      next: () => {
+        this.acting.set(false);
+        this.cancelReason = '';
+        this.load();
+      },
+      error: (err) => {
+        this.acting.set(false);
+        this.actionError.set(err?.error?.error ?? 'Could not cancel this change request.');
       },
     });
   }

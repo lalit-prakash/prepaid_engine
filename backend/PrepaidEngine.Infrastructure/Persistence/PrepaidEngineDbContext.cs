@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using PrepaidEngine.Domain.Entities;
 
 namespace PrepaidEngine.Infrastructure.Persistence;
@@ -57,5 +58,42 @@ public class PrepaidEngineDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(PrepaidEngineDbContext).Assembly);
+    }
+
+    /// <summary>
+    /// Every DateTime is stored and read as UTC. Npgsql refuses to write a DateTime whose Kind is
+    /// Unspecified to a timestamptz column, and JSON or query-string dates without an offset (for
+    /// example "2026-09-18") bind as Unspecified, which used to surface as a 500 on any endpoint
+    /// that accepted one. Normalising here fixes the whole class of problem in one place.
+    /// </summary>
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
+        configurationBuilder.Properties<DateTime?>().HaveConversion<NullableUtcDateTimeConverter>();
+    }
+
+    private static DateTime ToUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+    };
+
+    private sealed class UtcDateTimeConverter : ValueConverter<DateTime, DateTime>
+    {
+        public UtcDateTimeConverter()
+            : base(v => ToUtc(v), v => DateTime.SpecifyKind(v, DateTimeKind.Utc))
+        {
+        }
+    }
+
+    private sealed class NullableUtcDateTimeConverter : ValueConverter<DateTime?, DateTime?>
+    {
+        public NullableUtcDateTimeConverter()
+            : base(
+                v => v.HasValue ? ToUtc(v.Value) : v,
+                v => v.HasValue ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : v)
+        {
+        }
     }
 }

@@ -99,7 +99,6 @@ export class Shell implements OnInit {
     { label: 'View Consumers', path: '/consumers' },
     { label: 'View Meter Data', path: '/meter-data' },
     { label: 'Meter Replacement', path: '/meter-replacements' },
-    { label: 'Generate Daily Billing', path: '/meter-data' },
   ];
 
   constructor(
