@@ -4,18 +4,19 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { TariffService } from '../../../../core/services/tariff.service';
 import { TariffVersionService } from '../../../../core/services/tariff-version.service';
 import { AuthService } from '../../../../core/services/auth.service';
-import { TariffDetail as TariffDetailModel } from '../../../../core/models/tariff.model';
+import { TariffDetail as TariffDetailModel, TariffLineage } from '../../../../core/models/tariff.model';
+import { StatusBadge } from '../../../../shared/components/badge/status-badge';
+import { changeRequestStatusLabel, changeRequestStatusTone } from '../../../../shared/utils/tariff-change-request-status';
 import { TariffVersionSummary } from '../../../../core/models/tariff-version.model';
 import { categoryLabel } from '../../../../shared/utils/category-label';
 
-/** One tariff's full real configuration (GET /api/v1/tariffs/{id}) — slabs, ToD periods
- * (if any), vend limits, and the rates this engine actually bills against — plus its recorded
- * version history (GET /api/v1/tariffs/{id}/versions), if any parameter changes have been
- * logged. `Tariff` itself has no update endpoint yet, so a version here reflects a change
- * recorded independently, not something this page can trigger. */
+/** One tariff version's full real configuration (GET /api/v1/tariffs/{id}) — slabs, ToD periods
+ * (if any), vend limits and the rates bills against it were calculated with — plus its version
+ * lineage (GET /api/v1/tariffs/{id}/lineage) and open change requests. A tariff row is never
+ * edited; changes go through the governance workflow and create a new version. */
 @Component({
   selector: 'pe-tariff-detail',
-  imports: [DecimalPipe, DatePipe, RouterLink],
+  imports: [DecimalPipe, DatePipe, RouterLink, StatusBadge],
   templateUrl: './tariff-detail.html',
   styleUrl: './tariff-detail.scss',
 })
@@ -24,6 +25,12 @@ export class TariffDetail implements OnInit {
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
   protected readonly categoryLabel = categoryLabel;
+
+  protected readonly lineage = signal<TariffLineage | null>(null);
+  protected readonly lineageLoading = signal(true);
+  protected readonly lineageError = signal(false);
+  protected readonly changeStatusLabel = changeRequestStatusLabel;
+  protected readonly changeStatusTone = changeRequestStatusTone;
 
   protected readonly versions = signal<TariffVersionSummary[]>([]);
   protected readonly versionsLoading = signal(true);
@@ -48,6 +55,17 @@ export class TariffDetail implements OnInit {
           err?.status === 404 ? 'This tariff could not be found.' : 'Could not load this tariff from the API.',
         );
         this.loading.set(false);
+      },
+    });
+
+    this.tariffService.lineage(id).subscribe({
+      next: (l) => {
+        this.lineage.set(l);
+        this.lineageLoading.set(false);
+      },
+      error: () => {
+        this.lineageError.set(true);
+        this.lineageLoading.set(false);
       },
     });
 

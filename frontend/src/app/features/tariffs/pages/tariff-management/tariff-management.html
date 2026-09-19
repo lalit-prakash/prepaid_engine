@@ -81,9 +81,9 @@
       </div>
     } @else if (changeRequestsError()) {
       <div class="error-panel">{{ changeRequestsError() }}</div>
-    } @else if (visibleChangeRequests().length === 0) {
+    } @else if (visibleChangeRequests().length === 0 && !(activeTab() === 'history' && retiredTariffs().length > 0)) {
       <div class="empty-panel">Nothing here.</div>
-    } @else {
+    } @else if (visibleChangeRequests().length > 0) {
       <div class="table-wrap">
         <table>
           <thead>
@@ -103,6 +103,28 @@
                 <td>{{ r.createdBy }}</td>
                 <td>{{ r.submittedAt ? (r.submittedAt | date: 'medium') : '—' }}</td>
                 <td>{{ r.commencementDate ? (r.commencementDate | date: 'mediumDate') : '—' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    @if (activeTab() === 'history' && retiredTariffs().length > 0) {
+      <h3 class="history-heading">Retired tariffs</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Category</th><th class="num">Fixed Charge</th><th class="num">Prepaid Rebate</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            @for (t of retiredTariffs(); track t.id) {
+              <tr class="row-clickable" (click)="open(t.id)">
+                <td>{{ t.name }}</td>
+                <td>{{ categoryLabel(t.category) }}</td>
+                <td class="num">₹{{ t.fixedChargePerUnitPerMonth | number: '1.2-2' }} / unit / month</td>
+                <td class="num">{{ t.prepaidEnergyRebatePercent }}%</td>
+                <td><pe-status-badge label="Retired" tone="neutral" /></td>
               </tr>
             }
           </tbody>

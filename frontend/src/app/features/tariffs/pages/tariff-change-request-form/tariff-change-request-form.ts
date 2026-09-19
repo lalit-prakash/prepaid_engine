@@ -11,6 +11,7 @@ import {
 import { TariffChangeRequestService } from '../../../../core/services/tariff-change-request.service';
 import { TariffService } from '../../../../core/services/tariff.service';
 import { categoryLabel } from '../../../../shared/utils/category-label';
+import { HasUnsavedChanges } from '../../../../core/guards/unsaved-changes.guard';
 
 /**
  * IT's create/edit workspace for a proposed tariff change (Basic Info / Applicability / Energy
@@ -27,7 +28,23 @@ import { categoryLabel } from '../../../../shared/utils/category-label';
   templateUrl: './tariff-change-request-form.html',
   styleUrl: './tariff-change-request-form.scss',
 })
-export class TariffChangeRequestForm implements OnInit {
+export class TariffChangeRequestForm implements OnInit, HasUnsavedChanges {
+  private dirty = false;
+
+  markDirty(): void {
+    this.dirty = true;
+  }
+
+  canLeave(): boolean {
+    return !this.dirty;
+  }
+
+  /** Add/Remove slab and ToD buttons change the proposal without firing an input event. */
+  onFormClick(event: Event): void {
+    const button = (event.target as HTMLElement).closest('button');
+    if (button && /Add|Remove/.test(button.textContent ?? '')) this.markDirty();
+  }
+
   protected readonly categories = [
     ConsumerCategory.Domestic,
     ConsumerCategory.Bpl,
@@ -172,6 +189,7 @@ export class TariffChangeRequestForm implements OnInit {
 
     const onSuccess = (result: { id: string }) => {
       this.saving.set(false);
+      this.dirty = false;
       this.router.navigate(['/tariffs/change-requests', result.id, 'edit']);
     };
     const onError = (err: unknown) => {
@@ -201,6 +219,7 @@ export class TariffChangeRequestForm implements OnInit {
       this.changeRequestService.submit(id, this.changeReason).subscribe({
         next: () => {
           this.saving.set(false);
+          this.dirty = false;
           this.router.navigate(['/tariffs/change-requests', id]);
         },
         error: (err) => {

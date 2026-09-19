@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
+import { unsavedChangesGuard } from './core/guards/unsaved-changes.guard';
 
 export const routes: Routes = [
   {
@@ -98,6 +99,7 @@ export const routes: Routes = [
       },
       {
         path: 'tariffs/change-requests/new',
+        canDeactivate: [unsavedChangesGuard],
         loadComponent: () =>
           import('./features/tariffs/pages/tariff-change-request-form/tariff-change-request-form').then(
             (m) => m.TariffChangeRequestForm,
@@ -112,6 +114,7 @@ export const routes: Routes = [
       },
       {
         path: 'tariffs/change-requests/:id/edit',
+        canDeactivate: [unsavedChangesGuard],
         loadComponent: () =>
           import('./features/tariffs/pages/tariff-change-request-form/tariff-change-request-form').then(
             (m) => m.TariffChangeRequestForm,
