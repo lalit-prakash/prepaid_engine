@@ -3,9 +3,11 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
+  ConnectionStatus,
   ConnectivityRequest,
   ConnectivityResult,
   ConsumerDetail,
+  ConsumerSearchPage,
   ConsumerSummary,
   RechargeRequest,
   RechargeResult,
@@ -26,6 +28,16 @@ export class ConsumerService {
 
   list(): Observable<ConsumerSummary[]> {
     return this.http.get<ConsumerSummary[]>(this.baseUrl);
+  }
+
+  search(params: { q?: string; status?: ConnectionStatus | null; lowBalance?: boolean; after?: string | null; pageSize?: number }): Observable<ConsumerSearchPage> {
+    const query: Record<string, string> = {};
+    if (params.q?.trim()) query['q'] = params.q.trim();
+    if (params.status !== null && params.status !== undefined) query['status'] = ConnectionStatus[params.status];
+    if (params.lowBalance) query['lowBalance'] = 'true';
+    if (params.after) query['after'] = params.after;
+    if (params.pageSize) query['pageSize'] = String(params.pageSize);
+    return this.http.get<ConsumerSearchPage>(`${this.baseUrl}/search`, { params: query });
   }
 
   getByAccountNumber(accountNumber: string): Observable<ConsumerDetail> {

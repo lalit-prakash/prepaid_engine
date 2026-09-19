@@ -123,3 +123,22 @@ export interface ConnectivityResult {
   commandStatus: string;
   consumerConnectionStatus: string;
 }
+
+/** One row of GET /api/v1/consumers/search. */
+export interface ConsumerListItem {
+  accountNumber: string;
+  name: string;
+  mobileNumber: string | null;
+  connectionStatus: ConnectionStatus;
+  meterNumber: string;
+  walletBalance: number;
+  emergencyCreditLimit: number;
+  lowBalance: boolean;
+  lastRechargeAt: string | null;
+}
+
+export interface ConsumerSearchPage {
+  items: ConsumerListItem[];
+  nextCursor: string | null;
+  totalCount: number;
+}

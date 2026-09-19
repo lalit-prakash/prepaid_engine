@@ -31,8 +31,9 @@
         <pe-kpi-card label="Healthy Meters" value="" [unavailable]="true" tone="neutral" icon="signal" [horizontal]="true" />
       }
       <pe-kpi-card label="Low Balance" [value]="lowBalanceCount" tone="warning" icon="alert" [horizontal]="true"
-        [clickable]="true" (click)="goToConsumers()" />
-      <pe-kpi-card label="Disconnected" [value]="disconnectedCount" tone="danger" icon="plug" [horizontal]="true" />
+        [clickable]="true" (click)="goToConsumers({ lowBalance: 'true' })" />
+      <pe-kpi-card label="Disconnected" [value]="disconnectedCount" tone="danger" icon="plug" [horizontal]="true"
+        [clickable]="true" (click)="goToConsumers({ status: 'Disconnected' })" />
       @if (billingProgressAvailable) {
         <pe-kpi-card label="Today's Billing" [value]="billingProgressPct + '%'" icon="receipt" [horizontal]="true"
           sublabel="processed" tone="success" [progressPct]="billingProgressPct" />
