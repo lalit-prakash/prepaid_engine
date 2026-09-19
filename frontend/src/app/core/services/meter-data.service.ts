@@ -22,8 +22,8 @@ export class MeterDataService {
 
   constructor(private readonly http: HttpClient) {}
 
-  listDailyLoadProfiles(): Observable<DailyLoadProfileSummary[]> {
-    return this.http.get<DailyLoadProfileSummary[]>(`${this.baseUrl}/dlp`);
+  listDailyLoadProfiles(consumerId?: string): Observable<DailyLoadProfileSummary[]> {
+    return this.http.get<DailyLoadProfileSummary[]>(`${this.baseUrl}/dlp`, { params: consumerId ? { consumerId } : {} });
   }
 
   /** GET /api/v1/meter-data/bp — Billing Profile register readings (register validation only,
@@ -45,13 +45,13 @@ export class MeterDataService {
   }
 
   /** GET /api/v1/meter-data/events — informational meter history. */
-  listMeterEvents(): Observable<MeterEventSummary[]> {
-    return this.http.get<MeterEventSummary[]>(`${this.baseUrl}/events`);
+  listMeterEvents(consumerId?: string): Observable<MeterEventSummary[]> {
+    return this.http.get<MeterEventSummary[]>(`${this.baseUrl}/events`, { params: consumerId ? { consumerId } : {} });
   }
 
   /** GET /api/v1/meter-data/alarms — severity-bearing meter conditions. */
-  listMeterAlarms(): Observable<MeterAlarmSummary[]> {
-    return this.http.get<MeterAlarmSummary[]>(`${this.baseUrl}/alarms`);
+  listMeterAlarms(consumerId?: string): Observable<MeterAlarmSummary[]> {
+    return this.http.get<MeterAlarmSummary[]>(`${this.baseUrl}/alarms`, { params: consumerId ? { consumerId } : {} });
   }
 
   acknowledgeAlarm(id: string, acknowledgedBy: string): Observable<MeterAlarmSummary> {

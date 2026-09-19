@@ -12,7 +12,7 @@ export class AuditEntryService {
 
   constructor(private readonly http: HttpClient) {}
 
-  list(): Observable<AuditEntrySummary[]> {
-    return this.http.get<AuditEntrySummary[]>(this.baseUrl);
+  list(entityId?: string): Observable<AuditEntrySummary[]> {
+    return this.http.get<AuditEntrySummary[]>(this.baseUrl, { params: entityId ? { entityId } : {} });
   }
 }

@@ -328,8 +328,10 @@ app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, Pre
 
     return Results.Ok(new
     {
+        consumer.Id,
         consumer.AccountNumber,
         consumer.Name,
+        consumer.MobileNumber,
         consumer.ServiceAddress,
         consumer.ConnectionStatus,
         consumer.ConnectedLoadKw,
@@ -493,11 +495,13 @@ app.MapPost("/api/v1/consumers/{accountNumber}/reconnect", async (
 .RequireAuthorization();
 
 // RC/DC read endpoints — real ConnectivityCommand records across all consumers.
-app.MapGet("/api/v1/connectivity-commands", async (PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/connectivity-commands", async (string? accountNumber, PrepaidEngineDbContext db) =>
 {
+    // accountNumber narrows the list to one consumer (capped) for the Consumer Detail tab.
     var commands = await (
         from c in db.ConnectivityCommands
         join consumer in db.Consumers on c.ConsumerId equals consumer.Id
+        where accountNumber == null || consumer.AccountNumber == accountNumber
         orderby c.CreatedAt descending
         select new
         {
@@ -513,6 +517,7 @@ app.MapGet("/api/v1/connectivity-commands", async (PrepaidEngineDbContext db) =>
             c.SentAt,
             c.AcknowledgedAt,
         })
+        .Take(accountNumber == null ? int.MaxValue : 50)
         .ToListAsync();
 
     return Results.Ok(commands);
@@ -1171,7 +1176,7 @@ app.MapPost("/api/v1/calculation-workbench/simulate", async (SimulateChargeReque
 // Note: RechargeStatus has no explicit "Pending" value — the RMS-Pending branch of the POST
 // endpoint below deliberately leaves a transaction in its initial "Initiated" state (RMS
 // hasn't told us Success or Failed yet), so "Initiated" here doubles as "Pending" in the UI.
-app.MapGet("/api/v1/recharges", async (PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/recharges", async (string? accountNumber, PrepaidEngineDbContext db) =>
 {
     // Left join to MeterCommands: a recharge that never reached RMS Success (or hasn't been
     // dispatched to the meter yet) legitimately has no command row — that must render as "no
@@ -1181,6 +1186,7 @@ app.MapGet("/api/v1/recharges", async (PrepaidEngineDbContext db) =>
         join c in db.Consumers on r.ConsumerId equals c.Id
         join mcOuter in db.MeterCommands on r.Id equals mcOuter.RechargeTransactionId into mcGroup
         from mc in mcGroup.DefaultIfEmpty()
+        where accountNumber == null || c.AccountNumber == accountNumber
         orderby r.InitiatedAt descending
         select new
         {
@@ -1194,6 +1200,7 @@ app.MapGet("/api/v1/recharges", async (PrepaidEngineDbContext db) =>
             r.CompletedAt,
             MeterCommandStatus = mc == null ? (MeterCommandStatus?)null : mc.Status,
         })
+        .Take(accountNumber == null ? int.MaxValue : 50)
         .ToListAsync();
 
     return Results.Ok(recharges);
@@ -2103,10 +2110,12 @@ app.MapPost("/api/v1/exceptions/{id:guid}/resolve", async (Guid id, ResolutionRe
 
 // --- Audit entries: an immutable, append-only log — read-only, filterable by entity type and ---
 // a date range (see README.md for exactly which actions append an entry).
-app.MapGet("/api/v1/audit-entries", async (PrepaidEngineDbContext db, string? entityType, DateTime? from, DateTime? to) =>
+app.MapGet("/api/v1/audit-entries", async (PrepaidEngineDbContext db, string? entityType, string? entityId, DateTime? from, DateTime? to) =>
 {
     var query = db.AuditEntries.AsQueryable();
 
+    if (!string.IsNullOrWhiteSpace(entityId))
+        query = query.Where(a => a.EntityId == entityId);
     if (!string.IsNullOrWhiteSpace(entityType))
         query = query.Where(a => a.EntityType == entityType);
     if (from.HasValue)
@@ -2128,6 +2137,7 @@ app.MapGet("/api/v1/audit-entries", async (PrepaidEngineDbContext db, string? en
             a.Details,
             a.OccurredAt,
         })
+        .Take(string.IsNullOrWhiteSpace(entityId) ? int.MaxValue : 100)
         .ToListAsync();
 
     return Results.Ok(entries);
