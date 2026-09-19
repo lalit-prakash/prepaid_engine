@@ -97,6 +97,11 @@ export class Consumer360 implements OnInit {
   protected accountNumber = '';
   protected rechargeAmount = 300;
   protected idempotencyKey = '';
+  protected readonly editingMobile = signal(false);
+  protected readonly mobileSaving = signal(false);
+  protected readonly mobileError = signal<string | null>(null);
+  protected mobileDraft = '';
+
   protected readonly rechargeSubmitting = signal(false);
   protected readonly rechargeOutcome = signal<RechargeOutcome | null>(null);
 
@@ -337,6 +342,35 @@ export class Consumer360 implements OnInit {
       error: (err) => {
         this.connectivitySubmitting.set(false);
         this.connectivityOutcome.set({ kind: 'error', message: err?.error?.error ?? 'Could not reconnect this consumer.' });
+      },
+    });
+  }
+
+  protected startEditMobile(): void {
+    this.mobileDraft = this.consumer()?.mobileNumber ?? '';
+    this.mobileError.set(null);
+    this.editingMobile.set(true);
+  }
+
+  protected cancelEditMobile(): void {
+    this.editingMobile.set(false);
+    this.mobileError.set(null);
+  }
+
+  protected saveMobile(): void {
+    const c = this.consumer();
+    if (!c) return;
+    this.mobileSaving.set(true);
+    this.mobileError.set(null);
+    this.consumerService.updateMobile(c.accountNumber, this.mobileDraft).subscribe({
+      next: (r) => {
+        this.consumer.set({ ...c, mobileNumber: r.mobileNumber });
+        this.mobileSaving.set(false);
+        this.editingMobile.set(false);
+      },
+      error: (err) => {
+        this.mobileSaving.set(false);
+        this.mobileError.set(err?.error?.error ?? 'Could not save the mobile number.');
       },
     });
   }

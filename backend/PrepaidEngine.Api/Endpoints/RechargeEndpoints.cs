@@ -94,9 +94,9 @@ public static class RechargeEndpoints
                 var prefix = term + "%";
                 var contains = "%" + term + "%";
                 query = query.Where(x =>
-                    EF.Functions.ILike(x.c.AccountNumber, prefix) ||
-                    EF.Functions.ILike(x.r.RmsReferenceId, prefix) ||
-                    EF.Functions.ILike(x.c.Name, contains));
+                    EF.Functions.ILike(x.c.AccountNumber, prefix, "\\") ||
+                    EF.Functions.ILike(x.r.RmsReferenceId, prefix, "\\") ||
+                    EF.Functions.ILike(x.c.Name, contains, "\\"));
             }
             if (paymentStatus.HasValue)
                 query = query.Where(x => x.r.Status == paymentStatus.Value);

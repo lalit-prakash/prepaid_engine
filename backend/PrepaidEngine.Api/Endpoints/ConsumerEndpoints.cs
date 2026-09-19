@@ -78,10 +78,10 @@ public static class ConsumerEndpoints
                 var prefix = term + "%";
                 var contains = "%" + term + "%";
                 query = query.Where(c =>
-                    EF.Functions.ILike(c.AccountNumber, prefix) ||
-                    EF.Functions.ILike(c.Meter.MeterNumber, prefix) ||
-                    (c.MobileNumber != null && EF.Functions.ILike(c.MobileNumber, prefix)) ||
-                    EF.Functions.ILike(c.Name, contains));
+                    EF.Functions.ILike(c.AccountNumber, prefix, "\\") ||
+                    EF.Functions.ILike(c.Meter.MeterNumber, prefix, "\\") ||
+                    (c.MobileNumber != null && EF.Functions.ILike(c.MobileNumber, prefix, "\\")) ||
+                    EF.Functions.ILike(c.Name, contains, "\\"));
             }
             if (status.HasValue)
                 query = query.Where(c => c.ConnectionStatus == status.Value);
@@ -592,5 +592,30 @@ public static class ConsumerEndpoints
         })
         .WithName("GetConsumerNotifications")
         .RequireAuthorization();
+
+        // Capture or correct a consumer's notification mobile number. The number is normalised to +91XXXXXXXXXX, and
+        // only its last four digits go into the audit trail.
+        app.MapPut("/api/v1/consumers/{accountNumber}/mobile", async (
+            string accountNumber, UpdateMobileRequest request, PrepaidEngineDbContext db, ClaimsPrincipal user) =>
+        {
+            if (!MobileNumber.TryNormalize(request.MobileNumber, out var normalized))
+                return Results.BadRequest(new { error = "Enter a valid 10-digit Indian mobile number (starting 6-9), with or without +91." });
+
+            var consumer = await db.Consumers.FirstOrDefaultAsync(c => c.AccountNumber == accountNumber);
+            if (consumer is null)
+                return Results.NotFound();
+
+            var previous = consumer.MobileNumber;
+            if (previous != normalized)
+            {
+                consumer.SetMobileNumber(normalized);
+                Audit(db, nameof(Consumer), consumer.Id.ToString(), "MOBILE_UPDATED", user.Identity?.Name ?? "unknown",
+                    oldValue: previous is null ? null : MobileNumber.Mask(previous), newValue: MobileNumber.Mask(normalized));
+                await db.SaveChangesAsync();
+            }
+            return Results.Ok(new { consumer.AccountNumber, consumer.MobileNumber });
+        })
+        .WithName("UpdateConsumerMobile")
+        .RequireAuthorization("Operations");
     }
 }

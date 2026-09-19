@@ -62,7 +62,7 @@ public static class MeterDataEndpoints
             if (!string.IsNullOrWhiteSpace(q))
             {
                 var (prefix, contains) = MeterDataTerms(q);
-                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix) || EF.Functions.ILike(x.m.MeterNumber, prefix) || EF.Functions.ILike(x.c.Name, contains));
+                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix, "\\") || EF.Functions.ILike(x.m.MeterNumber, prefix, "\\") || EF.Functions.ILike(x.c.Name, contains, "\\"));
             }
             if (from.HasValue) { var f = DateOnly.FromDateTime(from.Value); query = query.Where(x => x.d.ProfileDate >= f); }
             if (to.HasValue) { var t = DateOnly.FromDateTime(to.Value); query = query.Where(x => x.d.ProfileDate <= t); }
@@ -108,7 +108,7 @@ public static class MeterDataEndpoints
             if (!string.IsNullOrWhiteSpace(q))
             {
                 var (prefix, contains) = MeterDataTerms(q);
-                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix) || EF.Functions.ILike(x.m.MeterNumber, prefix) || EF.Functions.ILike(x.c.Name, contains));
+                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix, "\\") || EF.Functions.ILike(x.m.MeterNumber, prefix, "\\") || EF.Functions.ILike(x.c.Name, contains, "\\"));
             }
             if (start.HasValue) query = query.Where(x => x.r.ReadingTimestamp >= start.Value);
             if (endExclusive.HasValue) query = query.Where(x => x.r.ReadingTimestamp < endExclusive.Value);
@@ -150,7 +150,7 @@ public static class MeterDataEndpoints
             if (!string.IsNullOrWhiteSpace(q))
             {
                 var (prefix, contains) = MeterDataTerms(q);
-                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix) || EF.Functions.ILike(x.m.MeterNumber, prefix) || EF.Functions.ILike(x.c.Name, contains));
+                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix, "\\") || EF.Functions.ILike(x.m.MeterNumber, prefix, "\\") || EF.Functions.ILike(x.c.Name, contains, "\\"));
             }
             if (start.HasValue) query = query.Where(x => x.l.IntervalStart >= start.Value);
             if (endExclusive.HasValue) query = query.Where(x => x.l.IntervalStart < endExclusive.Value);
@@ -191,7 +191,7 @@ public static class MeterDataEndpoints
             if (!string.IsNullOrWhiteSpace(q))
             {
                 var (prefix, contains) = MeterDataTerms(q);
-                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix) || EF.Functions.ILike(x.m.MeterNumber, prefix) || EF.Functions.ILike(x.c.Name, contains));
+                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix, "\\") || EF.Functions.ILike(x.m.MeterNumber, prefix, "\\") || EF.Functions.ILike(x.c.Name, contains, "\\"));
             }
             if (start.HasValue) query = query.Where(x => x.e.EventTimestamp >= start.Value);
             if (endExclusive.HasValue) query = query.Where(x => x.e.EventTimestamp < endExclusive.Value);
@@ -234,7 +234,7 @@ public static class MeterDataEndpoints
             if (!string.IsNullOrWhiteSpace(q))
             {
                 var (prefix, contains) = MeterDataTerms(q);
-                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix) || EF.Functions.ILike(x.m.MeterNumber, prefix) || EF.Functions.ILike(x.c.Name, contains));
+                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix, "\\") || EF.Functions.ILike(x.m.MeterNumber, prefix, "\\") || EF.Functions.ILike(x.c.Name, contains, "\\"));
             }
             if (start.HasValue) query = query.Where(x => x.a.RaisedAt >= start.Value);
             if (endExclusive.HasValue) query = query.Where(x => x.a.RaisedAt < endExclusive.Value);

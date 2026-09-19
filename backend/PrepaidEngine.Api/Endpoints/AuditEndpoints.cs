@@ -59,11 +59,11 @@ public static class AuditEndpoints
                 var prefix = term + "%";
                 var contains = "%" + term + "%";
                 query = query.Where(a =>
-                    EF.Functions.ILike(a.EntityId, prefix) ||
-                    EF.Functions.ILike(a.Action, prefix) ||
-                    EF.Functions.ILike(a.Actor, prefix) ||
-                    (a.CorrelationId != null && EF.Functions.ILike(a.CorrelationId, prefix)) ||
-                    (a.Details != null && EF.Functions.ILike(a.Details, contains)));
+                    EF.Functions.ILike(a.EntityId, prefix, "\\") ||
+                    EF.Functions.ILike(a.Action, prefix, "\\") ||
+                    EF.Functions.ILike(a.Actor, prefix, "\\") ||
+                    (a.CorrelationId != null && EF.Functions.ILike(a.CorrelationId, prefix, "\\")) ||
+                    (a.Details != null && EF.Functions.ILike(a.Details, contains, "\\")));
             }
 
             var totalCount = await query.CountAsync();
