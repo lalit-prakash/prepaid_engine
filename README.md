@@ -43,7 +43,7 @@ createdb prepaid_engine          # or: CREATE DATABASE prepaid_engine;
 cd backend/PrepaidEngine.Api
 dotnet user-secrets set "ConnectionStrings:PrepaidEngine" "Host=localhost;Port=5432;Database=prepaid_engine;Username=postgres;Password=<your-password>"
 
-# Sign-in users (choose your own values; never commit them). Roles are IT and Utility.
+# Sign-in users (choose your own values; never commit them). Roles: Admin, IT, Operator, Utility, ReadOnly (see docs/assumptions-and-security.md).
 # Generate the hash first:  dotnet run --project backend/PrepaidEngine.Api -- hash-password "<password>"
 dotnet user-secrets set "DemoAuth:Users:0:Username"     "<login-id>"
 dotnet user-secrets set "DemoAuth:Users:0:DisplayName"  "<name shown in the header>"
@@ -107,6 +107,6 @@ docs/      architecture, domain rules, sourcing and security notes
 ## Security note
 Authentication is JWT bearer: `POST /api/v1/auth/login` returns a 30-minute signed token (renewable up to
 8 hours), passwords are stored as PBKDF2 hashes, and repeated failed sign-ins lock the login id for 15
-minutes. Users are still configured, not managed in a database, there are two roles, and rate limiting,
-security headers and finer-grained authorization are the next steps. Do not expose this API beyond a trusted
+minutes. Users are still configured, not managed in a database, there are five roles with per-endpoint policies, and rate limiting
+and security headers are the next steps. Do not expose this API beyond a trusted
 network until those are done (see [assumptions-and-security.md](docs/assumptions-and-security.md)).

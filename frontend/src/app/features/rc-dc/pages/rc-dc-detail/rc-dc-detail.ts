@@ -1,3 +1,4 @@
+import { OperateOnly } from '../../../../shared/directives/operate-only';
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -18,7 +19,7 @@ import { StatusBadge } from '../../../../shared/components/badge/status-badge';
  */
 @Component({
   selector: 'pe-rc-dc-detail',
-  imports: [StatusBadge, DatePipe, RouterLink],
+  imports: [OperateOnly, StatusBadge, DatePipe, RouterLink],
   templateUrl: './rc-dc-detail.html',
   styleUrl: './rc-dc-detail.scss',
 })

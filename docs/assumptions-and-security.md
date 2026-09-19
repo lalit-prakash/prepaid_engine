@@ -61,12 +61,22 @@ start without one. The browser keeps only the token, its expiry and the display 
 (never the password). Known limits: users come from configuration rather than a database, the lockout is
 in memory per API instance, tokens cannot be revoked before they expire, and there is no MFA.
 
-**Authorization.** Every `/api/v1` endpoint requires authentication (`/health` and Swagger in
-Development aside). Tariff governance is role-enforced on the server: IT creates, edits and submits;
-Utility approves, rejects and triggers activation; either role may cancel a request in the states it
-owns; the approver may not be the submitter. Other state-changing endpoints (reconciliation adjustments,
-conversions, billing triggers, billing-hold clearing) are open to any authenticated user — finer roles are
-a known gap.
+**Authorization.** Deny by default. Every `/api/v1` endpoint requires authentication (`/health`, `POST auth/login` and
+Swagger in Development aside), and **every write endpoint (POST/PUT/PATCH/DELETE) must name an authorization
+policy or the API refuses to start**. Five roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`.
+
+| Capability (policy) | Admin | IT | Operator | Utility | ReadOnly |
+|---|:-:|:-:|:-:|:-:|:-:|
+| Read every screen (any signed-in user) | yes | yes | yes | yes | yes |
+| Operations: recharge, disconnect/reconnect, retries, conversions, reconciliation, exceptions, meter replacement, billing holds, alarm ack/resolve (`Operations`) | yes | yes | yes | no | no |
+| Bulk meter data ingestion and billing runs (`DataAdmin`) | yes | yes | no | no | no |
+| Tariff drafting: create, edit, submit, version records (`ITRole`) | yes | yes | no | no | no |
+| Tariff approve, reject, activate (`UtilityRole`) | no | no | no | yes | no |
+| Cancel a tariff request (`TariffGovernanceRole`) | yes | yes | no | yes | no |
+
+Admin cannot approve tariffs on purpose: approval stays with `Utility`, and the approver may not be the
+submitter. The UI hides actions a role cannot use, but the API is the boundary and answers 403. Verified
+against a running API for ReadOnly, Operator, Utility and Admin.
 
 | Area | Status | Notes |
 |---|---|---|

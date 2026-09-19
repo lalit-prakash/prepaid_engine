@@ -1,3 +1,4 @@
+import { OperateOnly } from '../../../../shared/directives/operate-only';
 import { DatePipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -19,7 +20,7 @@ import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
  */
 @Component({
   selector: 'pe-exceptions-dashboard',
-  imports: [StatusBadge, KpiCard, DatePipe, FormsModule, RouterLink],
+  imports: [OperateOnly, StatusBadge, KpiCard, DatePipe, FormsModule, RouterLink],
   templateUrl: './exceptions-dashboard.html',
   styleUrl: './exceptions-dashboard.scss',
 })

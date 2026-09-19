@@ -95,7 +95,7 @@
         @if (canRetry) {
           <div class="retry-section">
             @if (!confirmingRetry()) {
-              <button type="button" class="retry-btn" (click)="requestRetry()" [disabled]="retrying()">
+              <button type="button" class="retry-btn" (click)="requestRetry()" peOperate [disabled]="retrying()">
                 {{ retrying() ? 'Retrying…' : 'Retry Command' }}
               </button>
             } @else {

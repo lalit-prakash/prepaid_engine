@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable, OnDestroy, signal } from '@angular/core';
+import { Injectable, OnDestroy, computed, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
@@ -8,7 +8,7 @@ const EXPIRY_KEY = 'pe_token_exp';
 const ROLE_KEY = 'pe_role';
 const USER_KEY = 'pe_user';
 
-export type UserRole = 'IT' | 'Utility';
+export type UserRole = 'IT' | 'Utility' | 'Admin' | 'Operator' | 'ReadOnly';
 
 interface LoginResponse {
   accessToken: string;
@@ -38,6 +38,9 @@ export class AuthService implements OnDestroy {
   /** The name to show for the signed-in user (the account's display name). */
   private readonly _username = signal<string | null>(sessionStorage.getItem(USER_KEY));
   readonly username = this._username.asReadonly();
+
+  /** Roles that may perform operational actions (recharge, disconnect/reconnect, retries, exceptions). Mirrors the API's "Operations" policy. */
+  readonly canOperate = computed(() => ['Admin', 'IT', 'Operator'].includes(this._role() ?? ''));
 
   private renewTimer?: ReturnType<typeof setTimeout>;
 
@@ -79,7 +82,8 @@ export class AuthService implements OnDestroy {
     sessionStorage.setItem(TOKEN_KEY, res.accessToken);
     sessionStorage.setItem(EXPIRY_KEY, String(new Date(res.expiresAtUtc).getTime()));
     sessionStorage.setItem(USER_KEY, res.displayName || res.username);
-    const role = res.role === 'IT' || res.role === 'Utility' ? res.role : null;
+    const roles: string[] = ['IT', 'Utility', 'Admin', 'Operator', 'ReadOnly'];
+    const role = roles.includes(res.role) ? (res.role as UserRole) : null;
     if (role) sessionStorage.setItem(ROLE_KEY, role);
     else sessionStorage.removeItem(ROLE_KEY);
     this._username.set(res.displayName || res.username);

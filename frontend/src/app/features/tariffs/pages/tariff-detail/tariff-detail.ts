@@ -34,7 +34,7 @@ export class TariffDetail implements OnInit {
 
   protected readonly versions = signal<TariffVersionSummary[]>([]);
   protected readonly versionsLoading = signal(true);
-  protected readonly isIt = computed(() => this.auth.role() === 'IT');
+  protected readonly isIt = computed(() => this.auth.role() === 'IT' || this.auth.role() === 'Admin');
 
   constructor(
     private readonly route: ActivatedRoute,
