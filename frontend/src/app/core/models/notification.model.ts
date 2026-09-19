@@ -31,3 +31,11 @@ export interface NotificationSummary {
   sentAt: string | null;
   providerReference: string | null;
 }
+
+/** GET /api/v1/notifications/summary: counts computed by the database. */
+export interface NotificationSummaryStats {
+  total: number;
+  pending: number;
+  sent: number;
+  failed: number;
+}

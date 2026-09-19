@@ -13,6 +13,7 @@ Documentation lives in [`docs/`](docs):
 
 | Document | Contents |
 |---|---|
+| [API_REFERENCE.md](docs/API_REFERENCE.md) | Every endpoint: method, path, who may call it, parameters (generated from the code) |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, API surface, flows, workers, scale approach, frontend, known gaps |
 | [DOMAIN_RULES.md](docs/DOMAIN_RULES.md) | Tariff, FPPAS, TMC/CPMC, arrears, ToD, DLP billing, recharge, RC/DC, conversion rules |
 | [assumptions-and-security.md](docs/assumptions-and-security.md) | Regulatory sourcing, assumptions, security checklist |

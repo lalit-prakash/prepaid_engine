@@ -61,7 +61,7 @@ start without one. The browser keeps only the token, its expiry and the display 
 (never the password). Known limits: users come from configuration rather than a database, the lockout is
 in memory per API instance, tokens cannot be revoked before they expire, and there is no MFA.
 
-**Authorization.** Deny by default. Every `/api/v1` endpoint requires authentication (`/health`, `POST auth/login` and
+**Authorization.** Deny by default, enforced at startup (an earlier version of this check read the wrong endpoint list and silently checked nothing; it now reads the app's own route builder, fails if it finds no endpoints, and was proven against a deliberately unprotected route, which also caught `POST auth/refresh` lacking a named policy). Every `/api/v1` endpoint requires authentication (`/health`, `POST auth/login` and
 Swagger in Development aside), and **every write endpoint (POST/PUT/PATCH/DELETE) must name an authorization
 policy or the API refuses to start**. Five roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`.
 

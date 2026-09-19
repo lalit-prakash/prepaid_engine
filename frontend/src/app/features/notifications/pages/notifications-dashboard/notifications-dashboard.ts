@@ -1,76 +1,89 @@
-import { DatePipe } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { DatePipe, DecimalPipe } from '@angular/common';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { Subject, Subscription, debounceTime } from 'rxjs';
 import { NotificationService } from '../../../../core/services/notification.service';
-import { NotificationEventType, NotificationStatus, NotificationSummary } from '../../../../core/models/notification.model';
+import {
+  NotificationEventType,
+  NotificationStatus,
+  NotificationSummary,
+  NotificationSummaryStats,
+} from '../../../../core/models/notification.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
+import { PagedList } from '../../../../shared/utils/paged-list';
+
+const PAGE_SIZE = 25;
 
 /**
- * Real, API-backed Notification History dashboard (GET /api/v1/notifications) — every consumer
- * notification queued automatically during daily DLP billing, conversion, recharge, and
- * reconciliation processing (low balance, emergency credit, disconnection eligibility,
- * provisional-billing data-quality hold, prepaid conversion completed, auto-disconnect/
- * auto-reconnect). Never hand-entered. This project has no real SMS gateway — a `Sent` status
- * here means "a real dispatcher would pick this up next", never that an SMS actually left this
- * system. Read-only by design: there is no action to take on a notification from this page.
+ * Notification History. KPIs come from GET /api/v1/notifications/summary (counted by the database) and the table from
+ * the keyset-paged GET /api/v1/notifications/search, so the browser never holds more than one page. Read-only: every
+ * notification was queued automatically by billing, conversion or recharge processing.
  */
 @Component({
   selector: 'pe-notifications-dashboard',
-  imports: [StatusBadge, KpiCard, DatePipe, RouterLink],
+  imports: [StatusBadge, KpiCard, DatePipe, DecimalPipe, RouterLink],
   templateUrl: './notifications-dashboard.html',
   styleUrl: './notifications-dashboard.scss',
 })
-export class NotificationsDashboard implements OnInit {
-  protected readonly notifications = signal<NotificationSummary[]>([]);
-  protected readonly loading = signal(true);
-  protected readonly error = signal<string | null>(null);
+export class NotificationsDashboard implements OnInit, OnDestroy {
   protected readonly searchTerm = signal('');
-  protected readonly eventTypeFilter = signal('');
+  protected readonly eventTypeFilter = signal<NotificationEventType | null>(null);
+  protected readonly statusFilter = signal<NotificationStatus | null>(null);
+  protected readonly stats = signal<NotificationSummaryStats | null>(null);
+  protected readonly statsError = signal(false);
   protected readonly NotificationEventType = NotificationEventType;
   protected readonly NotificationStatus = NotificationStatus;
+
+  protected readonly list = new PagedList<NotificationSummary>(
+    (after) =>
+      this.notificationService.search({ q: this.searchTerm(), eventType: this.eventTypeFilter(), status: this.statusFilter(), after, pageSize: PAGE_SIZE }),
+    'Could not load notifications from the API.',
+  );
+
+  private readonly search$ = new Subject<string>();
+  private searchSub?: Subscription;
 
   constructor(private readonly notificationService: NotificationService) {}
 
   ngOnInit(): void {
-    this.load();
-  }
-
-  private load(): void {
-    this.notificationService.list().subscribe({
-      next: (notifications) => {
-        this.notifications.set(notifications);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.error.set('Could not load notifications from the API.');
-        this.loading.set(false);
-      },
+    this.searchSub = this.search$.pipe(debounceTime(300)).subscribe((term) => {
+      if (term === this.searchTerm()) return;
+      this.searchTerm.set(term);
+      this.list.reload();
     });
+    this.notificationService.summary().subscribe({ next: (s) => this.stats.set(s), error: () => this.statsError.set(true) });
+    this.list.load();
   }
 
-  protected get filtered(): NotificationSummary[] {
-    const term = this.searchTerm().trim().toLowerCase();
-    const type = this.eventTypeFilter();
-    return this.notifications().filter((n) => {
-      const matchesType = !type || String(n.eventType) === type;
-      const matchesTerm =
-        !term ||
-        n.accountNumber.toLowerCase().includes(term) ||
-        n.name.toLowerCase().includes(term) ||
-        n.message.toLowerCase().includes(term);
-      return matchesType && matchesTerm;
-    });
+  ngOnDestroy(): void {
+    this.searchSub?.unsubscribe();
+    this.list.destroy();
   }
 
-  protected get pendingCount(): number {
-    return this.notifications().filter((n) => n.status === NotificationStatus.Pending).length;
+  protected onSearchInput(term: string): void {
+    this.search$.next(term);
   }
-  protected get sentCount(): number {
-    return this.notifications().filter((n) => n.status === NotificationStatus.Sent).length;
+
+  protected onEventTypeChange(raw: string): void {
+    this.eventTypeFilter.set(raw === '' ? null : (Number(raw) as NotificationEventType));
+    this.list.reload();
   }
-  protected get failedCount(): number {
-    return this.notifications().filter((n) => n.status === NotificationStatus.Failed).length;
+
+  protected filterByStatus(status: NotificationStatus | null): void {
+    this.statusFilter.set(status);
+    this.list.reload();
+  }
+
+  protected clearFilters(): void {
+    this.searchTerm.set('');
+    this.eventTypeFilter.set(null);
+    this.statusFilter.set(null);
+    this.list.reload();
+  }
+
+  protected get hasActiveFilters(): boolean {
+    return !!this.searchTerm().trim() || this.eventTypeFilter() !== null || this.statusFilter() !== null;
   }
 
   protected eventTypeLabel(type: NotificationEventType): string {
