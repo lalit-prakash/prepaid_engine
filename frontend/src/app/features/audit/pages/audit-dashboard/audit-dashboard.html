@@ -1,73 +1,117 @@
 <div class="audit">
   <div class="page-header">
-    <h1>Audit</h1>
-    <p class="page-header__subtitle">{{ entries().length }} audit entr{{ entries().length === 1 ? 'y' : 'ies' }} — an immutable, append-only log</p>
+    <h1>Audit Logs</h1>
+    <p class="page-header__subtitle">An immutable, append-only record of who changed what. Entries cannot be edited or deleted.</p>
   </div>
 
-  @if (loading()) {
+  @if (statsError()) {
+    <div class="error-panel">Data unavailable — could not load audit totals.</div>
+  } @else if (stats(); as s) {
+    <section class="kpi-row" aria-label="Audit totals">
+      <pe-kpi-card label="Total entries" [value]="s.total" tone="primary" />
+      <pe-kpi-card label="Last 24 hours" [value]="s.last24Hours" tone="info" />
+      <pe-kpi-card label="Entity types" [value]="s.entityTypes.length" tone="neutral" />
+      <pe-kpi-card label="Distinct actors" [value]="s.actors.length" tone="neutral" />
+    </section>
+  } @else {
     <div class="skeleton-row">
       @for (i of [1,2]; track i) { <div class="skeleton-card"></div> }
     </div>
-  } @else if (error()) {
-    <div class="error-panel">{{ error() }}</div>
-  } @else {
-    <section class="kpi-row">
-      <pe-kpi-card label="Total Entries" [value]="entries().length" tone="primary" />
-      <pe-kpi-card label="Entity Types" [value]="entityTypes.length" tone="info" />
-    </section>
+  }
 
-    <div class="toolbar">
-      <input
-        type="search"
-        placeholder="Search entity ID, action, actor, or details…"
-        [value]="searchTerm()"
-        (input)="searchTerm.set($any($event.target).value)"
-      />
-      <select [value]="entityTypeFilter()" (change)="entityTypeFilter.set($any($event.target).value)">
-        <option value="">All entity types</option>
-        @for (type of entityTypes; track type) {
-          <option [value]="type">{{ type }}</option>
-        }
-      </select>
+  <div class="toolbar">
+    <input
+      #searchBox
+      type="search"
+      aria-label="Search audit entries"
+      placeholder="Search entity ID, action, actor or details…"
+      [value]="searchTerm()"
+      (input)="onSearchInput($any($event.target).value)"
+    />
+    <select aria-label="Filter by entity type" (change)="onEntityTypeChange($any($event.target).value)">
+      <option value="" [selected]="!entityTypeFilter()">All entity types</option>
+      @for (type of stats()?.entityTypes ?? []; track type) {
+        <option [value]="type" [selected]="entityTypeFilter() === type">{{ type }}</option>
+      }
+    </select>
+    <select aria-label="Filter by actor" (change)="onActorChange($any($event.target).value)">
+      <option value="" [selected]="!actorFilter()">All actors</option>
+      @for (a of stats()?.actors ?? []; track a) {
+        <option [value]="a" [selected]="actorFilter() === a">{{ a }}</option>
+      }
+    </select>
+    <label class="toolbar__date">From
+      <input #fromBox type="date" (change)="onDateChange('from', $any($event.target).value)" />
+    </label>
+    <label class="toolbar__date">To
+      <input #toBox type="date" (change)="onDateChange('to', $any($event.target).value)" />
+    </label>
+    @if (hasActiveFilters) {
+      <button type="button" class="toolbar__clear" (click)="clearFilters()">Clear filters</button>
+    }
+  </div>
+
+  @if (loading() && items().length === 0) {
+    <div class="skeleton-row" aria-busy="true">
+      @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
     </div>
-
-    @if (filtered.length === 0) {
-      <div class="empty-panel">No audit entries matched your search.</div>
-    } @else {
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>When</th>
-              <th>Entity Type</th>
-              <th>Entity ID</th>
-              <th>Action</th>
-              <th>Actor</th>
-              <th>Old → New</th>
-              <th>Details</th>
+  } @else if (error()) {
+    <div class="error-panel">
+      {{ error() }}
+      <button type="button" class="toolbar__clear" (click)="retry()">Retry</button>
+    </div>
+  } @else if (items().length === 0) {
+    <div class="empty-panel">{{ hasActiveFilters ? 'No audit entries match these filters.' : 'No audit entries have been recorded yet.' }}</div>
+  } @else {
+    <div class="table-wrap" [class.table-wrap--loading]="loading()">
+      <table>
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Actor</th>
+            <th>Action</th>
+            <th>Entity</th>
+            <th>Summary</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (e of items(); track e.id) {
+            <tr class="row-clickable" tabindex="0" role="button" [attr.aria-expanded]="expandedId() === e.id"
+              (click)="toggle(e.id)" (keydown.enter)="toggle(e.id)">
+              <td>{{ e.occurredAt | date: 'd MMM y, HH:mm:ss' }}</td>
+              <td>{{ e.actor }}</td>
+              <td>{{ e.action }}</td>
+              <td>{{ e.entityType }} <span class="cell-meta mono">{{ e.entityId.slice(0, 8) }}</span></td>
+              <td class="details">{{ e.details ?? (e.oldValue || e.newValue ? (e.oldValue ?? '—') + ' → ' + (e.newValue ?? '—') : '—') }}</td>
             </tr>
-          </thead>
-          <tbody>
-            @for (e of filtered; track e.id) {
-              <tr>
-                <td>{{ e.occurredAt | date: 'medium' }}</td>
-                <td>{{ e.entityType }}</td>
-                <td class="mono">{{ e.entityId }}</td>
-                <td>{{ e.action }}</td>
-                <td>{{ e.actor }}</td>
-                <td>
-                  @if (e.oldValue || e.newValue) {
-                    {{ e.oldValue ?? '—' }} → {{ e.newValue ?? '—' }}
-                  } @else {
-                    <span class="empty-note">—</span>
-                  }
+            @if (expandedId() === e.id) {
+              <tr class="detail-row">
+                <td colspan="5">
+                  <dl class="detail-grid">
+                    <dt>Event ID</dt><dd class="mono">{{ e.id }}</dd>
+                    <dt>Entity type</dt><dd>{{ e.entityType }}</dd>
+                    <dt>Entity ID</dt><dd class="mono">{{ e.entityId }}</dd>
+                    <dt>Action</dt><dd>{{ e.action }}</dd>
+                    <dt>Actor</dt><dd>{{ e.actor }}</dd>
+                    <dt>Timestamp</dt><dd>{{ e.occurredAt | date: 'yyyy-MM-dd HH:mm:ss.SSS' }}</dd>
+                    <dt>Old value</dt><dd class="mono">{{ e.oldValue ?? '—' }}</dd>
+                    <dt>New value</dt><dd class="mono">{{ e.newValue ?? '—' }}</dd>
+                    <dt>Details</dt><dd>{{ e.details ?? '—' }}</dd>
+                  </dl>
                 </td>
-                <td class="details">{{ e.details ?? '—' }}</td>
               </tr>
             }
-          </tbody>
-        </table>
-      </div>
-    }
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pager">
+      <span>{{ totalCount() }} entr{{ totalCount() === 1 ? 'y' : 'ies' }}{{ hasActiveFilters ? ' match' : '' }} · page {{ pageIndex() + 1 }}</span>
+      <span class="pager__buttons">
+        <button type="button" (click)="previousPage()" [disabled]="pageIndex() === 0 || loading()">Previous</button>
+        <button type="button" (click)="nextPage()" [disabled]="!nextCursor() || loading()">Next</button>
+      </span>
+    </div>
   }
 </div>
