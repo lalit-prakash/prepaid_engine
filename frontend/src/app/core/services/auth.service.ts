@@ -2,6 +2,7 @@ import { Injectable, signal } from '@angular/core';
 
 const SESSION_KEY = 'pe_auth';
 const ROLE_KEY = 'pe_role';
+const USER_KEY = 'pe_user';
 
 export type UserRole = 'IT' | 'Utility';
 
@@ -26,6 +27,9 @@ export class AuthService {
   private readonly _role = signal<UserRole | null>(sessionStorage.getItem(ROLE_KEY) as UserRole | null);
   readonly role = this._role.asReadonly();
 
+  private readonly _username = signal<string | null>(sessionStorage.getItem(USER_KEY));
+  readonly username = this._username.asReadonly();
+
   get authHeaderValue(): string | null {
     const encoded = sessionStorage.getItem(SESSION_KEY);
     return encoded ? `Basic ${encoded}` : null;
@@ -34,6 +38,8 @@ export class AuthService {
   setCredentials(username: string, password: string): void {
     const encoded = btoa(`${username}:${password}`);
     sessionStorage.setItem(SESSION_KEY, encoded);
+    sessionStorage.setItem(USER_KEY, username);
+    this._username.set(username);
     this._isAuthenticated.set(true);
   }
 
@@ -49,6 +55,8 @@ export class AuthService {
   signOut(): void {
     sessionStorage.removeItem(SESSION_KEY);
     sessionStorage.removeItem(ROLE_KEY);
+    sessionStorage.removeItem(USER_KEY);
+    this._username.set(null);
     this._isAuthenticated.set(false);
     this._role.set(null);
   }

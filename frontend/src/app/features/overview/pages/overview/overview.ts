@@ -1,6 +1,11 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { Router, RouterLink } from '@angular/router';
+import { environment } from '../../../../../environments/environment';
+import { AuthService } from '../../../../core/services/auth.service';
+import { TariffChangeRequestService } from '../../../../core/services/tariff-change-request.service';
+import { TariffChangeRequestStatus, TariffChangeRequestSummary } from '../../../../core/models/tariff-change-request.model';
 import { ConsumerService } from '../../../../core/services/consumer.service';
 import { ConnectionStatus, ConsumerSummary } from '../../../../core/models/consumer.model';
 import { MeterDataService } from '../../../../core/services/meter-data.service';
@@ -8,7 +13,7 @@ import { DailyLoadProfileSummary } from '../../../../core/models/meter-data.mode
 import { NotificationService } from '../../../../core/services/notification.service';
 import { NotificationStatus, NotificationSummary } from '../../../../core/models/notification.model';
 import { RechargeService } from '../../../../core/services/recharge.service';
-import { RechargeStatus, RechargeSummary } from '../../../../core/models/recharge.model';
+import { MeterCommandStatus, RechargeStatus, RechargeSummary } from '../../../../core/models/recharge.model';
 import { ConnectivityCommandService } from '../../../../core/services/connectivity-command.service';
 import { ConnectivityCommandStatus, ConnectivityCommandSummary } from '../../../../core/models/connectivity-command.model';
 import { BillingHoldService } from '../../../../core/services/billing-hold.service';
@@ -36,6 +41,8 @@ interface AttentionItem {
   title: string;
   detail: string;
   at: string;
+  /** Where clicking this item drills to - every attention item must lead to its source. */
+  link: string;
 }
 
 /** One day's real consumption total, built from Daily Load Profile rows for that date. */
@@ -89,10 +96,18 @@ export class Overview implements OnInit, OnDestroy {
   protected readonly exceptionsLoading = signal(true);
   protected readonly exceptionsError = signal(false);
 
+  protected readonly tariffRequests = signal<TariffChangeRequestSummary[]>([]);
+  protected readonly tariffRequestsLoading = signal(true);
+  protected readonly tariffRequestsError = signal(false);
+
+  /** Result of a real GET /health probe - the only service this app can genuinely verify. */
+  protected readonly apiHealth = signal<'checking' | 'healthy' | 'down'>('checking');
+
   protected readonly attentionFilter = signal<'all' | 'critical' | 'warning'>('all');
 
   protected readonly NotificationStatus = NotificationStatus;
   protected readonly RechargeStatus = RechargeStatus;
+  protected readonly MeterCommandStatus = MeterCommandStatus;
   protected readonly ConnectivityCommandStatus = ConnectivityCommandStatus;
 
   protected readonly quickReports = [
@@ -110,6 +125,9 @@ export class Overview implements OnInit, OnDestroy {
     private readonly connectivityCommandService: ConnectivityCommandService,
     private readonly billingHoldService: BillingHoldService,
     private readonly exceptionService: OperationalExceptionService,
+    private readonly tariffRequestService: TariffChangeRequestService,
+    private readonly auth: AuthService,
+    private readonly http: HttpClient,
     private readonly router: Router,
   ) {}
 
@@ -182,6 +200,22 @@ export class Overview implements OnInit, OnDestroy {
       },
     });
 
+    this.tariffRequestService.list().subscribe({
+      next: (rows) => {
+        this.tariffRequests.set(rows);
+        this.tariffRequestsLoading.set(false);
+      },
+      error: () => {
+        this.tariffRequestsError.set(true);
+        this.tariffRequestsLoading.set(false);
+      },
+    });
+
+    this.http.get(`${environment.apiBaseUrl}/health`).subscribe({
+      next: () => this.apiHealth.set('healthy'),
+      error: () => this.apiHealth.set('down'),
+    });
+
     this.exceptionService.list().subscribe({
       next: (rows) => {
         this.exceptions.set(rows);
@@ -196,6 +230,10 @@ export class Overview implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     if (this.clockTimer) clearInterval(this.clockTimer);
+  }
+
+  protected get operatorName(): string {
+    return this.auth.username() ?? 'Operator';
   }
 
   protected get greeting(): string {
@@ -356,11 +394,11 @@ export class Overview implements OnInit, OnDestroy {
 
     for (const e of this.exceptions()) {
       if (e.status !== OperationalExceptionStatus.Open) continue;
-      items.push({ id: `exc-${e.id}`, severity: 'critical', title: e.description, detail: `${e.name} (${e.accountNumber})`, at: e.createdAt });
+      items.push({ id: `exc-${e.id}`, severity: 'critical', title: e.description, detail: `${e.name} (${e.accountNumber})`, at: e.createdAt, link: '/exceptions' });
     }
     for (const h of this.billingHolds()) {
       if (h.clearedAt) continue;
-      items.push({ id: `hold-${h.id}`, severity: 'warning', title: h.blockReason, detail: `${h.name} (${h.accountNumber}) — Meter ${h.meterNumber}`, at: h.blockedAt });
+      items.push({ id: `hold-${h.id}`, severity: 'warning', title: h.blockReason, detail: `${h.name} (${h.accountNumber}) — Meter ${h.meterNumber}`, at: h.blockedAt, link: '/billing-holds' });
     }
     for (const n of this.notifications()) {
       if (n.status === NotificationStatus.Sent) continue;
@@ -370,7 +408,45 @@ export class Overview implements OnInit, OnDestroy {
         title: n.message,
         detail: `${n.name} (${n.accountNumber})`,
         at: n.createdAt,
+        link: '/notifications',
       });
+    }
+
+    // Payment succeeded but the meter never confirmed the credit: the consumer has paid and
+    // has not been credited on the meter, so this is always critical.
+    for (const r of this.recharges()) {
+      if (r.meterCommandStatus === MeterCommandStatus.Failed || r.meterCommandStatus === MeterCommandStatus.TimedOut) {
+        items.push({
+          id: `credit-${r.id}`,
+          severity: 'critical',
+          title: `Meter credit ${r.meterCommandStatus === MeterCommandStatus.Failed ? 'failed' : 'timed out'} for Rs ${r.amount}`,
+          detail: `${r.name} (${r.accountNumber}) - payment received, meter not credited`,
+          at: r.completedAt ?? r.initiatedAt,
+          link: `/recharge/${r.id}`,
+        });
+      }
+    }
+
+    for (const t of this.tariffRequests()) {
+      if (t.status === TariffChangeRequestStatus.PendingApproval) {
+        items.push({
+          id: `tariff-${t.id}`,
+          severity: 'warning',
+          title: `Tariff approval pending: ${t.proposedName}`,
+          detail: `Submitted by ${t.submittedBy ?? t.createdBy}`,
+          at: t.submittedAt ?? t.createdAt,
+          link: `/tariffs/change-requests/${t.id}`,
+        });
+      } else if (t.status === TariffChangeRequestStatus.Scheduled) {
+        items.push({
+          id: `tariff-${t.id}`,
+          severity: 'warning',
+          title: `Tariff activation scheduled: ${t.proposedName}`,
+          detail: `Commences ${t.commencementDate ? t.commencementDate.slice(0, 10) : 'on a date not recorded'}`,
+          at: t.approvedAt ?? t.createdAt,
+          link: `/tariffs/change-requests/${t.id}`,
+        });
+      }
     }
 
     return items.sort((a, b) => (a.at < b.at ? 1 : -1));
@@ -387,9 +463,44 @@ export class Overview implements OnInit, OnDestroy {
   });
 
   protected readonly attentionAvailable = computed(
-    () => !this.exceptionsLoading() && !this.billingHoldsLoading() && !this.notificationsLoading(),
+    () => !this.exceptionsLoading() && !this.billingHoldsLoading() && !this.notificationsLoading() && !this.rechargesLoading() && !this.tariffRequestsLoading(),
   );
-  protected readonly attentionError = computed(() => this.exceptionsError() || this.billingHoldsError() || this.notificationsError());
+  protected readonly attentionError = computed(
+    () => this.exceptionsError() || this.billingHoldsError() || this.notificationsError() || this.rechargesError() || this.tariffRequestsError(),
+  );
+
+  protected readonly pendingTariffApprovals = computed(
+    () => this.tariffRequests().filter((t) => t.status === TariffChangeRequestStatus.PendingApproval).length,
+  );
+  protected readonly scheduledTariffActivations = computed(
+    () => this.tariffRequests().filter((t) => t.status === TariffChangeRequestStatus.Scheduled).length,
+  );
+
+  protected meterCreditLabel(status: MeterCommandStatus | null): string {
+    switch (status) {
+      case MeterCommandStatus.Acknowledged: return 'Meter credited';
+      case MeterCommandStatus.Failed: return 'Meter credit failed';
+      case MeterCommandStatus.TimedOut: return 'Meter credit timed out';
+      case MeterCommandStatus.Sent: return 'Awaiting meter ack';
+      case MeterCommandStatus.Queued: return 'Meter credit queued';
+      default: return 'No meter credit';
+    }
+  }
+
+  protected meterCreditTone(status: MeterCommandStatus | null): 'success' | 'danger' | 'info' | 'neutral' {
+    switch (status) {
+      case MeterCommandStatus.Acknowledged: return 'success';
+      case MeterCommandStatus.Failed:
+      case MeterCommandStatus.TimedOut: return 'danger';
+      case MeterCommandStatus.Sent:
+      case MeterCommandStatus.Queued: return 'info';
+      default: return 'neutral';
+    }
+  }
+
+  goTo(link: string): void {
+    this.router.navigateByUrl(link);
+  }
 
   setAttentionFilter(filter: 'all' | 'critical' | 'warning'): void {
     this.attentionFilter.set(filter);
