@@ -28,6 +28,9 @@ public class MeterCommandConfiguration : IEntityTypeConfiguration<MeterCommand>
 
         builder.HasIndex(m => m.ConsumerId);
 
+        // The dispatcher only ever looks for the few commands still waiting or in flight, out of millions.
+        builder.HasIndex(m => new { m.Status, m.CreatedAt }).HasFilter("\"Status\" IN ('Queued', 'Sent')");
+
         // Every meter credit command traces back to exactly one recharge — see MeterCommand's
         // doc comment. Unique, not just indexed: a recharge gets at most one credit command
         // (retries reuse the same command via Retry(), they don't create a new row).

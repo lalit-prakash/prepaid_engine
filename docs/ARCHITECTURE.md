@@ -112,7 +112,7 @@ exceptions to 400/409.
 
 ### 3.3 Persistence
 - One `PrepaidEngineDbContext`; entity configuration in `Persistence/Configurations`, migrations in
-  `Persistence/Migrations` (18 so far, latest `AddAuditContextColumns`).
+  `Persistence/Migrations` (19 so far, latest `AddMeterCommandQueueIndex`).
 - **UTC everywhere:** a model convention converts every `DateTime` to UTC on write and marks it UTC on
   read. This fixes Npgsql rejecting `Kind=Unspecified` values (date-only JSON or query inputs) for the
   whole API in one place.
@@ -159,6 +159,7 @@ and have no UI caller by design.
 | Worker | Behaviour |
 |---|---|
 | `BillingProcessingWorker` | Polls every minute; runs DLP billing Stage 1 (8:30–9:30) and Stage 2 (12:30–13:30, plus provisional billing) once per day. Safe on several API instances: a stage that is running elsewhere is retried on later ticks. |
+| `MeterCommandWorker` | Polls every 2 s; sends queued meter credit commands (claimed, so safe on several instances) and times out commands stuck in `Sent`. See section 4.1. |
 | `TariffActivationWorker` | Runs at startup and every minute; calls `TariffActivationService.ActivateDueAsync`. |
 
 Both are simple in-process pollers. `TariffActivationWorker` is safe to run twice (each activation is its own transaction).
@@ -188,16 +189,19 @@ sequenceDiagram
   C->>API: POST recharge (amount, idempotency key)
   API->>RMS: confirm payment
   RMS-->>API: Success / Pending / Failed
-  API->>W: credit ledger (only on Success)
-  API->>M: create MeterCommand, send credit
+  API->>W: credit ledger + queue MeterCommand (one transaction)
+  API-->>C: 200 (payment Success, meter credit Queued)
+  Note over API,M: background MeterCommandWorker
+  API->>M: claim Queued command, send credit
   M-->>API: Acknowledged / Failed / TimedOut
-  API-->>C: 200 (payment + meter-credit status shown separately)
 ```
 - The idempotency key is required from the caller; a repeated key replays the original result.
 - `MeterCommand` states: Queued, Sent, Acknowledged, Failed, TimedOut; `Retry()` reuses the same row.
   It stores the external command id, response code/message, retry count, and timestamps.
 - A `Failed`/`TimedOut` command auto-raises an `OperationalException`.
-- The API currently waits for the adapter call; an outbox plus command worker is a known gap.
+- **Outbox:** the recharge request never waits on the meter/MDM layer. It writes the wallet credit and a `Queued` `MeterCommand` in one transaction (the command row is the outbox) and returns at once with `meterCommandStatus: Queued`. `MeterCommandWorker` (poll every 2 s, batches of 50) runs `MeterCommandDispatcher`: it **claims** each command with a conditional `UPDATE` (Queued to Sent, so several instances never send one twice), sends it with a key stable for that attempt (`meter-credit:<id>:<retryCount>`, so a resend after a crash is safe), and records Acknowledged / Failed / TimedOut (Failed and TimedOut raise the operator exception as before).
+- A command left `Sent` with no outcome for 10 minutes (its sender died) is marked `TimedOut` with an exception that says the meter may or may not have been credited. `POST meter-commands/{id}/retry` now just re-queues (and audits); the worker sends it. There is no automatic retry of failed commands: an operator decides. A partial index on `(Status, CreatedAt)` for `Queued`/`Sent` keeps the lookup cheap among millions of commands. Settings: `MeterCommandWorker:PollSeconds`, `BatchSize`, `StuckAfterMinutes`.
+- The recharge and meter-credit detail pages refresh a few times while a command is Queued or Sent.
 
 ### 4.2 Tariff governance
 ```mermaid
@@ -329,8 +333,7 @@ Tracked on the project board: https://github.com/users/lalit-prakash/projects/5
 
 - MFA, token revocation, and a user/role management screen with users stored in the database.
 - Audit entries are not tamper-evident (no hash chain) and have no retention or archiving policy; system actions carry no role or address.
-- Recharge outbox and a background MDM command worker; real MDM/HES adapter (needs the endpoint and
-  command contract).
+- Real MDM/HES adapter for meter credit and RC/DC (needs the endpoint and command contract); the outbox and worker exist, the adapter behind them is still the mock. RC/DC connectivity commands are still sent inline.
 - Report jobs for large exports; a scheduler with billing run history and alerting (the billing run itself is now batched, claimed and resumable).
 - System Health, Integrations and Service Requests modules; tariff fields (code, taxes, thresholds).
 - Network hierarchy can be loaded and consumers mapped from CSV (Network Hierarchy screen), but there is no screen to edit or delete a single node, files are limited to 10,000 rows each, and development still seeds a labelled demo network; area analytics on the Analytics page, balance history and abnormal-consumption detection are still open.
