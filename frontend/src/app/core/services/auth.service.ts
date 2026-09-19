@@ -1,75 +1,103 @@
-import { Injectable, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Injectable, OnDestroy, signal } from '@angular/core';
+import { Observable, tap } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
-const SESSION_KEY = 'pe_auth';
+const TOKEN_KEY = 'pe_token';
+const EXPIRY_KEY = 'pe_token_exp';
 const ROLE_KEY = 'pe_role';
 const USER_KEY = 'pe_user';
 
 export type UserRole = 'IT' | 'Utility';
 
+interface LoginResponse {
+  accessToken: string;
+  expiresAtUtc: string;
+  username: string;
+  displayName: string;
+  role: string;
+}
+
 /**
- * Holds the HTTP Basic credential for the demo API's stop-gap auth scheme
- * (see backend/PrepaidEngine.Api/Auth/BasicAuthenticationHandler.cs and
- * docs/assumptions-and-security.md — this is not a real auth system, and this
- * service must not become one). The encoded credential lives only in
- * sessionStorage for this tab; it is never persisted, logged, or sent
- * anywhere except as the Authorization header on calls to this app's own API.
+ * Holds the signed-in session for the API's JWT bearer auth (see backend/PrepaidEngine.Api/Auth and
+ * docs/assumptions-and-security.md). The password is sent once to POST /auth/login and never kept: only the
+ * short-lived access token, its expiry and the display name live in sessionStorage for this tab. The token is
+ * renewed shortly before it expires (until the server's absolute session limit), and a 401 signs the user out.
  *
- * The role is a UI convenience only (fetched from GET /api/v1/auth/whoami after
- * login) so the tariff-governance screens can show the right actions — it is
- * never the actual security boundary, which lives entirely in the backend's
- * RequireAuthorization("ITRole"/"UtilityRole") policies.
+ * The role kept here is a UI convenience so screens can show the right actions; the security boundary is the
+ * backend's authorization policies, which are enforced regardless of what the browser holds.
  */
 @Injectable({ providedIn: 'root' })
-export class AuthService {
-  private readonly _isAuthenticated = signal(!!sessionStorage.getItem(SESSION_KEY));
+export class AuthService implements OnDestroy {
+  private readonly _isAuthenticated = signal(this.hasLiveToken());
   readonly isAuthenticated = this._isAuthenticated.asReadonly();
 
   private readonly _role = signal<UserRole | null>(sessionStorage.getItem(ROLE_KEY) as UserRole | null);
   readonly role = this._role.asReadonly();
 
-  // Sessions that signed in before the username was stored separately still carry it inside the encoded credential.
-  private readonly _username = signal<string | null>(sessionStorage.getItem(USER_KEY) ?? AuthService.usernameFromCredential());
+  /** The name to show for the signed-in user (the account's display name). */
+  private readonly _username = signal<string | null>(sessionStorage.getItem(USER_KEY));
   readonly username = this._username.asReadonly();
 
-  private static usernameFromCredential(): string | null {
-    const encoded = sessionStorage.getItem(SESSION_KEY);
-    if (!encoded) return null;
-    try {
-      const name = atob(encoded).split(':')[0];
-      return name || null;
-    } catch {
-      return null;
-    }
+  private renewTimer?: ReturnType<typeof setTimeout>;
+
+  constructor(private readonly http: HttpClient) {
+    // The previous Basic-auth build kept the encoded password here; make sure none survives.
+    sessionStorage.removeItem('pe_auth');
+    if (this._isAuthenticated()) this.scheduleRenewal();
   }
 
   get authHeaderValue(): string | null {
-    const encoded = sessionStorage.getItem(SESSION_KEY);
-    return encoded ? `Basic ${encoded}` : null;
+    return this.hasLiveToken() ? `Bearer ${sessionStorage.getItem(TOKEN_KEY)}` : null;
   }
 
-  setCredentials(username: string, password: string): void {
-    const encoded = btoa(`${username}:${password}`);
-    sessionStorage.setItem(SESSION_KEY, encoded);
-    sessionStorage.setItem(USER_KEY, username);
-    this._username.set(username);
-    this._isAuthenticated.set(true);
-  }
-
-  setRole(role: UserRole | null): void {
-    if (role) {
-      sessionStorage.setItem(ROLE_KEY, role);
-    } else {
-      sessionStorage.removeItem(ROLE_KEY);
-    }
-    this._role.set(role);
+  login(username: string, password: string): Observable<LoginResponse> {
+    return this.http
+      .post<LoginResponse>(`${environment.apiBaseUrl}/api/v1/auth/login`, { username, password })
+      .pipe(tap((res) => this.store(res)));
   }
 
   signOut(): void {
-    sessionStorage.removeItem(SESSION_KEY);
-    sessionStorage.removeItem(ROLE_KEY);
-    sessionStorage.removeItem(USER_KEY);
+    clearTimeout(this.renewTimer);
+    [TOKEN_KEY, EXPIRY_KEY, ROLE_KEY, USER_KEY].forEach((k) => sessionStorage.removeItem(k));
     this._username.set(null);
-    this._isAuthenticated.set(false);
     this._role.set(null);
+    this._isAuthenticated.set(false);
+  }
+
+  ngOnDestroy(): void {
+    clearTimeout(this.renewTimer);
+  }
+
+  private hasLiveToken(): boolean {
+    const token = sessionStorage.getItem(TOKEN_KEY);
+    const exp = Number(sessionStorage.getItem(EXPIRY_KEY));
+    return !!token && exp > Date.now();
+  }
+
+  private store(res: LoginResponse): void {
+    sessionStorage.setItem(TOKEN_KEY, res.accessToken);
+    sessionStorage.setItem(EXPIRY_KEY, String(new Date(res.expiresAtUtc).getTime()));
+    sessionStorage.setItem(USER_KEY, res.displayName || res.username);
+    const role = res.role === 'IT' || res.role === 'Utility' ? res.role : null;
+    if (role) sessionStorage.setItem(ROLE_KEY, role);
+    else sessionStorage.removeItem(ROLE_KEY);
+    this._username.set(res.displayName || res.username);
+    this._role.set(role);
+    this._isAuthenticated.set(true);
+    this.scheduleRenewal();
+  }
+
+  /** Swap the token for a fresh one shortly before it expires; if the server refuses, the session has ended. */
+  private scheduleRenewal(): void {
+    clearTimeout(this.renewTimer);
+    const exp = Number(sessionStorage.getItem(EXPIRY_KEY));
+    const delay = Math.max(exp - Date.now() - 60_000, 5_000);
+    this.renewTimer = setTimeout(() => {
+      this.http.post<LoginResponse>(`${environment.apiBaseUrl}/api/v1/auth/refresh`, {}).subscribe({
+        next: (res) => this.store(res),
+        error: () => this.signOut(),
+      });
+    }, delay);
   }
 }

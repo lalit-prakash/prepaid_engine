@@ -1,16 +1,12 @@
-import { HttpClient } from '@angular/common/http';
 import { Component, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { environment } from '../../../../../environments/environment';
 import { AuthService } from '../../../../core/services/auth.service';
 import { Icon } from '../../../../shared/components/icon/icon';
 
 /**
- * Sign-in gate for the demo API's stop-gap HTTP Basic auth (see
- * docs/assumptions-and-security.md). Verifies the credential against a real
- * endpoint (whoami, which also returns the user's role) before caching it, so a
- * typo doesn't silently propagate into every subsequent API call.
+ * Sign-in page. Sends the login id and password once to POST /auth/login and keeps only the returned
+ * short-lived token (see AuthService and docs/assumptions-and-security.md).
  */
 @Component({
   selector: 'pe-login',
@@ -19,14 +15,13 @@ import { Icon } from '../../../../shared/components/icon/icon';
   styleUrl: './login.scss',
 })
 export class Login {
-  protected username = 'demo';
+  protected username = '';
   protected password = '';
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly checking = signal(false);
   protected readonly passwordVisible = signal(false);
 
   constructor(
-    private readonly http: HttpClient,
     private readonly auth: AuthService,
     private readonly router: Router,
   ) {}
@@ -37,28 +32,21 @@ export class Login {
 
   submit(): void {
     if (!this.username || !this.password) {
-      this.errorMessage.set('Enter both username and password.');
+      this.errorMessage.set('Enter both your login id and password.');
       return;
     }
     this.checking.set(true);
     this.errorMessage.set(null);
 
-    const encoded = btoa(`${this.username}:${this.password}`);
-    this.http
-      .get<{ username: string; role: string | null }>(`${environment.apiBaseUrl}/api/v1/auth/whoami`, {
-        headers: { Authorization: `Basic ${encoded}` },
-      })
-      .subscribe({
-        next: (whoami) => {
-          this.auth.setCredentials(this.username, this.password);
-          this.auth.setRole(whoami.role === 'IT' || whoami.role === 'Utility' ? whoami.role : null);
-          this.router.navigate(['/overview']);
-        },
+    this.auth.login(this.username, this.password).subscribe({
+        next: () => this.router.navigate(['/overview']),
         error: (err) => {
           this.checking.set(false);
           this.errorMessage.set(
             err?.status === 401
-              ? 'Invalid username or password.'
+              ? 'Invalid login id or password.'
+              : err?.status === 429
+              ? 'Too many failed attempts. Try again in a few minutes.'
               : 'Could not reach the Prepaid Engine API — is it running?',
           );
         },

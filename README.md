@@ -43,13 +43,14 @@ createdb prepaid_engine          # or: CREATE DATABASE prepaid_engine;
 cd backend/PrepaidEngine.Api
 dotnet user-secrets set "ConnectionStrings:PrepaidEngine" "Host=localhost;Port=5432;Database=prepaid_engine;Username=postgres;Password=<your-password>"
 
-# Demo sign-in users (choose your own values; never commit them). Roles are IT and Utility.
-dotnet user-secrets set "DemoAuth:Users:0:Username" "<it-user>"
-dotnet user-secrets set "DemoAuth:Users:0:Password" "<it-password>"
-dotnet user-secrets set "DemoAuth:Users:0:Role"     "IT"
-dotnet user-secrets set "DemoAuth:Users:1:Username" "<utility-user>"
-dotnet user-secrets set "DemoAuth:Users:1:Password" "<utility-password>"
-dotnet user-secrets set "DemoAuth:Users:1:Role"     "Utility"
+# Sign-in users (choose your own values; never commit them). Roles are IT and Utility.
+# Generate the hash first:  dotnet run --project backend/PrepaidEngine.Api -- hash-password "<password>"
+dotnet user-secrets set "DemoAuth:Users:0:Username"     "<login-id>"
+dotnet user-secrets set "DemoAuth:Users:0:DisplayName"  "<name shown in the header>"
+dotnet user-secrets set "DemoAuth:Users:0:PasswordHash" "<hash from the command above>"
+dotnet user-secrets set "DemoAuth:Users:0:Role"         "IT"
+# JWT signing key, 32+ characters (Development falls back to a random per-run key if this is unset).
+dotnet user-secrets set "Jwt:Key" "<long-random-string>"
 ```
 `appsettings.json` only contains `CHANGE_ME` placeholders. In Development the API applies pending
 migrations and seeds demo data (seven consumers, tariff, bills, recharges) on startup; it does neither
@@ -69,7 +70,7 @@ cd frontend
 npm install
 npm start
 ```
-Open `http://localhost:4200` and sign in with one of the users you created. The IT user drafts and
+Open `http://localhost:4200` and sign in with the login id and password of a user you created. The IT user drafts and
 submits tariff changes; the Utility user approves, rejects or schedules them.
 
 ### Stopping
@@ -104,6 +105,8 @@ docs/      architecture, domain rules, sourcing and security notes
 ```
 
 ## Security note
-Authentication is HTTP Basic with two demo roles — a stop-gap for local and demo use, not a production
-scheme. Do not expose this API beyond a trusted network until real token-based authentication and
-role management are in place (see [assumptions-and-security.md](docs/assumptions-and-security.md)).
+Authentication is JWT bearer: `POST /api/v1/auth/login` returns a 30-minute signed token (renewable up to
+8 hours), passwords are stored as PBKDF2 hashes, and repeated failed sign-ins lock the login id for 15
+minutes. Users are still configured, not managed in a database, there are two roles, and rate limiting,
+security headers and finer-grained authorization are the next steps. Do not expose this API beyond a trusted
+network until those are done (see [assumptions-and-security.md](docs/assumptions-and-security.md)).

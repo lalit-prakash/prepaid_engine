@@ -22,6 +22,13 @@ using PrepaidEngine.Application.Sla;
 using PrepaidEngine.Infrastructure.Persistence.Seed;
 using PrepaidEngine.Infrastructure.Rms;
 
+// Helper for operators: prints a PBKDF2 hash to put in DemoAuth:Users[].PasswordHash.
+if (args.Length == 2 && args[0] == "hash-password")
+{
+    Console.WriteLine(PasswordHasher.Hash(args[1]));
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -75,10 +82,43 @@ builder.Services.AddHostedService<PrepaidEngine.Api.Billing.BillingProcessingWor
 builder.Services.AddScoped<TariffActivationService>();
 builder.Services.AddHostedService<PrepaidEngine.Api.Tariffs.TariffActivationWorker>();
 
-// Basic auth for the demo endpoints only — a stop-gap, not a substitute for real
-// authentication before any shared/production exposure (see docs/assumptions-and-security.md).
-builder.Services.AddAuthentication("Basic")
-    .AddScheme<BasicAuthenticationSchemeOptions, BasicAuthenticationHandler>("Basic", null);
+// JWT bearer authentication: POST /api/v1/auth/login issues a short-lived signed token (see Auth/).
+// The signing key is a secret (user-secrets or Jwt__Key). Development falls back to a random per-run
+// key so local work needs no setup (tokens then die on restart); any other environment must configure one.
+var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
+if (string.IsNullOrWhiteSpace(jwtOptions.Key))
+{
+    if (!builder.Environment.IsDevelopment())
+        throw new InvalidOperationException("Jwt:Key is not configured. Set it via user-secrets or the Jwt__Key environment variable (at least 32 characters).");
+    jwtOptions.Key = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(48));
+}
+else if (jwtOptions.Key.Length < 32)
+{
+    throw new InvalidOperationException("Jwt:Key must be at least 32 characters.");
+}
+builder.Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(jwtOptions));
+builder.Services.AddSingleton<UserStore>();
+builder.Services.AddSingleton<LoginThrottle>();
+builder.Services.AddSingleton<TokenService>();
+builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(o =>
+    {
+        o.MapInboundClaims = false;
+        o.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtOptions.Audience,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromSeconds(30),
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = TokenService.SigningKey(jwtOptions),
+            ValidAlgorithms = new[] { Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256 },
+            NameClaimType = ClaimTypes.Name,
+            RoleClaimType = ClaimTypes.Role,
+        };
+    });
 
 // Two-role authorization for the tariff-governance workflow (see UserRole's doc comment) — IT
 // drafts/edits/submits, Utility reviews/approves/rejects. Every pre-existing endpoint keeps using
@@ -216,6 +256,8 @@ app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapAuthEndpoints();
 
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
     .WithName("Health");
@@ -892,6 +934,7 @@ app.MapGet("/api/v1/auth/whoami", (ClaimsPrincipal user) =>
     Results.Ok(new
     {
         Username = user.Identity?.Name ?? "unknown",
+        DisplayName = user.FindFirst(TokenService.DisplayNameClaim)?.Value ?? user.Identity?.Name ?? "unknown",
         Role = user.FindFirst(ClaimTypes.Role)?.Value,
     }))
 .WithName("WhoAmI")
