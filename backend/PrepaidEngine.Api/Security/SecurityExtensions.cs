@@ -7,6 +7,7 @@ public static class SecurityExtensions
 {
     public const string CorsPolicy = "ConfiguredOrigins";
     public const string LoginLimiter = "login";
+    public const string ResetLimiter = "reset";
     private const string DevOrigin = "http://localhost:4200";
 
     public static SecurityOptions AddApiSecurity(this WebApplicationBuilder builder)
@@ -51,6 +52,14 @@ public static class SecurityExtensions
             r.AddPolicy(LoginLimiter, ctx => RateLimitPartition.GetFixedWindowLimiter("login:" + Client(ctx), _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = options.LoginAttemptsPerMinutePerIp,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+
+            // Asking for or using a reset code: a handful a minute per address is plenty for a person and useless for guessing.
+            r.AddPolicy(ResetLimiter, ctx => RateLimitPartition.GetFixedWindowLimiter("reset:" + Client(ctx), _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
             }));

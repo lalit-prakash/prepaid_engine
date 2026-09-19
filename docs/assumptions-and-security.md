@@ -55,7 +55,16 @@ method, STS token format or vendor payload is assumed anywhere.
 id and password and returns an HS256 token (default 30 minutes; `POST /auth/refresh` renews it until 8 hours
 after the original sign-in). Passwords are stored as PBKDF2-SHA256 hashes (210,000 iterations, per-user salt)
 and compared in constant time; an unknown login id costs the same as a wrong password. After 5 failed
-attempts a login id is locked for 15 minutes (HTTP 429 with `Retry-After`). The signing key (`Jwt:Key`,
+attempts a login id is locked for 15 minutes (HTTP 429 with `Retry-After` and `retryAfterSeconds`). Login ids are matched ignoring case and surrounding spaces.
+**Password reset.** `POST /auth/forgot-password` e-mails a 6-digit one-time code to the address in `DemoAuth:Users:n:Email`;
+`POST /auth/reset-password` takes the code and a new password (8+ characters, upper and lower case, digit, symbol, not containing
+the login id). The reply to a request is identical for unknown ids and ids without an address, so it cannot be used to find accounts.
+A code lives 10 minutes, allows 5 wrong guesses, works once, and a newer request cancels it; at most 3 codes an hour and one a minute
+per login id, and 5 calls a minute per IP. Only a salted hash of the code is stored, and requests, failures and completions are
+audited. Users live in configuration, so a new password is stored in the database (`UserPasswordOverrides`) and takes precedence over
+the configured hash; a completed reset also clears any lockout. Mail goes through SMTP (`Email:Host`, `Port`, `User`, `Password`,
+`FromAddress`; keep the password in user-secrets). With no `Email:Host`, Development prints the message (including the code) to the API
+console and any other environment reports that e-mail is not set up. Known limit: whoever controls the registered mailbox can reset the password. The signing key (`Jwt:Key`,
 32+ characters) is a secret from user-secrets or the environment; outside Development the API refuses to
 start without one. The browser keeps only the token, its expiry and the display name in `sessionStorage`
 (never the password). Known limits: users come from configuration rather than a database, the lockout is
