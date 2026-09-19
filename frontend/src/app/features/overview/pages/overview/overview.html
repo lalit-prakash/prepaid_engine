@@ -1,7 +1,7 @@
 <div class="overview">
   <div class="hero">
     <div class="hero__text">
-      <h1>{{ greeting }}, Operator!</h1>
+      <h1>{{ greeting }}, {{ operatorName }}!</h1>
       <p class="hero__subtitle">Here's what's happening across your prepaid network today.</p>
     </div>
     <p class="hero__tagline">Reliable. Efficient. Connected.</p>
@@ -100,11 +100,18 @@
       <div class="panel">
         <div class="panel__header">
           <h2>System Health</h2>
-          <span class="panel__source">5 / 5 services</span>
+          <span class="panel__source">Live probe</span>
         </div>
         <ul class="health-list">
-          <li><pe-status-badge label="Healthy" tone="success" /> Prepaid Engine API</li>
-          <li><pe-status-badge label="Healthy" tone="success" /> PostgreSQL</li>
+          <li>
+            @switch (apiHealth()) {
+              @case ('healthy') { <pe-status-badge label="Healthy" tone="success" /> }
+              @case ('down') { <pe-status-badge label="Down" tone="danger" /> }
+              @default { <pe-status-badge label="Checking" tone="neutral" /> }
+            }
+            Prepaid Engine API
+          </li>
+          <li><pe-status-badge label="Not monitored" tone="neutral" /> Database</li>
           <li><pe-status-badge label="Mock adapter" tone="neutral" /> RMS Client</li>
           <li><pe-status-badge label="Mock adapter" tone="neutral" /> Meter Command Client</li>
           <li><pe-status-badge label="Mock adapter" tone="neutral" /> Connectivity Command Client</li>
@@ -162,7 +169,8 @@
         } @else {
           <ul class="alert-list">
             @for (item of filteredAttentionItems(); track item.id) {
-              <li>
+              <li class="alert-list__item--link" tabindex="0" role="link"
+                (click)="goTo(item.link)" (keydown.enter)="goTo(item.link)">
                 <pe-status-badge [label]="item.severity === 'critical' ? 'Critical' : 'Warning'"
                   [tone]="item.severity === 'critical' ? 'danger' : 'warning'" />
                 <span class="alert-list__text"><strong>{{ item.title }}</strong> — {{ item.detail }}</span>
@@ -205,6 +213,30 @@
     </section>
 
     <section class="panel">
+      <div class="panel__header">
+        <h2>Tariff Governance</h2>
+        <span class="panel__source">Change requests</span>
+      </div>
+      @if (tariffRequestsLoading()) {
+        <div class="panel__loading">Loading…</div>
+      } @else if (tariffRequestsError()) {
+        <div class="panel__unavailable">Data unavailable — could not reach the tariff change-requests API.</div>
+      } @else {
+        <ul class="alert-list">
+          <li class="alert-list__item--link" tabindex="0" role="link" (click)="goTo('/tariffs')" (keydown.enter)="goTo('/tariffs')">
+            <pe-status-badge [label]="pendingTariffApprovals() > 0 ? 'Action needed' : 'Clear'" [tone]="pendingTariffApprovals() > 0 ? 'warning' : 'success'" />
+            <span class="alert-list__text"><strong>{{ pendingTariffApprovals() }}</strong> tariff change(s) awaiting Utility approval</span>
+          </li>
+          <li class="alert-list__item--link" tabindex="0" role="link" (click)="goTo('/tariffs')" (keydown.enter)="goTo('/tariffs')">
+            <pe-status-badge [label]="scheduledTariffActivations() > 0 ? 'Scheduled' : 'None'" [tone]="scheduledTariffActivations() > 0 ? 'info' : 'neutral'" />
+            <span class="alert-list__text"><strong>{{ scheduledTariffActivations() }}</strong> approved tariff change(s) scheduled to activate</span>
+          </li>
+        </ul>
+      }
+      <a routerLink="/tariffs" class="panel__link">Open Tariff &amp; Parameters →</a>
+    </section>
+
+    <section class="panel">
       <h2>Alerts &amp; Notifications</h2>
       @if (notificationsLoading()) {
         <div class="panel__loading">Loading…</div>
@@ -239,18 +271,21 @@
         } @else {
           <table class="mini-table">
             <thead>
-              <tr><th>Consumer</th><th>Amount</th><th>Status</th></tr>
+              <tr><th>Consumer</th><th>Amount</th><th>Reference</th><th>Time</th><th>Payment</th><th>Meter credit</th></tr>
             </thead>
             <tbody>
               @for (r of recentRecharges(); track r.id) {
-                <tr>
+                <tr class="mini-table__row--link" tabindex="0" (click)="goTo('/recharge/' + r.id)" (keydown.enter)="goTo('/recharge/' + r.id)">
                   <td>{{ r.name }} <span class="mini-table__meta">{{ r.accountNumber }}</span></td>
                   <td class="num">₹{{ r.amount | number:'1.0-2' }}</td>
+                  <td class="mini-table__meta">{{ r.rmsReferenceId }}</td>
+                  <td class="mini-table__meta">{{ r.initiatedAt | date:'d MMM, HH:mm' }}</td>
                   <td>
                     <pe-status-badge
-                      [label]="r.status === RechargeStatus.Success ? 'Success' : r.status === RechargeStatus.Failed ? 'Failed' : r.status === RechargeStatus.Reversed ? 'Reversed' : 'Initiated'"
+                      [label]="r.status === RechargeStatus.Success ? 'Payment received' : r.status === RechargeStatus.Failed ? 'Payment failed' : r.status === RechargeStatus.Reversed ? 'Reversed' : 'Payment pending'"
                       [tone]="r.status === RechargeStatus.Success ? 'success' : r.status === RechargeStatus.Failed ? 'danger' : r.status === RechargeStatus.Reversed ? 'warning' : 'info'" />
                   </td>
+                  <td><pe-status-badge [label]="meterCreditLabel(r.meterCommandStatus)" [tone]="meterCreditTone(r.meterCommandStatus)" /></td>
                 </tr>
               }
             </tbody>
@@ -270,13 +305,14 @@
         } @else {
           <table class="mini-table">
             <thead>
-              <tr><th>Consumer</th><th>Type</th><th>Status</th></tr>
+              <tr><th>Consumer</th><th>Operation</th><th>Time</th><th>Status</th></tr>
             </thead>
             <tbody>
               @for (c of recentMeterOps(); track c.id) {
-                <tr>
+                <tr class="mini-table__row--link" tabindex="0" (click)="goTo('/rc-dc/' + c.id)" (keydown.enter)="goTo('/rc-dc/' + c.id)">
                   <td>{{ c.name }} <span class="mini-table__meta">{{ c.accountNumber }}</span></td>
                   <td>{{ c.commandType === 0 ? 'Disconnect' : 'Reconnect' }}</td>
+                  <td class="mini-table__meta">{{ c.createdAt | date:'d MMM, HH:mm' }}</td>
                   <td>
                     <pe-status-badge
                       [label]="c.status === ConnectivityCommandStatus.Acknowledged ? 'Acknowledged' : c.status === ConnectivityCommandStatus.Failed ? 'Failed' : c.status === ConnectivityCommandStatus.TimedOut ? 'Timed out' : c.status === ConnectivityCommandStatus.Sent ? 'Sent' : 'Queued'"
