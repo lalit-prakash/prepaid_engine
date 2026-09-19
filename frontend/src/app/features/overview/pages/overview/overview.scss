@@ -32,7 +32,7 @@ $gap: 12px;
 }
 .hero__text h1 { font-size: 34px; line-height: 1.1; letter-spacing: -0.02em; color: #0f1f3d; margin: 0 0 4px; }
 .hero__subtitle { color: #33415c; font-size: 15px; margin: 0; }
-.hero__tagline { color: #fff; text-shadow: 0 1px 6px rgba(15, 31, 61, 0.6); font-size: 14px; white-space: nowrap; margin: 0 auto; }
+.hero__tagline { color: #fff; text-shadow: 0 1px 6px rgba(15, 31, 61, 0.6); font-size: 14px; white-space: nowrap; margin: 0; position: absolute; left: 50%; top: calc(50% + (var(--shell-header-height) - 52px) / 2); transform: translate(-50%, -50%); }
 .hero__clock { text-align: right; color: #fff; white-space: nowrap; text-shadow: 0 1px 6px rgba(15, 31, 61, 0.55); }
 .hero__date { font-size: 13px; }
 .hero__time { font-size: 26px; font-weight: 700; line-height: 1.15; }
