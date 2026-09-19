@@ -1,0 +1,54 @@
+<div class="report-exports">
+  <a routerLink="/reports" class="back-link">← Back to Reports</a>
+
+  <div class="page-header">
+    <h1>Report exports</h1>
+    <p class="page-header__subtitle">
+      Full CSV exports built in the background, not limited to the rows a report page shows. Request one from a report page with
+      "Export everything". Files are kept for 7 days.
+    </p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-block"></div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }} <button type="button" class="link-btn" (click)="load()">Retry</button></div>
+  } @else if (jobs().length === 0) {
+    <div class="empty-panel">No exports yet. Open a report and choose "Export everything".</div>
+  } @else {
+    @if (downloadError()) { <div class="error-panel">{{ downloadError() }}</div> }
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Report</th><th>Filters</th><th>Requested</th><th>By</th><th>Status</th><th class="num">Rows</th><th class="num">Size</th><th></th></tr>
+        </thead>
+        <tbody>
+          @for (j of jobs(); track j.id) {
+            <tr>
+              <td>{{ title(j) }}</td>
+              <td class="muted">{{ filters(j) }}</td>
+              <td>{{ j.requestedAt | date: 'd MMM y, HH:mm' }}</td>
+              <td>{{ j.requestedBy }}</td>
+              <td>
+                <pe-status-badge [label]="j.status" [tone]="tone(j.status)" />
+                @if (j.error) { <div class="cell-meta">{{ j.error }}</div> }
+              </td>
+              <td class="num">{{ j.rowCount | number }}</td>
+              <td class="num">{{ size(j.fileSizeBytes) }}</td>
+              <td>
+                @if (j.canDownload) {
+                  <button type="button" class="download-btn" peOperate [disabled]="downloading() === j.id" (click)="download(j)">
+                    {{ downloading() === j.id ? 'Downloading…' : 'Download CSV' }}
+                  </button>
+                } @else if (j.status === 'Expired') {
+                  <span class="muted">File removed</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    @if (busy()) { <p class="note">Refreshing while exports are running…</p> }
+  }
+</div>

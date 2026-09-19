@@ -24,6 +24,8 @@ export interface ReportDefinition {
   columns: ReportColumn[];
   /** Day-wise reports can be broken down by a network level (zone ... DTR); the API then adds a `group` column. */
   groupable?: boolean;
+  /** The API's key for a full background export of this report, when it has one (row-level reports only). */
+  exportKey?: string;
   /** Extra server-side status filter (bill status), when the report supports one. */
   statusFilter?: { label: string; options: { label: string; value: string }[] };
 }
@@ -57,6 +59,7 @@ export const REPORT_DEFINITIONS: ReportDefinition[] = [
     title: 'Daily Billing Report',
     description: 'Every bill generated in the range with its charge breakdown. Totals cover the whole filtered set.',
     endpoint: 'billing',
+    exportKey: 'billing',
     statusFilter: {
       label: 'Bill status',
       options: [
@@ -136,6 +139,7 @@ export const REPORT_DEFINITIONS: ReportDefinition[] = [
     title: 'Recharge Failure Report',
     description: 'Recharge attempts where the payment failed or was declined.',
     endpoint: 'recharge-failures',
+    exportKey: 'recharge-failures',
     columns: [
       { key: 'initiatedAt', label: 'Initiated', type: 'datetime' },
       { key: 'accountNumber', label: 'Account', type: 'text' },
@@ -151,6 +155,7 @@ export const REPORT_DEFINITIONS: ReportDefinition[] = [
     title: 'Meter Credit Failure Report',
     description: 'Meter credit commands that failed or timed out after payment was received.',
     endpoint: 'meter-credit-failures',
+    exportKey: 'meter-credit-failures',
     columns: [
       { key: 'createdAt', label: 'Created', type: 'datetime' },
       { key: 'accountNumber', label: 'Account', type: 'text' },

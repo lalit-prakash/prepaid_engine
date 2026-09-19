@@ -1,7 +1,7 @@
 # API reference
 
 Every HTTP endpoint the Prepaid Engine API exposes: method, path, who may call it, and its parameters.
-Generated from the running app (117 endpoints), so it matches the code. Do not edit by hand; regenerate with:
+Generated from the running app (121 endpoints), so it matches the code. Do not edit by hand; regenerate with:
 
 ```
 ASPNETCORE_ENVIRONMENT=Production Jwt__Key=<any 32+ characters> dotnet run --project backend/PrepaidEngine.Api -- dump-endpoints docs/API_REFERENCE.md
@@ -223,6 +223,15 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | GET | `/api/v1/reconciliation-adjustments/{id:guid}` | Any signed-in user | path `id` guid |
 | GET | `/api/v1/reconciliation-adjustments/search` | Any signed-in user | query `q` string (optional)<br>query `after` string (optional)<br>query `pageSize` int (optional) |
 | GET | `/api/v1/reconciliation-adjustments/summary` | Any signed-in user | none |
+
+## Report jobs
+
+| Method | Path | Access | Parameters |
+|---|---|---|---|
+| GET | `/api/v1/report-jobs` | Any signed-in user | none |
+| POST | `/api/v1/report-jobs` | `Operations` (Admin, IT, Operator) | **body** `ReportJobRequest` { `report` string?, `from` date?, `to` date?, `status` string?, `zoneId` guid?, `circleId` guid?, `divisionId` guid?, `subDivisionId` guid?, `substationId` guid?, `feederId` guid?, `dtrId` guid? } |
+| GET | `/api/v1/report-jobs/{id:guid}` | Any signed-in user | path `id` guid |
+| GET | `/api/v1/report-jobs/{id:guid}/download` | `Operations` (Admin, IT, Operator) | path `id` guid |
 
 ## Reports
 

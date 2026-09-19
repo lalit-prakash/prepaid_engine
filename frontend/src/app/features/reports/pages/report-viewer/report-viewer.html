@@ -15,7 +15,19 @@
       <button type="button" class="export-btn" (click)="export()" [disabled]="loading() || rows().length === 0">
         Export CSV (rows shown)
       </button>
+      @if (d.exportKey) {
+        <button type="button" class="export-btn" peOperate (click)="requestFullExport()" [disabled]="exportRequesting()">
+          {{ exportRequesting() ? 'Requesting…' : 'Export everything (background)' }}
+        </button>
+      }
     </header>
+
+    @if (exportRequested()) {
+      <div class="export-note" role="status">
+        Your full export is being built with these filters. <a routerLink="/reports/exports">Follow it on the Report exports page</a>; you can keep working.
+      </div>
+    }
+    @if (exportError()) { <div class="error-panel">{{ exportError() }}</div> }
 
     <div class="report-filters">
       <label>From <input type="date" (change)="onDateChange('from', $any($event.target).value)" /></label>

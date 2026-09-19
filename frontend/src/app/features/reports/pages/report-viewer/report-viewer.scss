@@ -63,3 +63,5 @@ tfoot td { background: var(--color-neutral-100); border-bottom: none; }
   text-align: center;
 }
 .error-panel { color: var(--color-danger-dark); }
+.export-note { background: var(--color-success-light); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); }
+.report-header { align-items: flex-start; }
