@@ -163,7 +163,8 @@
 
 .header {
   height: var(--shell-header-height);
-  background: var(--surface-header);
+  background: color-mix(in srgb, var(--surface-header) 62%, transparent);
+  backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;

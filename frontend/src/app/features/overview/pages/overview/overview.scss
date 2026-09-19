@@ -3,8 +3,8 @@ $gap: 12px;
 .overview { display: flex; flex-direction: column; gap: $gap; min-width: 0; }
 
 /* ---------------------------------------------------------------- hero */
-.top { border-radius: var(--radius-lg); overflow: hidden; background: #e6eefc; box-shadow: var(--shadow-sm); }
-.top .kpi-row, .top .skeleton-row, .top .error-panel { margin: 10px; }
+.top { display: flex; flex-direction: column; }
+/* Full-bleed banner: it runs edge to edge and up behind the translucent header, as in the reference. */
 .hero {
   position: relative;
   isolation: isolate;
@@ -12,38 +12,34 @@ $gap: 12px;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-5);
-  padding: 16px 28px;
-  min-height: 112px;
-  overflow: hidden;
-  color: var(--text-primary);
+  margin: calc(-1 * (var(--shell-header-height) + var(--space-6))) calc(-1 * var(--space-6)) 0;
+  padding: calc(var(--shell-header-height) + 14px) var(--space-6) 66px;
+  color: #0f1f3d;
 }
-/* The photo is a 16:9 sunset with the tower on its right edge. Anchor the crop near the top of the
-   tower, soften and lighten it toward blue, then fade to a clean light sky on the text side. */
 .hero::before {
   content: '';
   position: absolute;
   inset: 0;
   z-index: -2;
-  background: url('/images/hero-transmission-towers.jpg') right 22% / cover no-repeat;
-  filter: saturate(0.55) brightness(1.1) hue-rotate(-12deg);
+  background: url('/images/hero-transmission-towers.jpg') center 8% / cover no-repeat;
 }
 .hero::after {
   content: '';
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(90deg, #e6eefc 0%, rgba(230, 238, 252, 0.96) 32%, rgba(150, 178, 240, 0.5) 62%, rgba(140, 170, 240, 0.4) 100%);
+  background: linear-gradient(90deg, rgba(236, 243, 255, 0.96) 0%, rgba(236, 243, 255, 0.85) 26%, rgba(236, 243, 255, 0) 58%);
 }
-.hero__text h1 { font-size: 40px; line-height: 1.1; letter-spacing: -0.02em; color: #0f1f3d; margin: 0 0 6px; }
+.hero__text h1 { font-size: 34px; line-height: 1.1; letter-spacing: -0.02em; color: #0f1f3d; margin: 0 0 4px; }
 .hero__subtitle { color: #33415c; font-size: 15px; margin: 0; }
-.hero__tagline { color: #0f1f3d; font-size: 14px; font-weight: var(--font-weight-medium); white-space: nowrap; margin: 0 auto; }
-.hero__clock { text-align: right; color: #0f1f3d; white-space: nowrap; }
+.hero__tagline { color: #fff; text-shadow: 0 1px 6px rgba(15, 31, 61, 0.6); font-size: 14px; white-space: nowrap; margin: 0 auto; }
+.hero__clock { text-align: right; color: #fff; white-space: nowrap; text-shadow: 0 1px 6px rgba(15, 31, 61, 0.55); }
 .hero__date { font-size: 13px; }
-.hero__time { font-size: 30px; font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; }
-.hero__accent { display: inline-block; width: 46px; height: 3px; border-radius: 2px; background: #2563eb; margin-top: 4px; }
+.hero__time { font-size: 26px; font-weight: 700; line-height: 1.15; }
+.hero__accent { display: inline-block; width: 46px; height: 3px; border-radius: 2px; background: #3b82f6; margin-top: 4px; }
 
 /* ---------------------------------------------------------------- kpis */
-.kpi-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: $gap; align-items: stretch; }
+.kpi-row { position: relative; margin-top: -34px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: $gap; align-items: stretch; }
 
 /* ---------------------------------------------------------------- rows */
 .row { display: grid; gap: $gap; align-items: stretch; }
