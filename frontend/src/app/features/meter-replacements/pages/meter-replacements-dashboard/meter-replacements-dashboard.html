@@ -2,75 +2,98 @@
   <div class="page-header">
     <h1>Meter Replacement History</h1>
     <p class="page-header__subtitle">
-      {{ replacements().length }} recorded meter event(s) — old and new meter readings are never compared against each other
+      {{ (stats()?.total ?? 0) | number }} recorded meter event(s) — old and new meter readings are never compared against each other
     </p>
   </div>
 
-  @if (loading()) {
+  @if (stats(); as s) {
+    <section class="kpi-row kpi-row--filterable">
+      <pe-kpi-card label="Total Events" [value]="s.total" tone="primary" [clickable]="true" (click)="filterByType(null)" />
+      <pe-kpi-card label="Replaced" [value]="s.replaced" tone="warning" [clickable]="true" (click)="filterByType(MeterAssignmentEventType.Replaced)" />
+      <pe-kpi-card label="Installed" [value]="s.installed" tone="success" [clickable]="true" (click)="filterByType(MeterAssignmentEventType.Installed)" />
+    </section>
+  } @else if (statsError()) {
+    <div class="error-panel">Could not load the summary counts from the API.</div>
+  } @else {
     <div class="skeleton-row">
       @for (i of [1,2]; track i) { <div class="skeleton-card"></div> }
     </div>
-  } @else if (error()) {
-    <div class="error-panel">{{ error() }}</div>
-  } @else {
-    <section class="kpi-row">
-      <pe-kpi-card label="Total Events" [value]="replacements().length" tone="primary" />
-      <pe-kpi-card label="Replaced" [value]="replacedCount" tone="warning" />
-      <pe-kpi-card label="Installed" [value]="installedCount" tone="success" />
-    </section>
+  }
 
-    <div class="toolbar">
-      <input
-        type="search"
-        placeholder="Search account number, name, or meter number…"
-        [value]="searchTerm()"
-        (input)="searchTerm.set($any($event.target).value)"
-      />
+  <div class="toolbar">
+    <input
+      #searchBox
+      type="search"
+      placeholder="Search account number, name, or meter number…"
+      [value]="searchTerm()"
+      (input)="onSearchInput($any($event.target).value)"
+    />
+    <select (change)="onTypeChange($any($event.target).value)">
+      <option value="" [selected]="typeFilter() === null">All events</option>
+      <option [value]="MeterAssignmentEventType.Replaced" [selected]="typeFilter() === MeterAssignmentEventType.Replaced">Replaced</option>
+      <option [value]="MeterAssignmentEventType.Installed" [selected]="typeFilter() === MeterAssignmentEventType.Installed">Installed</option>
+      <option [value]="MeterAssignmentEventType.Removed" [selected]="typeFilter() === MeterAssignmentEventType.Removed">Removed</option>
+    </select>
+    @if (hasActiveFilters) { <button type="button" class="toolbar__clear" (click)="clearFilters(); searchBox.value = ''">Clear filters</button> }
+  </div>
+
+  @if (list.loading() && list.items().length === 0) {
+    <div class="skeleton-row"><div class="skeleton-card"></div></div>
+  } @else if (list.error()) {
+    <div class="error-panel">
+      {{ list.error() }}
+      <button type="button" class="toolbar__clear" (click)="list.load()">Retry</button>
+    </div>
+  } @else if (list.items().length === 0) {
+    <div class="empty-panel">{{ hasActiveFilters ? 'No meter events match these filters.' : 'No meter replacement events have been recorded yet.' }}</div>
+  } @else {
+    <div class="table-wrap" [class.table-wrap--loading]="list.loading()">
+      <table>
+        <thead>
+          <tr>
+            <th>Effective</th>
+            <th>Account</th>
+            <th>Consumer</th>
+            <th>Event</th>
+            <th>Old Meter</th>
+            <th class="num">Closing Reading</th>
+            <th>New Meter</th>
+            <th class="num">Opening Reading</th>
+            <th>Reason</th>
+            <th>Recorded</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (r of list.items(); track r.id) {
+            <tr>
+              <td>{{ r.effectiveFrom | date: 'medium' }}</td>
+              <td><a [routerLink]="['/consumers', r.accountNumber]">{{ r.accountNumber }}</a></td>
+              <td>{{ r.name }}</td>
+              <td>
+                @switch (r.eventType) {
+                  @case (MeterAssignmentEventType.Installed) { <pe-status-badge label="Installed" tone="success" /> }
+                  @case (MeterAssignmentEventType.Removed) { <pe-status-badge label="Removed" tone="neutral" /> }
+                  @default { <pe-status-badge label="Replaced" tone="warning" /> }
+                }
+              </td>
+              <td class="mono">{{ r.oldMeterNumber ?? '—' }}</td>
+              <td class="num">{{ r.oldMeterClosingReadingKwh !== null ? (r.oldMeterClosingReadingKwh | number: '1.2-2') + ' kWh' : '—' }}</td>
+              <td class="mono">{{ r.newMeterNumber }}</td>
+              <td class="num">{{ r.newMeterOpeningReadingKwh | number: '1.2-2' }} kWh</td>
+              <td class="reason">{{ r.reason ?? '—' }}</td>
+              <td>{{ r.recordedAt | date: 'medium' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
     </div>
 
-    @if (filtered.length === 0) {
-      <div class="empty-panel">No meter replacement events matched your search.</div>
-    } @else {
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Effective</th>
-              <th>Account</th>
-              <th>Consumer</th>
-              <th>Event</th>
-              <th>Old Meter</th>
-              <th class="num">Closing Reading</th>
-              <th>New Meter</th>
-              <th class="num">Opening Reading</th>
-              <th>Reason</th>
-              <th>Recorded</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (r of filtered; track r.id) {
-              <tr>
-                <td>{{ r.effectiveFrom | date: 'medium' }}</td>
-                <td><a [routerLink]="['/consumers', r.accountNumber]">{{ r.accountNumber }}</a></td>
-                <td>{{ r.name }}</td>
-                <td>
-                  @switch (r.eventType) {
-                    @case (MeterAssignmentEventType.Installed) { <pe-status-badge label="Installed" tone="success" /> }
-                    @case (MeterAssignmentEventType.Removed) { <pe-status-badge label="Removed" tone="neutral" /> }
-                    @default { <pe-status-badge label="Replaced" tone="warning" /> }
-                  }
-                </td>
-                <td class="mono">{{ r.oldMeterNumber ?? '—' }}</td>
-                <td class="num">{{ r.oldMeterClosingReadingKwh !== null ? (r.oldMeterClosingReadingKwh | number: '1.2-2') + ' kWh' : '—' }}</td>
-                <td class="mono">{{ r.newMeterNumber }}</td>
-                <td class="num">{{ r.newMeterOpeningReadingKwh | number: '1.2-2' }} kWh</td>
-                <td class="reason">{{ r.reason ?? '—' }}</td>
-                <td>{{ r.recordedAt | date: 'medium' }}</td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    }
+    <div class="pager">
+      <span>{{ list.totalCount() | number }} event(s){{ hasActiveFilters ? ' match' : '' }} · page {{ list.pageIndex() + 1 }}</span>
+      <span class="pager__buttons">
+        <button type="button" (click)="list.previous()" [disabled]="list.pageIndex() === 0 || list.loading()">Previous</button>
+        <button type="button" (click)="list.next()" [disabled]="!list.nextCursor() || list.loading()">Next</button>
+      </span>
+    </div>
   }
 </div>

@@ -1,7 +1,7 @@
 # API reference
 
 Every HTTP endpoint the Prepaid Engine API exposes: method, path, who may call it, and its parameters.
-Generated from the running app (106 endpoints), so it matches the code. Do not edit by hand; regenerate with:
+Generated from the running app (114 endpoints), so it matches the code. Do not edit by hand; regenerate with:
 
 ```
 ASPNETCORE_ENVIRONMENT=Production Jwt__Key=<any 32+ characters> dotnet run --project backend/PrepaidEngine.Api -- dump-endpoints docs/API_REFERENCE.md
@@ -115,6 +115,8 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | GET | `/api/v1/conversions/{id:guid}` | Any signed-in user | path `id` guid |
 | GET | `/api/v1/conversions/reverse` | Any signed-in user | none |
 | POST | `/api/v1/conversions/reverse` | `Operations` (Admin, IT, Operator) | **body** `ReverseConversionApiRequest` { `consumerNumber` string, `reason` string, `requestedBy` string } |
+| GET | `/api/v1/conversions/search` | Any signed-in user | query `q` string (optional)<br>query `status` string (optional)<br>query `after` string (optional)<br>query `pageSize` int (optional) |
+| GET | `/api/v1/conversions/summary` | Any signed-in user | none |
 
 ## Dashboard
 
@@ -129,6 +131,8 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | GET | `/api/v1/exceptions` | Any signed-in user | none |
 | GET | `/api/v1/exceptions/{id:guid}` | Any signed-in user | path `id` guid |
 | POST | `/api/v1/exceptions/{id:guid}/resolve` | `Operations` (Admin, IT, Operator) | path `id` guid<br>**body** `ResolutionRequest` { `note` string } |
+| GET | `/api/v1/exceptions/search` | Any signed-in user | query `q` string (optional)<br>query `status` OperationalExceptionStatus (Open|Resolved) (optional)<br>query `after` string (optional)<br>query `pageSize` int (optional) |
+| GET | `/api/v1/exceptions/summary` | Any signed-in user | none |
 
 ## Meter commands (meter credit)
 
@@ -175,6 +179,8 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | Method | Path | Access | Parameters |
 |---|---|---|---|
 | GET | `/api/v1/meter-replacements` | Any signed-in user | none |
+| GET | `/api/v1/meter-replacements/search` | Any signed-in user | query `q` string (optional)<br>query `eventType` MeterAssignmentEventType (Installed|Replaced|Removed) (optional)<br>query `after` string (optional)<br>query `pageSize` int (optional) |
+| GET | `/api/v1/meter-replacements/summary` | Any signed-in user | none |
 
 ## Network
 
@@ -214,6 +220,8 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 |---|---|---|---|
 | GET | `/api/v1/reconciliation-adjustments` | Any signed-in user | none |
 | GET | `/api/v1/reconciliation-adjustments/{id:guid}` | Any signed-in user | path `id` guid |
+| GET | `/api/v1/reconciliation-adjustments/search` | Any signed-in user | query `q` string (optional)<br>query `after` string (optional)<br>query `pageSize` int (optional) |
+| GET | `/api/v1/reconciliation-adjustments/summary` | Any signed-in user | none |
 
 ## Reports
 

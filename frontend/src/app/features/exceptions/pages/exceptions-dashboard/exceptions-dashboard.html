@@ -1,98 +1,120 @@
 <div class="exceptions">
   <div class="page-header">
     <h1>Exceptions</h1>
-    <p class="page-header__subtitle">{{ exceptions().length }} operational exception(s), auto-raised on a real Failed/TimedOut command</p>
+    <p class="page-header__subtitle">{{ (stats()?.total ?? 0) | number }} operational exception(s), auto-raised on a real Failed/TimedOut command</p>
   </div>
 
-  @if (loading()) {
+  @if (stats(); as s) {
+    <section class="kpi-row kpi-row--filterable">
+      <pe-kpi-card label="Total Exceptions" [value]="s.total" tone="primary" [clickable]="true" (click)="filterByStatus(null)" />
+      <pe-kpi-card label="Open" [value]="s.open" tone="danger" [clickable]="true" (click)="filterByStatus(OperationalExceptionStatus.Open)" />
+      <pe-kpi-card label="Resolved" [value]="s.resolved" tone="success" [clickable]="true" (click)="filterByStatus(OperationalExceptionStatus.Resolved)" />
+    </section>
+  } @else if (statsError()) {
+    <div class="error-panel">Could not load the summary counts from the API.</div>
+  } @else {
     <div class="skeleton-row">
       @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
     </div>
-  } @else if (error()) {
-    <div class="error-panel">{{ error() }}</div>
-  } @else {
-    <section class="kpi-row">
-      <pe-kpi-card label="Total Exceptions" [value]="exceptions().length" tone="primary" />
-      <pe-kpi-card label="Open" [value]="openCount" tone="danger" />
-      <pe-kpi-card label="Resolved" [value]="resolvedCount" tone="success" />
-    </section>
+  }
 
-    <div class="toolbar">
-      <input
-        type="search"
-        placeholder="Search account number or name…"
-        [value]="searchTerm()"
-        (input)="searchTerm.set($any($event.target).value)"
-      />
+  <div class="toolbar">
+    <input
+      #searchBox
+      type="search"
+      placeholder="Search account number, name or description…"
+      [value]="searchTerm()"
+      (input)="onSearchInput($any($event.target).value)"
+    />
+    <select (change)="onStatusChange($any($event.target).value)">
+      <option value="" [selected]="statusFilter() === null">All statuses</option>
+      <option [value]="OperationalExceptionStatus.Open" [selected]="statusFilter() === OperationalExceptionStatus.Open">Open</option>
+      <option [value]="OperationalExceptionStatus.Resolved" [selected]="statusFilter() === OperationalExceptionStatus.Resolved">Resolved</option>
+    </select>
+    @if (hasActiveFilters) { <button type="button" class="toolbar__clear" (click)="clearFilters(); searchBox.value = ''">Clear filters</button> }
+  </div>
+
+  @if (list.loading() && list.items().length === 0) {
+    <div class="skeleton-row"><div class="skeleton-card"></div></div>
+  } @else if (list.error()) {
+    <div class="error-panel">
+      {{ list.error() }}
+      <button type="button" class="toolbar__clear" (click)="list.load()">Retry</button>
+    </div>
+  } @else if (list.items().length === 0) {
+    <div class="empty-panel">{{ hasActiveFilters ? 'No operational exceptions match these filters.' : 'No operational exceptions have been raised yet.' }}</div>
+  } @else {
+    <div class="table-wrap" [class.table-wrap--loading]="list.loading()">
+      <table>
+        <thead>
+          <tr>
+            <th>Raised</th>
+            <th>Account</th>
+            <th>Consumer</th>
+            <th>Source</th>
+            <th>Description</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (e of list.items(); track e.id) {
+            <tr>
+              <td>{{ e.createdAt | date: 'medium' }}</td>
+              <td><a [routerLink]="['/consumers', e.accountNumber]">{{ e.accountNumber }}</a></td>
+              <td>{{ e.name }}</td>
+              <td>
+                @if (e.sourceType === OperationalExceptionSourceType.MeterCommand) {
+                  <a [routerLink]="['/meter-credit', e.sourceId]">Meter Command</a>
+                } @else {
+                  <a [routerLink]="['/rc-dc', e.sourceId]">Connectivity Command</a>
+                }
+              </td>
+              <td class="description">{{ e.description }}</td>
+              <td>
+                @if (e.status === OperationalExceptionStatus.Resolved) {
+                  <pe-status-badge label="Resolved" tone="success" />
+                  @if (e.resolutionNote) { <div class="resolution-note">{{ e.resolutionNote }}</div> }
+                } @else {
+                  <pe-status-badge label="Open" tone="danger" />
+                }
+              </td>
+              <td>
+                @if (e.status === OperationalExceptionStatus.Open) {
+                  @if (resolvingId() !== e.id) {
+                    <button type="button" class="resolve-btn" (click)="requestResolve(e.id)" peOperate>Resolve</button>
+                  } @else {
+                    <div class="resolve-confirm">
+                      <input
+                        type="text"
+                        placeholder="Resolution note…"
+                        [(ngModel)]="resolutionNote"
+                      />
+                      <div class="resolve-confirm__actions">
+                        <button type="button" class="resolve-btn" [disabled]="resolveSubmitting()" (click)="confirmResolve()">
+                          {{ resolveSubmitting() ? 'Resolving…' : 'Confirm' }}
+                        </button>
+                        <button type="button" class="cancel-btn" (click)="cancelResolve()">Cancel</button>
+                      </div>
+                      @if (resolveError()) { <div class="form-error">{{ resolveError() }}</div> }
+                    </div>
+                  }
+                } @else {
+                  <span class="empty-note">—</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
     </div>
 
-    @if (filtered.length === 0) {
-      <div class="empty-panel">No operational exceptions matched your search.</div>
-    } @else {
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Raised</th>
-              <th>Account</th>
-              <th>Consumer</th>
-              <th>Source</th>
-              <th>Description</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (e of filtered; track e.id) {
-              <tr>
-                <td>{{ e.createdAt | date: 'medium' }}</td>
-                <td><a [routerLink]="['/consumers', e.accountNumber]">{{ e.accountNumber }}</a></td>
-                <td>{{ e.name }}</td>
-                <td>
-                  @if (e.sourceType === OperationalExceptionSourceType.MeterCommand) {
-                    <a [routerLink]="['/meter-credit', e.sourceId]">Meter Command</a>
-                  } @else {
-                    <a [routerLink]="['/rc-dc', e.sourceId]">Connectivity Command</a>
-                  }
-                </td>
-                <td class="description">{{ e.description }}</td>
-                <td>
-                  @if (e.status === OperationalExceptionStatus.Resolved) {
-                    <pe-status-badge label="Resolved" tone="success" />
-                    @if (e.resolutionNote) { <div class="resolution-note">{{ e.resolutionNote }}</div> }
-                  } @else {
-                    <pe-status-badge label="Open" tone="danger" />
-                  }
-                </td>
-                <td>
-                  @if (e.status === OperationalExceptionStatus.Open) {
-                    @if (resolvingId() !== e.id) {
-                      <button type="button" class="resolve-btn" (click)="requestResolve(e.id)" peOperate>Resolve</button>
-                    } @else {
-                      <div class="resolve-confirm">
-                        <input
-                          type="text"
-                          placeholder="Resolution note…"
-                          [(ngModel)]="resolutionNote"
-                        />
-                        <div class="resolve-confirm__actions">
-                          <button type="button" class="resolve-btn" [disabled]="resolveSubmitting()" (click)="confirmResolve()">
-                            {{ resolveSubmitting() ? 'Resolving…' : 'Confirm' }}
-                          </button>
-                          <button type="button" class="cancel-btn" (click)="cancelResolve()">Cancel</button>
-                        </div>
-                        @if (resolveError()) { <div class="form-error">{{ resolveError() }}</div> }
-                      </div>
-                    }
-                  } @else {
-                    <span class="empty-note">—</span>
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    }
+    <div class="pager">
+      <span>{{ list.totalCount() | number }} exception(s){{ hasActiveFilters ? ' match' : '' }} · page {{ list.pageIndex() + 1 }}</span>
+      <span class="pager__buttons">
+        <button type="button" (click)="list.previous()" [disabled]="list.pageIndex() === 0 || list.loading()">Previous</button>
+        <button type="button" (click)="list.next()" [disabled]="!list.nextCursor() || list.loading()">Next</button>
+      </span>
+    </div>
   }
 </div>

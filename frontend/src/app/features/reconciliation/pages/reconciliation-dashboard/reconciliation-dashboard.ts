@@ -1,8 +1,11 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { Subject, Subscription, debounceTime } from 'rxjs';
+import { PagedList } from '../../../../shared/utils/paged-list';
 import { ReconciliationService } from '../../../../core/services/reconciliation.service';
+import { ReconciliationSummaryStats } from '../../../../core/models/reconciliation.model';
 import { ReconciliationAdjustmentSummary } from '../../../../core/models/reconciliation.model';
 import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
 
@@ -21,11 +24,10 @@ import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
   templateUrl: './reconciliation-dashboard.html',
   styleUrl: './reconciliation-dashboard.scss',
 })
-export class ReconciliationDashboard implements OnInit {
-  protected readonly adjustments = signal<ReconciliationAdjustmentSummary[]>([]);
-  protected readonly loading = signal(true);
-  protected readonly error = signal<string | null>(null);
+export class ReconciliationDashboard implements OnInit, OnDestroy {
   protected readonly searchTerm = signal('');
+  protected readonly stats = signal<ReconciliationSummaryStats | null>(null);
+  protected readonly statsError = signal(false);
 
   protected readonly accountNumber = signal('');
   protected readonly amount = signal<number | null>(null);
@@ -34,38 +36,46 @@ export class ReconciliationDashboard implements OnInit {
   protected readonly applyError = signal<string | null>(null);
   protected readonly applySuccess = signal<string | null>(null);
 
+  protected readonly list = new PagedList<ReconciliationAdjustmentSummary>(
+    (after) => this.reconciliationService.search({ q: this.searchTerm(), after, pageSize: 25 }),
+    'Could not load reconciliation adjustments from the API.',
+  );
+
+  private readonly search$ = new Subject<string>();
+  private searchSub?: Subscription;
+
   constructor(private readonly reconciliationService: ReconciliationService) {}
 
   ngOnInit(): void {
-    this.load();
-  }
-
-  private load(): void {
-    this.reconciliationService.list().subscribe({
-      next: (adjustments) => {
-        this.adjustments.set(adjustments);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.error.set('Could not load reconciliation adjustments from the API.');
-        this.loading.set(false);
-      },
+    this.searchSub = this.search$.pipe(debounceTime(300)).subscribe((term) => {
+      if (term === this.searchTerm()) return;
+      this.searchTerm.set(term);
+      this.list.reload();
     });
+    this.loadStats();
+    this.list.load();
   }
 
-  protected get filtered(): ReconciliationAdjustmentSummary[] {
-    const term = this.searchTerm().trim().toLowerCase();
-    if (!term) return this.adjustments();
-    return this.adjustments().filter(
-      (a) => a.accountNumber.toLowerCase().includes(term) || a.name.toLowerCase().includes(term),
-    );
+  ngOnDestroy(): void {
+    this.searchSub?.unsubscribe();
+    this.list.destroy();
   }
 
-  protected get totalCredited(): number {
-    return this.adjustments().filter((a) => a.amount > 0).reduce((sum, a) => sum + a.amount, 0);
+  private loadStats(): void {
+    this.reconciliationService.summary().subscribe({ next: (s) => this.stats.set(s), error: () => this.statsError.set(true) });
   }
-  protected get totalDebited(): number {
-    return this.adjustments().filter((a) => a.amount < 0).reduce((sum, a) => sum + Math.abs(a.amount), 0);
+
+  protected onSearchInput(term: string): void {
+    this.search$.next(term);
+  }
+
+  protected clearFilters(): void {
+    this.searchTerm.set('');
+    this.list.reload();
+  }
+
+  protected get hasActiveFilters(): boolean {
+    return !!this.searchTerm().trim();
   }
 
   submitAdjustment(): void {
@@ -93,7 +103,8 @@ export class ReconciliationDashboard implements OnInit {
           this.accountNumber.set('');
           this.amount.set(null);
           this.reference.set('');
-          this.load();
+          this.loadStats();
+          this.list.reload(); // the new adjustment is the newest row, so go back to the first page
         },
         error: (err) => {
           this.applying.set(false);

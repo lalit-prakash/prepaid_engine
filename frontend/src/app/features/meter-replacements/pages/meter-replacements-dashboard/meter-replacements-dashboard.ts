@@ -1,16 +1,18 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { Subject, Subscription, debounceTime } from 'rxjs';
 import { MeterReplacementService } from '../../../../core/services/meter-replacement.service';
-import { MeterAssignmentEventType, MeterReplacementSummary } from '../../../../core/models/meter-replacement.model';
+import { MeterAssignmentEventType, MeterReplacementSummary, MeterReplacementSummaryStats } from '../../../../core/models/meter-replacement.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
+import { PagedList } from '../../../../shared/utils/paged-list';
+
+const PAGE_SIZE = 25;
 
 /**
- * Real, API-backed Meter Replacement History dashboard (GET /api/v1/meter-replacements) — the
- * audit trail (`MeterAssignment`) that exists specifically so an old meter's cumulative reading
- * is never compared against a new meter's cumulative reading — they're different physical
- * meters. Read-only by design: a replacement is a permanent audit record, never edited here.
+ * Meter Replacement History: every recorded meter event. Counts come from GET /api/v1/meter-replacements/summary and the
+ * table from the keyset-paged GET /api/v1/meter-replacements/search. Old and new meter readings are never compared.
  */
 @Component({
   selector: 'pe-meter-replacements-dashboard',
@@ -18,49 +20,60 @@ import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
   templateUrl: './meter-replacements-dashboard.html',
   styleUrl: './meter-replacements-dashboard.scss',
 })
-export class MeterReplacementsDashboard implements OnInit {
-  protected readonly replacements = signal<MeterReplacementSummary[]>([]);
-  protected readonly loading = signal(true);
-  protected readonly error = signal<string | null>(null);
+export class MeterReplacementsDashboard implements OnInit, OnDestroy {
   protected readonly searchTerm = signal('');
+  protected readonly typeFilter = signal<MeterAssignmentEventType | null>(null);
+  protected readonly stats = signal<MeterReplacementSummaryStats | null>(null);
+  protected readonly statsError = signal(false);
   protected readonly MeterAssignmentEventType = MeterAssignmentEventType;
+
+  protected readonly list = new PagedList<MeterReplacementSummary>(
+    (after) => this.meterReplacementService.search({ q: this.searchTerm(), eventType: this.typeFilter(), after, pageSize: PAGE_SIZE }),
+    'Could not load meter replacement history from the API.',
+  );
+
+  private readonly search$ = new Subject<string>();
+  private searchSub?: Subscription;
 
   constructor(private readonly meterReplacementService: MeterReplacementService) {}
 
   ngOnInit(): void {
-    this.load();
-  }
-
-  private load(): void {
-    this.meterReplacementService.list().subscribe({
-      next: (replacements) => {
-        this.replacements.set(replacements);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.error.set('Could not load meter replacement history from the API.');
-        this.loading.set(false);
-      },
+    this.searchSub = this.search$.pipe(debounceTime(300)).subscribe((term) => {
+      if (term === this.searchTerm()) return;
+      this.searchTerm.set(term);
+      this.list.reload();
     });
+    this.meterReplacementService.summary().subscribe({ next: (s) => this.stats.set(s), error: () => this.statsError.set(true) });
+    this.list.load();
   }
 
-  protected get filtered(): MeterReplacementSummary[] {
-    const term = this.searchTerm().trim().toLowerCase();
-    if (!term) return this.replacements();
-    return this.replacements().filter(
-      (r) =>
-        r.accountNumber.toLowerCase().includes(term) ||
-        r.name.toLowerCase().includes(term) ||
-        r.newMeterNumber.toLowerCase().includes(term) ||
-        (r.oldMeterNumber ?? '').toLowerCase().includes(term),
-    );
+  ngOnDestroy(): void {
+    this.searchSub?.unsubscribe();
+    this.list.destroy();
   }
 
-  protected get replacedCount(): number {
-    return this.replacements().filter((r) => r.eventType === MeterAssignmentEventType.Replaced).length;
+  protected onSearchInput(term: string): void {
+    this.search$.next(term);
   }
-  protected get installedCount(): number {
-    return this.replacements().filter((r) => r.eventType === MeterAssignmentEventType.Installed).length;
+
+  protected onTypeChange(raw: string): void {
+    this.typeFilter.set(raw === '' ? null : (Number(raw) as MeterAssignmentEventType));
+    this.list.reload();
+  }
+
+  protected filterByType(type: MeterAssignmentEventType | null): void {
+    this.typeFilter.set(type);
+    this.list.reload();
+  }
+
+  protected clearFilters(): void {
+    this.searchTerm.set('');
+    this.typeFilter.set(null);
+    this.list.reload();
+  }
+
+  protected get hasActiveFilters(): boolean {
+    return !!this.searchTerm().trim() || this.typeFilter() !== null;
   }
 
   protected eventTypeLabel(type: MeterAssignmentEventType): string {

@@ -1,34 +1,38 @@
 import { OperateOnly } from '../../../../shared/directives/operate-only';
-import { DatePipe } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { DatePipe, DecimalPipe } from '@angular/common';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { Subject, Subscription, debounceTime } from 'rxjs';
 import { OperationalExceptionService } from '../../../../core/services/operational-exception.service';
 import {
   OperationalExceptionSourceType,
   OperationalExceptionStatus,
   OperationalExceptionSummary,
+  OperationalExceptionSummaryStats,
 } from '../../../../core/models/operational-exception.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
+import { PagedList } from '../../../../shared/utils/paged-list';
+
+const PAGE_SIZE = 25;
 
 /**
- * Real, API-backed Exceptions dashboard (GET /api/v1/exceptions) — every operational exception,
- * auto-raised the moment a MeterCommand or ConnectivityCommand reaches Failed/TimedOut. Never
- * hand-entered, so nothing that needs operator attention can go unlisted. Resolving is a genuine
- * action gated behind a mandatory note, matching this project's mandatory-reason discipline.
+ * Exceptions: every operational exception, auto-raised the moment a MeterCommand or ConnectivityCommand reaches
+ * Failed/TimedOut (never hand-entered). Counts come from GET /api/v1/exceptions/summary and the table from the
+ * keyset-paged GET /api/v1/exceptions/search. Resolving is a real action gated behind a mandatory note.
  */
 @Component({
   selector: 'pe-exceptions-dashboard',
-  imports: [OperateOnly, StatusBadge, KpiCard, DatePipe, FormsModule, RouterLink],
+  imports: [OperateOnly, StatusBadge, KpiCard, DatePipe, DecimalPipe, FormsModule, RouterLink],
   templateUrl: './exceptions-dashboard.html',
   styleUrl: './exceptions-dashboard.scss',
 })
-export class ExceptionsDashboard implements OnInit {
-  protected readonly exceptions = signal<OperationalExceptionSummary[]>([]);
-  protected readonly loading = signal(true);
-  protected readonly error = signal<string | null>(null);
+export class ExceptionsDashboard implements OnInit, OnDestroy {
   protected readonly searchTerm = signal('');
+  protected readonly statusFilter = signal<OperationalExceptionStatus | null>(null);
+  protected readonly stats = signal<OperationalExceptionSummaryStats | null>(null);
+  protected readonly statsError = signal(false);
   protected readonly OperationalExceptionStatus = OperationalExceptionStatus;
   protected readonly OperationalExceptionSourceType = OperationalExceptionSourceType;
 
@@ -37,38 +41,57 @@ export class ExceptionsDashboard implements OnInit {
   protected readonly resolveError = signal<string | null>(null);
   protected readonly resolveSubmitting = signal(false);
 
+  protected readonly list = new PagedList<OperationalExceptionSummary>(
+    (after) => this.exceptionService.search({ q: this.searchTerm(), status: this.statusFilter(), after, pageSize: PAGE_SIZE }),
+    'Could not load operational exceptions from the API.',
+  );
+
+  private readonly search$ = new Subject<string>();
+  private searchSub?: Subscription;
+
   constructor(private readonly exceptionService: OperationalExceptionService) {}
 
   ngOnInit(): void {
-    this.load();
-  }
-
-  private load(): void {
-    this.exceptionService.list().subscribe({
-      next: (exceptions) => {
-        this.exceptions.set(exceptions);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.error.set('Could not load operational exceptions from the API.');
-        this.loading.set(false);
-      },
+    this.searchSub = this.search$.pipe(debounceTime(300)).subscribe((term) => {
+      if (term === this.searchTerm()) return;
+      this.searchTerm.set(term);
+      this.list.reload();
     });
+    this.loadStats();
+    this.list.load();
   }
 
-  protected get filtered(): OperationalExceptionSummary[] {
-    const term = this.searchTerm().trim().toLowerCase();
-    if (!term) return this.exceptions();
-    return this.exceptions().filter(
-      (e) => e.accountNumber.toLowerCase().includes(term) || e.name.toLowerCase().includes(term),
-    );
+  ngOnDestroy(): void {
+    this.searchSub?.unsubscribe();
+    this.list.destroy();
   }
 
-  protected get openCount(): number {
-    return this.exceptions().filter((e) => e.status === OperationalExceptionStatus.Open).length;
+  private loadStats(): void {
+    this.exceptionService.summary().subscribe({ next: (s) => this.stats.set(s), error: () => this.statsError.set(true) });
   }
-  protected get resolvedCount(): number {
-    return this.exceptions().filter((e) => e.status === OperationalExceptionStatus.Resolved).length;
+
+  protected onSearchInput(term: string): void {
+    this.search$.next(term);
+  }
+
+  protected onStatusChange(raw: string): void {
+    this.statusFilter.set(raw === '' ? null : (Number(raw) as OperationalExceptionStatus));
+    this.list.reload();
+  }
+
+  protected filterByStatus(status: OperationalExceptionStatus | null): void {
+    this.statusFilter.set(status);
+    this.list.reload();
+  }
+
+  protected clearFilters(): void {
+    this.searchTerm.set('');
+    this.statusFilter.set(null);
+    this.list.reload();
+  }
+
+  protected get hasActiveFilters(): boolean {
+    return !!this.searchTerm().trim() || this.statusFilter() !== null;
   }
 
   requestResolve(id: string): void {
@@ -95,7 +118,8 @@ export class ExceptionsDashboard implements OnInit {
       next: () => {
         this.resolveSubmitting.set(false);
         this.resolvingId.set(null);
-        this.load();
+        this.list.load(); // stay on the same page: the resolved row stays visible unless a filter now excludes it
+        this.loadStats();
       },
       error: (err) => {
         this.resolveSubmitting.set(false);

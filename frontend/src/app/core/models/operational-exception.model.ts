@@ -21,3 +21,10 @@ export interface OperationalExceptionSummary {
   createdAt: string;
   resolvedAt: string | null;
 }
+
+/** GET /api/v1/exceptions/summary: counts computed by the database. */
+export interface OperationalExceptionSummaryStats {
+  total: number;
+  open: number;
+  resolved: number;
+}
