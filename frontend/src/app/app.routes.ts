@@ -188,7 +188,10 @@ export const routes: Routes = [
       },
       ...stubRoute('system-health', 'System Health'),
       ...stubRoute('service-requests', 'Service Requests'),
-      ...stubRoute('analytics', 'Analytics'),
+      {
+        path: 'analytics',
+        loadComponent: () => import('./features/analytics/pages/analytics/analytics').then((m) => m.Analytics),
+      },
       {
         path: 'sla-monitoring',
         loadComponent: () =>

@@ -65,7 +65,7 @@ export class Shell implements OnInit {
       items: [
         { label: 'Meter Data', path: '/meter-data', icon: 'trend' },
         { label: 'Billing', path: '/billing', icon: 'receipt' },
-        { label: 'Analytics', path: '/analytics', icon: 'chart', stub: true },
+        { label: 'Analytics', path: '/analytics', icon: 'chart' },
         { label: 'Reports', path: '/reports', icon: 'document' },
         { label: 'SLA Monitoring', path: '/sla-monitoring', icon: 'clock' },
         { label: 'Billing Holds', path: '/billing-holds', icon: 'pause' },
