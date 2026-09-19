@@ -26,7 +26,7 @@ public static class SecurityExtensions
         });
 
         builder.Services.AddCors(c => c.AddPolicy(CorsPolicy, p =>
-            p.WithOrigins(options.AllowedOrigins).WithHeaders("Authorization", "Content-Type").WithMethods("GET", "POST", "PUT", "DELETE")));
+            p.WithOrigins(options.AllowedOrigins).WithHeaders("Authorization", "Content-Type").WithMethods("GET", "POST", "PUT", "DELETE").WithExposedHeaders(ListCap.TruncatedHeader)));
 
         builder.Services.AddRateLimiter(r =>
         {

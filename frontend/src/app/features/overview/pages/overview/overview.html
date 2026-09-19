@@ -24,14 +24,14 @@
     </div>
   } @else {
     <section class="kpi-row" aria-label="Key performance indicators">
-      <pe-kpi-card [tile]="true" label="Consumers" [value]="consumers().length" tone="primary" icon="users"
+      <pe-kpi-card [tile]="true" label="Consumers" [value]="totalConsumers" tone="primary" icon="users"
         [sublabel]="activeCount + ' active'" [clickable]="true" (click)="goToConsumers()" />
       <pe-kpi-card [tile]="true" label="Wallet Balance" [value]="'₹' + (totalWalletBalance | number:'1.0-0')" tone="success" icon="wallet"
-        [sublabel]="'across ' + consumers().length + ' wallets'" />
+        [sublabel]="'across ' + totalConsumers + ' wallets'" />
       <pe-kpi-card [tile]="true" label="Healthy Meters" [value]="healthyMetersPct + '%'" tone="success" icon="signal"
-        [sublabel]="activeCount + ' / ' + consumers().length" />
+        [sublabel]="activeCount + ' / ' + totalConsumers" />
       <pe-kpi-card [tile]="true" label="Low Balance" [value]="lowBalanceCount" tone="warning" icon="alert"
-        [sublabel]="'of ' + consumers().length + ' consumers'" [clickable]="true" (click)="goToConsumers({ lowBalance: 'true' })" />
+        [sublabel]="'of ' + totalConsumers + ' consumers'" [clickable]="true" (click)="goToConsumers({ lowBalance: 'true' })" />
       @if (billingAvailable) {
         <pe-kpi-card [tile]="true" label="Billing (DLP)" [value]="billing().pct + '%'" tone="analytic" icon="receipt"
           [sublabel]="billing().successful + ' / ' + billing().total + ' processed'" />
@@ -89,9 +89,9 @@
 
       <div class="panel">
         <div class="panel__header"><h2>Billing Progress (DLP)</h2>@if (billingAvailable) { <span class="big-pct">{{ billing().pct }}%</span> }</div>
-        @if (dlpLoading()) {
+        @if (loading()) {
           <div class="panel__loading">Loading daily load profile data…</div>
-        } @else if (dlpError()) {
+        } @else if (error()) {
           <div class="panel__unavailable">Data unavailable — could not reach the meter-data API.</div>
         } @else if (!billingAvailable) {
           <div class="panel__unavailable">Data unavailable — no Daily Load Profile has been received yet.</div>
@@ -141,7 +141,7 @@
       <div class="panel">
         <div class="panel__header">
           <h2>Prepaid Network Health</h2>
-          <span class="panel__source">Total Consumers <b class="strong">{{ consumers().length }}</b></span>
+          <span class="panel__source">Total Consumers <b class="strong">{{ totalConsumers }}</b></span>
         </div>
         @if (!networkHealthAvailable()) {
           <div class="panel__unavailable">Data unavailable — no consumers to summarise.</div>
@@ -171,7 +171,7 @@
           <a routerLink="/exceptions" class="panel__link panel__link--inline">View All <pe-icon name="link" [size]="12" /></a>
         </div>
         <div class="pills" role="tablist" aria-label="Attention severity">
-          <button type="button" role="tab" class="pill" [class.pill--active]="attentionFilter() === 'all'" (click)="setAttentionFilter('all')">All ({{ attentionItems().length }})</button>
+          <button type="button" role="tab" class="pill" [class.pill--active]="attentionFilter() === 'all'" (click)="setAttentionFilter('all')">All ({{ attentionTotal() }})</button>
           <button type="button" role="tab" class="pill" [class.pill--active]="attentionFilter() === 'critical'" (click)="setAttentionFilter('critical')">Critical ({{ attentionCritical() }})</button>
           <button type="button" role="tab" class="pill" [class.pill--active]="attentionFilter() === 'warning'" (click)="setAttentionFilter('warning')">Warning ({{ attentionWarning() }})</button>
         </div>
@@ -267,9 +267,9 @@
           <h2>Recent Meter Operations</h2>
           <a routerLink="/rc-dc" class="panel__link panel__link--inline">View All <pe-icon name="link" [size]="12" /></a>
         </div>
-        @if (connectivityLoading()) {
+        @if (loading()) {
           <div class="panel__loading">Loading…</div>
-        } @else if (connectivityError()) {
+        } @else if (error()) {
           <div class="panel__unavailable">Data unavailable — could not reach the connectivity-commands API.</div>
         } @else if (recentMeterOps().length === 0) {
           <div class="panel__empty">No connectivity commands have been issued yet.</div>
@@ -280,7 +280,7 @@
               @for (c of recentMeterOps(); track c.id) {
                 <tr tabindex="0" (click)="goTo('/rc-dc/' + c.id)" (keydown.enter)="goTo('/rc-dc/' + c.id)">
                   <td>{{ c.name }}</td>
-                  <td class="mono">{{ meterNumberByAccount().get(c.accountNumber) ?? '—' }}</td>
+                  <td class="mono">{{ c.meterNumber }}</td>
                   <td>{{ c.commandType === 0 ? 'Disconnect' : 'Reconnect' }}</td>
                   <td class="muted">{{ c.createdAt | date:'d MMM, HH:mm' }}</td>
                   <td>
