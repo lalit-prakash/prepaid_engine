@@ -42,6 +42,9 @@ export class AuthService implements OnDestroy {
   /** Roles that may perform operational actions (recharge, disconnect/reconnect, retries, exceptions). Mirrors the API's "Operations" policy. */
   readonly canOperate = computed(() => ['Admin', 'IT', 'Operator'].includes(this._role() ?? ''));
 
+  /** Roles that may load bulk data such as the network hierarchy. Mirrors the API's "DataAdmin" policy. */
+  readonly canManageData = computed(() => ['Admin', 'IT'].includes(this._role() ?? ''));
+
   private renewTimer?: ReturnType<typeof setTimeout>;
 
   constructor(private readonly http: HttpClient) {

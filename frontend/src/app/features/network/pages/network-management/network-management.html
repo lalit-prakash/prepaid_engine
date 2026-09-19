@@ -1,0 +1,118 @@
+<div class="network">
+  <div class="page-header">
+    <h1>Network Hierarchy</h1>
+    <p class="page-header__subtitle">
+      Zone › Circle › Division › Sub-division › Substation › Feeder › DTR. Load your network here, then map each consumer to the DTR that supplies it;
+      every report can then show and filter by these levels.
+    </p>
+  </div>
+
+  @if (summaryError()) {
+    <div class="error-panel">Could not load the network summary from the API.</div>
+  } @else if (summary(); as s) {
+    <div class="kpi-row">
+      <pe-kpi-card label="Zones" [value]="s.zones" tone="primary" />
+      <pe-kpi-card label="Circles" [value]="s.circles" tone="primary" />
+      <pe-kpi-card label="Divisions" [value]="s.divisions" tone="primary" />
+      <pe-kpi-card label="Sub-divisions" [value]="s.subDivisions" tone="primary" />
+      <pe-kpi-card label="Substations" [value]="s.substations" tone="primary" />
+      <pe-kpi-card label="Feeders" [value]="s.feeders" tone="primary" />
+      <pe-kpi-card label="DTRs" [value]="s.dtrs" tone="primary" />
+    </div>
+    <div class="kpi-row kpi-row--two">
+      <pe-kpi-card label="Consumers mapped to a DTR" [value]="s.consumersMapped" tone="success" />
+      <pe-kpi-card label="Consumers not mapped yet" [value]="s.consumersUnmapped" [tone]="s.consumersUnmapped > 0 ? 'warning' : 'neutral'"
+        sublabel="Shown as Not mapped in reports" />
+    </div>
+  }
+
+  @if (canImport()) {
+    <section class="panel">
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" class="tab" [class.tab--active]="kind() === 'hierarchy'" (click)="setKind('hierarchy')">1. Load hierarchy</button>
+        <button type="button" role="tab" class="tab" [class.tab--active]="kind() === 'mapping'" (click)="setKind('mapping')">2. Map consumers to DTRs</button>
+      </div>
+
+      @if (kind() === 'hierarchy') {
+        <p class="help">
+          One row per DTR, giving the code and name of every level above it (14 columns). A code identifies a node: a new code is created,
+          a changed name renames the node, and a code that already sits under a different parent is rejected. Up to {{ maxRows | number }} rows per file.
+        </p>
+      } @else {
+        <p class="help">
+          One row per consumer: their account number and the code of the DTR that supplies them. Load the hierarchy first so the DTR codes exist.
+          Up to {{ maxRows | number }} rows per file.
+        </p>
+      }
+
+      <div class="actions">
+        <label class="file-btn">
+          Choose CSV file
+          <input type="file" accept=".csv,text/csv" (change)="onFile($event)" [disabled]="checking() || saving()" />
+        </label>
+        <button type="button" class="link-btn" (click)="downloadTemplate()">Download template</button>
+        @if (fileName()) { <span class="file-name">{{ fileName() }}</span> }
+      </div>
+
+      @if (parseError()) { <div class="error-panel">{{ parseError() }}</div> }
+      @if (requestError()) { <div class="error-panel">{{ requestError() }}</div> }
+      @if (checking()) { <div class="note">Checking the file…</div> }
+      @if (saving()) { <div class="note">Saving…</div> }
+
+      @if (savedMessage()) {
+        <div class="ok-panel">
+          {{ savedMessage() }}
+          @if (result(); as r) {
+            @if (kind() === 'mapping') { {{ r.consumersMapped }} newly mapped, {{ r.consumersRemapped }} moved, {{ r.consumersUnchanged }} unchanged. }
+          }
+        </div>
+      }
+
+      @if (result(); as r) {
+        @if (!savedMessage()) {
+          <div class="result" [class.result--bad]="r.rowsWithErrors > 0">
+            <strong>{{ r.rowsRead | number }} rows checked.</strong>
+            @if (r.rowsWithErrors > 0) {
+              {{ r.rowsWithErrors | number }} row(s) have problems, so nothing will be saved until they are fixed.
+            } @else if (kind() === 'hierarchy') {
+              No problems.
+              @if (createdEntries().length === 0 && renamedEntries().length === 0) { Everything in this file is already loaded; nothing would change. }
+              @else {
+                Would create:
+                @for (e of createdEntries(); track e[0]) { <span class="chip">{{ e[1] | number }} {{ e[0] }}</span> }
+                @if (renamedEntries().length > 0) {
+                  Would rename:
+                  @for (e of renamedEntries(); track e[0]) { <span class="chip">{{ e[1] | number }} {{ e[0] }}</span> }
+                }
+              }
+            } @else {
+              No problems. Would map {{ r.consumersMapped | number }} new, move {{ r.consumersRemapped | number }} to a different DTR, leave {{ r.consumersUnchanged | number }} unchanged.
+            }
+          </div>
+
+          @if (r.rowsWithErrors > 0) {
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Line</th><th>Problem</th></tr></thead>
+                <tbody>
+                  @for (e of shownErrors(); track e.row) { <tr><td class="num">{{ e.row + 1 }}</td><td>{{ e.message }}</td></tr> }
+                </tbody>
+              </table>
+            </div>
+            @if (r.rowsWithErrors > shownErrors().length) {
+              <p class="note">Showing the first {{ shownErrors().length }} of {{ r.rowsWithErrors | number }} problems. Line numbers count the header as line 1.</p>
+            }
+          }
+
+          <div class="actions">
+            <button type="button" class="save-btn" [disabled]="!readyToSave() || saving() || checking()" (click)="save()">
+              {{ kind() === 'hierarchy' ? 'Save hierarchy' : 'Save mapping' }}
+            </button>
+          </div>
+        }
+      }
+    </section>
+  } @else {
+    <div class="note">You can view the network here. Loading it needs an Admin or IT account.</div>
+  }
+</div>

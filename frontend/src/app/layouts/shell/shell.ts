@@ -83,6 +83,7 @@ export class Shell implements OnInit {
       label: 'Configuration',
       items: [
         { label: 'Tariff & Parameters', path: '/tariffs', icon: 'gear' },
+        { label: 'Network Hierarchy', path: '/network', icon: 'building' },
         { label: 'User Management', path: '/user-management', icon: 'users', stub: true },
         { label: 'Roles & Permissions', path: '/roles-permissions', icon: 'lock', stub: true },
         { label: 'Integrations', path: '/integrations', icon: 'link', stub: true },

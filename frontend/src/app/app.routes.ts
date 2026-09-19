@@ -154,6 +154,11 @@ export const routes: Routes = [
       },
       ...stubRoute('automation', 'Automation Center'),
       {
+        path: 'network',
+        loadComponent: () =>
+          import('./features/network/pages/network-management/network-management').then((m) => m.NetworkManagement),
+      },
+      {
         path: 'audit',
         loadComponent: () =>
           import('./features/audit/pages/audit-dashboard/audit-dashboard').then((m) => m.AuditDashboard),
