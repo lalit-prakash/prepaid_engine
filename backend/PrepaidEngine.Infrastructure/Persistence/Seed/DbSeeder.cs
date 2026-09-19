@@ -157,4 +157,45 @@ public static class DbSeeder
 
         await context.SaveChangesAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Development only. Builds a small, plainly labelled demo network (one zone down to two feeders and four
+    /// DTRs) and maps every consumer that has no DTR onto it, round-robin, so hierarchy columns and filters can
+    /// be tried out. Real hierarchy data comes from the utility's own network master, not from here. Idempotent.
+    /// </summary>
+    public static async Task SeedDemoNetworkAsync(PrepaidEngineDbContext context, CancellationToken cancellationToken = default)
+    {
+        if (!await context.Zones.AnyAsync(cancellationToken))
+        {
+            var zone = new Zone(Guid.NewGuid(), "DEMO-Z1", "Demo Zone");
+            var circle = new Circle(Guid.NewGuid(), zone.Id, "DEMO-C1", "Demo Circle");
+            var division = new Division(Guid.NewGuid(), circle.Id, "DEMO-D1", "Demo Division");
+            var subDivision = new SubDivision(Guid.NewGuid(), division.Id, "DEMO-SD1", "Demo Sub-division");
+            var substation = new Substation(Guid.NewGuid(), subDivision.Id, "DEMO-SS1", "Demo Substation");
+            var feederA = new Feeder(Guid.NewGuid(), substation.Id, "DEMO-F1", "Demo Feeder A");
+            var feederB = new Feeder(Guid.NewGuid(), substation.Id, "DEMO-F2", "Demo Feeder B");
+            context.Zones.Add(zone);
+            context.Circles.Add(circle);
+            context.Divisions.Add(division);
+            context.SubDivisions.Add(subDivision);
+            context.Substations.Add(substation);
+            context.Feeders.AddRange(feederA, feederB);
+            context.Dtrs.AddRange(
+                new Dtr(Guid.NewGuid(), feederA.Id, "DEMO-T1", "Demo DTR 1"),
+                new Dtr(Guid.NewGuid(), feederA.Id, "DEMO-T2", "Demo DTR 2"),
+                new Dtr(Guid.NewGuid(), feederB.Id, "DEMO-T3", "Demo DTR 3"),
+                new Dtr(Guid.NewGuid(), feederB.Id, "DEMO-T4", "Demo DTR 4"));
+            await context.SaveChangesAsync(cancellationToken);
+        }
+
+        var demoDtrs = await context.Dtrs.Where(d => d.Code.StartsWith("DEMO-")).OrderBy(d => d.Code).Select(d => d.Id).ToListAsync(cancellationToken);
+        if (demoDtrs.Count == 0)
+            return;
+
+        var unmapped = await context.Consumers.Where(c => c.DtrId == null).OrderBy(c => c.AccountNumber).ToListAsync(cancellationToken);
+        for (var i = 0; i < unmapped.Count; i++)
+            unmapped[i].AssignDtr(demoDtrs[i % demoDtrs.Count]);
+        if (unmapped.Count > 0)
+            await context.SaveChangesAsync(cancellationToken);
+    }
 }

@@ -38,6 +38,12 @@ public class Consumer
     /// same.</summary>
     public string? MobileNumber { get; private set; }
 
+    /// <summary>The distribution transformer this consumer is supplied from; its position in the network
+    /// hierarchy (zone to feeder) is derived from it. Null until the consumer is mapped.</summary>
+    public Guid? DtrId { get; private set; }
+
+    public Dtr? Dtr { get; private set; }
+
     public Consumer(Guid id, string accountNumber, string name, string serviceAddress, SmartMeter meter, decimal connectedLoadKw, bool isNetMeter = false)
     {
         if (string.IsNullOrWhiteSpace(accountNumber))
@@ -101,6 +107,8 @@ public class Consumer
     /// consumer. A domain method rather than a raw setter, per this project's convention that a
     /// meaningful state change is always an explicit, named action.</summary>
     public void AssignTariff(Guid tariffId) => TariffId = tariffId;
+
+    public void AssignDtr(Guid dtrId) => DtrId = dtrId;
 
     /// <summary>Sets the notification destination.</summary>
     public void SetMobileNumber(string mobileNumber)

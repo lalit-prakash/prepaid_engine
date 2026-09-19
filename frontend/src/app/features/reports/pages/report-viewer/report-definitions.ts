@@ -12,6 +12,8 @@ export interface ReportColumn {
   /** Show a total for this column in the footer when the API supplies `totals[totalKey]`. */
   totalKey?: string;
   link?: (row: Record<string, unknown>) => string | null;
+  /** Only shown when the report is broken down by a network level. */
+  groupedOnly?: boolean;
 }
 
 export interface ReportDefinition {
@@ -20,9 +22,23 @@ export interface ReportDefinition {
   description: string;
   endpoint: string;
   columns: ReportColumn[];
+  /** Day-wise reports can be broken down by a network level (zone ... DTR); the API then adds a `group` column. */
+  groupable?: boolean;
   /** Extra server-side status filter (bill status), when the report supports one. */
   statusFilter?: { label: string; options: { label: string; value: string }[] };
 }
+
+/** The consumer's place in the supply network, shown on every row of the row-level reports. */
+const HIERARCHY_COLUMNS: ReportColumn[] = [
+  { key: 'zone', label: 'Zone', type: 'text' },
+  { key: 'circle', label: 'Circle', type: 'text' },
+  { key: 'division', label: 'Division', type: 'text' },
+  { key: 'subDivision', label: 'Sub-division', type: 'text' },
+  { key: 'substation', label: 'Substation', type: 'text' },
+  { key: 'feeder', label: 'Feeder', type: 'text' },
+  { key: 'dtr', label: 'DTR', type: 'text' },
+];
+const GROUP_COLUMN: ReportColumn = { key: 'group', label: 'Network group', type: 'text', groupedOnly: true };
 
 const RECHARGE_STATUS: Record<number, string> = { 0: 'Payment pending', 1: 'Payment received', 2: 'Payment failed', 3: 'Reversed' };
 const METER_COMMAND_STATUS: Record<number, string> = { 0: 'Queued', 1: 'Sent', 2: 'Acknowledged', 3: 'Failed', 4: 'Timed out' };
@@ -55,6 +71,7 @@ export const REPORT_DEFINITIONS: ReportDefinition[] = [
       { key: 'generatedAt', label: 'Generated', type: 'datetime' },
       { key: 'accountNumber', label: 'Account', type: 'text' },
       { key: 'name', label: 'Consumer', type: 'text' },
+      ...HIERARCHY_COLUMNS,
       { key: 'category', label: 'Category', type: 'enum', labels: CATEGORY_LABELS },
       { key: 'tariffName', label: 'Tariff used', type: 'text' },
       { key: 'energyChargeNet', label: 'Net energy', type: 'money' },
@@ -71,8 +88,10 @@ export const REPORT_DEFINITIONS: ReportDefinition[] = [
     title: 'Day-wise RC Report',
     description: 'Remote reconnection commands per day, with their outcomes.',
     endpoint: 'day-wise-rc-dc',
+    groupable: true,
     columns: [
       { key: 'date', label: 'Date', type: 'date' },
+      GROUP_COLUMN,
       { key: 'reconnectCount', label: 'Reconnects requested', type: 'number' },
       { key: 'acknowledgedCount', label: 'Acknowledged (all commands)', type: 'number' },
       { key: 'failedCount', label: 'Failed (all commands)', type: 'number' },
@@ -84,8 +103,10 @@ export const REPORT_DEFINITIONS: ReportDefinition[] = [
     title: 'Day-wise DC Report',
     description: 'Remote disconnection commands per day, with their outcomes.',
     endpoint: 'day-wise-rc-dc',
+    groupable: true,
     columns: [
       { key: 'date', label: 'Date', type: 'date' },
+      GROUP_COLUMN,
       { key: 'disconnectCount', label: 'Disconnects requested', type: 'number' },
       { key: 'acknowledgedCount', label: 'Acknowledged (all commands)', type: 'number' },
       { key: 'failedCount', label: 'Failed (all commands)', type: 'number' },
@@ -97,8 +118,10 @@ export const REPORT_DEFINITIONS: ReportDefinition[] = [
     title: 'Day-wise Recharge Summary',
     description: 'Recharge volumes per day, with payment outcome and meter-credit outcome kept separate.',
     endpoint: 'day-wise-recharge',
+    groupable: true,
     columns: [
       { key: 'date', label: 'Date', type: 'date' },
+      GROUP_COLUMN,
       { key: 'totalCount', label: 'Attempts', type: 'number', totalKey: 'totalCount' },
       { key: 'paymentReceivedCount', label: 'Payment received', type: 'number', totalKey: 'paymentReceivedCount' },
       { key: 'paymentFailedCount', label: 'Payment failed', type: 'number', totalKey: 'paymentFailedCount' },
@@ -117,6 +140,7 @@ export const REPORT_DEFINITIONS: ReportDefinition[] = [
       { key: 'initiatedAt', label: 'Initiated', type: 'datetime' },
       { key: 'accountNumber', label: 'Account', type: 'text' },
       { key: 'name', label: 'Consumer', type: 'text' },
+      ...HIERARCHY_COLUMNS,
       { key: 'amount', label: 'Amount', type: 'money' },
       { key: 'rmsReferenceId', label: 'RMS reference', type: 'text', link: (r) => `/recharge/${r['id']}` },
       { key: 'status', label: 'Payment', type: 'enum', labels: RECHARGE_STATUS },
@@ -131,6 +155,7 @@ export const REPORT_DEFINITIONS: ReportDefinition[] = [
       { key: 'createdAt', label: 'Created', type: 'datetime' },
       { key: 'accountNumber', label: 'Account', type: 'text' },
       { key: 'name', label: 'Consumer', type: 'text' },
+      ...HIERARCHY_COLUMNS,
       { key: 'creditAmount', label: 'Credit amount', type: 'money' },
       { key: 'status', label: 'Status', type: 'enum', labels: METER_COMMAND_STATUS },
       { key: 'retryCount', label: 'Retries', type: 'number' },

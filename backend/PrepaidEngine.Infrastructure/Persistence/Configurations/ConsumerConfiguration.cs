@@ -17,6 +17,9 @@ public class ConsumerConfiguration : IEntityTypeConfiguration<Consumer>
             .HasMaxLength(50);
         builder.HasIndex(c => c.AccountNumber).IsUnique();
 
+        builder.HasOne(c => c.Dtr).WithMany().HasForeignKey(c => c.DtrId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(c => c.DtrId);
+
         builder.Property(c => c.Name)
             .IsRequired()
             .HasMaxLength(200);

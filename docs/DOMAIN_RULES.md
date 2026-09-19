@@ -16,6 +16,7 @@ put together, see [ARCHITECTURE.md](ARCHITECTURE.md).
 | `TransformerMaintenanceCharge` / `CtPtMaintenanceCharge` | Opt-in fixed monthly maintenance charges (TMC, CPMC) for consumer-owned transformers/CT-PT sets, by voltage and (for CPMC) wiring |
 | `ArrearRecovery` | Applies a payment against outstanding arrears — uncapped/arrears-first (tariff book) by default, or an optional caller-supplied recovery cap (RFP-indicative only) |
 | `TouPeriod` | A Time-of-Day rate band (Normal/Peak/Off-peak) on a `Tariff` — only IHT/IEHT tariffs populate these |
+| `Zone` > `Circle` > `Division` > `SubDivision` > `Substation` > `Feeder` > `Dtr` | The supply-network hierarchy, one table per level with a unique code, a name and a link to its parent. A `Consumer` hangs off one `Dtr` (`Consumer.DtrId`, null until mapped), so its whole path is known from that single link and any report can show or filter by any level |
 | `PrepaidWallet` / `WalletTransaction` | Balance + append-only ledger; tracks emergency-credit usage separately from the normal balance |
 | `ConsumptionReading` | A metered consumption reading for a billing period |
 | `PrepaidBill` | A generated bill with payment/status tracking (`Generated`/`Paid`/`PartiallyPaid`/`Overdue`/`Cancelled`) |
