@@ -85,19 +85,22 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
     .kpi--horizontal .kpi__body { min-width: 0; flex: 1; }
 
     /* Dashboard tile: a tinted icon block on the left, label / large value / note stacked on the right. */
+    :host { display: block; }
     .kpi--tile {
+      height: 100%;
+      box-sizing: border-box;
       display: flex;
       align-items: center;
       gap: 12px;
       padding: 14px;
       border-top: none;
-      min-height: 98px;
+      min-height: 96px;
     }
-    .kpi--tile .kpi__icon { width: 46px; height: 46px; border-radius: 12px; margin-bottom: 0; flex-shrink: 0; }
+    .kpi--tile .kpi__icon { width: 44px; height: 44px; border-radius: 12px; margin-bottom: 0; flex-shrink: 0; }
     .kpi--tile .kpi__body { flex: 1; min-width: 0; }
     .kpi--tile .kpi__label { font-size: 12px; color: var(--text-secondary); margin-bottom: 2px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .kpi--tile .kpi__value { font-size: 26px; letter-spacing: -0.02em; }
-    .kpi--tile .kpi__sublabel { margin-top: 4px; font-size: 12px; }
+    .kpi--tile .kpi__value { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+    .kpi--tile .kpi__sublabel { margin-top: 3px; font-size: 12px; color: var(--text-muted); }
     .kpi--analytic .kpi__icon { background: var(--color-analytic-light); }
 
     .kpi--primary { border-top-color: var(--color-primary); }

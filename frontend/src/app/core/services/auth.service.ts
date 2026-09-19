@@ -27,8 +27,20 @@ export class AuthService {
   private readonly _role = signal<UserRole | null>(sessionStorage.getItem(ROLE_KEY) as UserRole | null);
   readonly role = this._role.asReadonly();
 
-  private readonly _username = signal<string | null>(sessionStorage.getItem(USER_KEY));
+  // Sessions that signed in before the username was stored separately still carry it inside the encoded credential.
+  private readonly _username = signal<string | null>(sessionStorage.getItem(USER_KEY) ?? AuthService.usernameFromCredential());
   readonly username = this._username.asReadonly();
+
+  private static usernameFromCredential(): string | null {
+    const encoded = sessionStorage.getItem(SESSION_KEY);
+    if (!encoded) return null;
+    try {
+      const name = atob(encoded).split(':')[0];
+      return name || null;
+    } catch {
+      return null;
+    }
+  }
 
   get authHeaderValue(): string | null {
     const encoded = sessionStorage.getItem(SESSION_KEY);

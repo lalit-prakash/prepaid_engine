@@ -23,17 +23,17 @@
     </div>
   } @else {
     <section class="kpi-row" aria-label="Key performance indicators">
-      <pe-kpi-card [tile]="true" label="Total Prepaid Consumers" [value]="consumers().length" tone="primary" icon="users"
-        [sublabel]="activeCount + ' active · ' + disconnectedCount + ' disconnected'" [clickable]="true" (click)="goToConsumers()" />
-      <pe-kpi-card [tile]="true" label="Total Wallet Balance" [value]="'₹' + (totalWalletBalance | number:'1.0-0')" tone="success" icon="wallet"
+      <pe-kpi-card [tile]="true" label="Prepaid Consumers" [value]="consumers().length" tone="primary" icon="users"
+        [sublabel]="activeCount + ' active'" [clickable]="true" (click)="goToConsumers()" />
+      <pe-kpi-card [tile]="true" label="Wallet Balance" [value]="'₹' + (totalWalletBalance | number:'1.0-0')" tone="success" icon="wallet"
         [sublabel]="'across ' + consumers().length + ' wallets'" />
       <pe-kpi-card [tile]="true" label="Healthy Meters" [value]="healthyMetersPct + '%'" tone="success" icon="signal"
-        [sublabel]="activeCount + ' / ' + consumers().length + ' active'" />
-      <pe-kpi-card [tile]="true" label="Low Balance Consumers" [value]="lowBalanceCount" tone="warning" icon="alert"
-        sublabel="balance below emergency limit" [clickable]="true" (click)="goToConsumers({ lowBalance: 'true' })" />
+        [sublabel]="activeCount + ' / ' + consumers().length" />
+      <pe-kpi-card [tile]="true" label="Low Balance" [value]="lowBalanceCount" tone="warning" icon="alert"
+        [sublabel]="'of ' + consumers().length + ' consumers'" [clickable]="true" (click)="goToConsumers({ lowBalance: 'true' })" />
       @if (billingAvailable) {
         <pe-kpi-card [tile]="true" label="Billing (DLP)" [value]="billing().pct + '%'" tone="analytic" icon="receipt"
-          [sublabel]="billing().successful + ' of ' + billing().total + ' profiles processed'" [progressPct]="billing().pct" />
+          [sublabel]="billing().successful + ' / ' + billing().total + ' processed'" />
       } @else {
         <pe-kpi-card [tile]="true" label="Billing (DLP)" value="" [unavailable]="true" tone="analytic" icon="receipt" />
       }
