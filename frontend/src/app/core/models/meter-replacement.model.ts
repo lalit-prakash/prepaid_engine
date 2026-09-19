@@ -18,3 +18,10 @@ export interface MeterReplacementSummary {
   reason: string | null;
   recordedAt: string;
 }
+
+/** GET /api/v1/meter-replacements/summary: counts computed by the database. */
+export interface MeterReplacementSummaryStats {
+  total: number;
+  replaced: number;
+  installed: number;
+}

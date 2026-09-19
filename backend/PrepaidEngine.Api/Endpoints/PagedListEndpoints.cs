@@ -224,5 +224,219 @@ public static class PagedListEndpoints
         })
         .WithName("NotificationSummary")
         .RequireAuthorization();
+
+        // ---------------------------------------------------------------- operational exceptions
+        app.MapGet("/api/v1/exceptions/search", async (
+            string? q, OperationalExceptionStatus? status, string? after, int? pageSize, PrepaidEngineDbContext db) =>
+        {
+            var size = Math.Clamp(pageSize ?? 25, 1, MaxPage);
+            var query =
+                from e in db.OperationalExceptions.AsNoTracking()
+                join c in db.Consumers.AsNoTracking() on e.ConsumerId equals c.Id
+                select new { e, c };
+
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var (prefix, contains) = Terms(q);
+                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix, "\\") || EF.Functions.ILike(x.c.Name, contains, "\\") || EF.Functions.ILike(x.e.Description, contains, "\\"));
+            }
+            if (status.HasValue) query = query.Where(x => x.e.Status == status.Value);
+
+            var totalCount = await query.CountAsync();
+            if (!string.IsNullOrEmpty(after))
+            {
+                if (!TryCursor(after, out var at, out var afterId)) return Results.BadRequest(new { error = "Invalid cursor." });
+                query = query.Where(x => x.e.CreatedAt < at || (x.e.CreatedAt == at && x.e.Id.CompareTo(afterId) < 0));
+            }
+
+            var rows = await query
+                .OrderByDescending(x => x.e.CreatedAt).ThenByDescending(x => x.e.Id)
+                .Take(size + 1)
+                .Select(x => new { x.e.Id, x.c.AccountNumber, x.c.Name, x.e.SourceType, x.e.SourceId, x.e.Description, x.e.Status, x.e.ResolutionNote, x.e.CreatedAt, x.e.ResolvedAt })
+                .ToListAsync();
+
+            var hasMore = rows.Count > size;
+            var items = hasMore ? rows.Take(size).ToList() : rows;
+            return Results.Ok(new { items, nextCursor = hasMore ? Cursor(items[^1].CreatedAt, items[^1].Id) : null, totalCount });
+        })
+        .WithName("SearchOperationalExceptions")
+        .RequireAuthorization();
+
+        app.MapGet("/api/v1/exceptions/summary", async (PrepaidEngineDbContext db) =>
+        {
+            var byStatus = await db.OperationalExceptions.AsNoTracking().GroupBy(e => e.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
+            int N(OperationalExceptionStatus s) => byStatus.FirstOrDefault(x => x.Status == s)?.Count ?? 0;
+            return Results.Ok(new { Total = byStatus.Sum(x => x.Count), Open = N(OperationalExceptionStatus.Open), Resolved = N(OperationalExceptionStatus.Resolved) });
+        })
+        .WithName("OperationalExceptionSummary")
+        .RequireAuthorization();
+
+        // ---------------------------------------------------------------- conversions
+        app.MapGet("/api/v1/conversions/search", async (
+            string? q, string? status, string? after, int? pageSize, PrepaidEngineDbContext db) =>
+        {
+            var size = Math.Clamp(pageSize ?? 25, 1, MaxPage);
+            var query =
+                from cv in db.ConversionRequests.AsNoTracking()
+                join c in db.Consumers.AsNoTracking() on cv.ConsumerId equals c.Id
+                select new { cv, c };
+
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var (prefix, contains) = Terms(q);
+                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix, "\\") || EF.Functions.ILike(x.cv.TransactionId, prefix, "\\") || EF.Functions.ILike(x.c.Name, contains, "\\"));
+            }
+            query = status switch
+            {
+                "Completed" => query.Where(x => x.cv.Status == ConversionStatus.Completed),
+                "Rejected" => query.Where(x => x.cv.Status == ConversionStatus.Rejected),
+                "Pending" => query.Where(x => x.cv.Status == ConversionStatus.Requested || x.cv.Status == ConversionStatus.Approved),
+                _ => query,
+            };
+
+            var totalCount = await query.CountAsync();
+            if (!string.IsNullOrEmpty(after))
+            {
+                if (!TryCursor(after, out var at, out var afterId)) return Results.BadRequest(new { error = "Invalid cursor." });
+                query = query.Where(x => x.cv.RequestedAt < at || (x.cv.RequestedAt == at && x.cv.Id.CompareTo(afterId) < 0));
+            }
+
+            var rows = await query
+                .OrderByDescending(x => x.cv.RequestedAt).ThenByDescending(x => x.cv.Id)
+                .Take(size + 1)
+                .Select(x => new
+                {
+                    x.cv.Id, x.c.AccountNumber, x.c.Name, x.cv.TransactionId, x.cv.MeterSerialNumber, x.cv.RequestType, x.cv.ConsumerType,
+                    x.cv.InitialReading, x.cv.InitialReadingDateTime, x.cv.ConversionDate, x.cv.GracePeriodEndDate, x.cv.Status, x.cv.DecisionNote,
+                    x.cv.RequestedAt, x.cv.DecidedAt, x.cv.CompletedAt, x.cv.LastReadingDate, x.cv.LastBillingDate, x.cv.TemporaryDisconnectionDate,
+                    x.cv.ReconnectionDate, x.cv.LastBillFrKwh, x.cv.LastBillFrKvah, x.cv.LastBillMaxDemandKw, x.cv.OutstandingAmount, x.cv.MeterStatus,
+                    x.cv.IsPermanentConsumer, x.cv.FoaAmount, x.cv.DiaAmount, x.cv.ReadingAtConversion,
+                })
+                .ToListAsync();
+
+            var hasMore = rows.Count > size;
+            var items = hasMore ? rows.Take(size).ToList() : rows;
+            return Results.Ok(new { items, nextCursor = hasMore ? Cursor(items[^1].RequestedAt, items[^1].Id) : null, totalCount });
+        })
+        .WithName("SearchConversions")
+        .RequireAuthorization();
+
+        app.MapGet("/api/v1/conversions/summary", async (PrepaidEngineDbContext db) =>
+        {
+            var byStatus = await db.ConversionRequests.AsNoTracking().GroupBy(c => c.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
+            int N(ConversionStatus s) => byStatus.FirstOrDefault(x => x.Status == s)?.Count ?? 0;
+            var credited = await db.ConversionRequests.AsNoTracking().Where(c => c.Status == ConversionStatus.Completed).SumAsync(c => (decimal?)(c.FoaAmount + c.DiaAmount)) ?? 0m;
+            return Results.Ok(new
+            {
+                Total = byStatus.Sum(x => x.Count),
+                Completed = N(ConversionStatus.Completed),
+                Rejected = N(ConversionStatus.Rejected),
+                Pending = N(ConversionStatus.Requested) + N(ConversionStatus.Approved),
+                FoaDiaCredited = credited,
+            });
+        })
+        .WithName("ConversionSummary")
+        .RequireAuthorization();
+
+        // ---------------------------------------------------------------- reconciliation adjustments
+        app.MapGet("/api/v1/reconciliation-adjustments/search", async (
+            string? q, string? after, int? pageSize, PrepaidEngineDbContext db) =>
+        {
+            var size = Math.Clamp(pageSize ?? 25, 1, MaxPage);
+            var query =
+                from r in db.ReconciliationAdjustments.AsNoTracking()
+                join c in db.Consumers.AsNoTracking() on r.ConsumerId equals c.Id
+                select new { r, c };
+
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var (prefix, contains) = Terms(q);
+                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix, "\\") || EF.Functions.ILike(x.r.Reference, prefix, "\\") || EF.Functions.ILike(x.c.Name, contains, "\\"));
+            }
+
+            var totalCount = await query.CountAsync();
+            if (!string.IsNullOrEmpty(after))
+            {
+                if (!TryCursor(after, out var at, out var afterId)) return Results.BadRequest(new { error = "Invalid cursor." });
+                query = query.Where(x => x.r.AppliedAt < at || (x.r.AppliedAt == at && x.r.Id.CompareTo(afterId) < 0));
+            }
+
+            var rows = await query
+                .OrderByDescending(x => x.r.AppliedAt).ThenByDescending(x => x.r.Id)
+                .Take(size + 1)
+                .Select(x => new { x.r.Id, x.c.AccountNumber, x.c.Name, x.r.Amount, x.r.PaymentMode, x.r.ReconciliationDate, x.r.Reference, x.r.BalanceAfter, x.r.AppliedAt })
+                .ToListAsync();
+
+            var hasMore = rows.Count > size;
+            var items = hasMore ? rows.Take(size).ToList() : rows;
+            return Results.Ok(new { items, nextCursor = hasMore ? Cursor(items[^1].AppliedAt, items[^1].Id) : null, totalCount });
+        })
+        .WithName("SearchReconciliationAdjustments")
+        .RequireAuthorization();
+
+        app.MapGet("/api/v1/reconciliation-adjustments/summary", async (PrepaidEngineDbContext db) => Results.Ok(new
+        {
+            Total = await db.ReconciliationAdjustments.AsNoTracking().CountAsync(),
+            TotalCredited = await db.ReconciliationAdjustments.AsNoTracking().Where(r => r.Amount > 0).SumAsync(r => (decimal?)r.Amount) ?? 0m,
+            TotalDebited = -(await db.ReconciliationAdjustments.AsNoTracking().Where(r => r.Amount < 0).SumAsync(r => (decimal?)r.Amount) ?? 0m),
+        }))
+        .WithName("ReconciliationAdjustmentSummary")
+        .RequireAuthorization();
+
+        // ---------------------------------------------------------------- meter replacements
+        app.MapGet("/api/v1/meter-replacements/search", async (
+            string? q, MeterAssignmentEventType? eventType, string? after, int? pageSize, PrepaidEngineDbContext db) =>
+        {
+            var size = Math.Clamp(pageSize ?? 25, 1, MaxPage);
+            var query =
+                from a in db.MeterAssignments.AsNoTracking()
+                join consumer in db.Consumers.AsNoTracking() on a.ConsumerId equals consumer.Id
+                join newMeter in db.Meters.AsNoTracking() on a.NewMeterId equals newMeter.Id
+                join oldMeter in db.Meters.AsNoTracking() on a.OldMeterId equals oldMeter.Id into oldMeterJoin
+                from oldMeter in oldMeterJoin.DefaultIfEmpty()
+                select new { a, consumer, newMeter, oldMeter };
+
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var (prefix, contains) = Terms(q);
+                query = query.Where(x => EF.Functions.ILike(x.consumer.AccountNumber, prefix, "\\") || EF.Functions.ILike(x.newMeter.MeterNumber, prefix, "\\")
+                    || (x.oldMeter != null && EF.Functions.ILike(x.oldMeter.MeterNumber, prefix, "\\")) || EF.Functions.ILike(x.consumer.Name, contains, "\\"));
+            }
+            if (eventType.HasValue) query = query.Where(x => x.a.EventType == eventType.Value);
+
+            var totalCount = await query.CountAsync();
+            if (!string.IsNullOrEmpty(after))
+            {
+                if (!TryCursor(after, out var at, out var afterId)) return Results.BadRequest(new { error = "Invalid cursor." });
+                query = query.Where(x => x.a.RecordedAt < at || (x.a.RecordedAt == at && x.a.Id.CompareTo(afterId) < 0));
+            }
+
+            var rows = await query
+                .OrderByDescending(x => x.a.RecordedAt).ThenByDescending(x => x.a.Id)
+                .Take(size + 1)
+                .Select(x => new
+                {
+                    x.a.Id, x.consumer.AccountNumber, x.consumer.Name, x.a.EventType,
+                    OldMeterNumber = x.oldMeter != null ? x.oldMeter.MeterNumber : null,
+                    NewMeterNumber = x.newMeter.MeterNumber,
+                    x.a.EffectiveFrom, x.a.OldMeterClosingReadingKwh, x.a.NewMeterOpeningReadingKwh, x.a.Reason, x.a.RecordedAt,
+                })
+                .ToListAsync();
+
+            var hasMore = rows.Count > size;
+            var items = hasMore ? rows.Take(size).ToList() : rows;
+            return Results.Ok(new { items, nextCursor = hasMore ? Cursor(items[^1].RecordedAt, items[^1].Id) : null, totalCount });
+        })
+        .WithName("SearchMeterReplacements")
+        .RequireAuthorization();
+
+        app.MapGet("/api/v1/meter-replacements/summary", async (PrepaidEngineDbContext db) =>
+        {
+            var byType = await db.MeterAssignments.AsNoTracking().GroupBy(a => a.EventType).Select(g => new { Type = g.Key, Count = g.Count() }).ToListAsync();
+            int N(MeterAssignmentEventType t) => byType.FirstOrDefault(x => x.Type == t)?.Count ?? 0;
+            return Results.Ok(new { Total = byType.Sum(x => x.Count), Replaced = N(MeterAssignmentEventType.Replaced), Installed = N(MeterAssignmentEventType.Installed) });
+        })
+        .WithName("MeterReplacementSummary")
+        .RequireAuthorization();
     }
 }

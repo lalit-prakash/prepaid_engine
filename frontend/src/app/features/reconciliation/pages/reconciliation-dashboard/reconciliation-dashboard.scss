@@ -124,3 +124,11 @@ a { color: var(--text-link); }
   text-align: center;
 }
 .error-panel { color: var(--color-danger-dark); }
+
+.toolbar__clear { background: none; border: none; color: var(--color-primary); cursor: pointer; text-decoration: underline; }
+.table-wrap--loading { opacity: 0.6; }
+.pager { display: flex; justify-content: space-between; align-items: center; margin-top: var(--space-3); color: var(--text-secondary); font-size: var(--font-size-meta); }
+.pager__buttons { display: inline-flex; gap: var(--space-2); }
+.pager button { padding: 6px var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--surface-card); color: var(--text-primary); cursor: pointer; }
+.pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+.kpi-row--filterable pe-kpi-card { cursor: pointer; }

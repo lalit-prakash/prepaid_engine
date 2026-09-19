@@ -53,3 +53,12 @@ export interface ConversionSummary {
   /** Null until the payment-mode-change command has been acknowledged. */
   readingAtConversion: number | null;
 }
+
+/** GET /api/v1/conversions/summary: counts and the credited total, computed by the database. */
+export interface ConversionSummaryStats {
+  total: number;
+  completed: number;
+  rejected: number;
+  pending: number;
+  foaDiaCredited: number;
+}

@@ -1,89 +1,110 @@
 <div class="conversion">
   <div class="page-header">
     <h1>Conversion</h1>
-    <p class="page-header__subtitle">{{ conversions().length }} postpaid→prepaid conversion request(s) pushed by RMS</p>
+    <p class="page-header__subtitle">{{ (stats()?.total ?? 0) | number }} postpaid→prepaid conversion request(s) pushed by RMS</p>
   </div>
 
-  @if (loading()) {
+  @if (stats(); as s) {
+    <section class="kpi-row kpi-row--filterable">
+      <pe-kpi-card label="Total Requests" [value]="s.total" tone="primary" [clickable]="true" (click)="filterByStatus(null)" />
+      <pe-kpi-card label="Completed" [value]="s.completed" tone="success" [clickable]="true" (click)="filterByStatus('Completed')" />
+      <pe-kpi-card label="Rejected" [value]="s.rejected" tone="danger" [clickable]="true" (click)="filterByStatus('Rejected')" />
+      <pe-kpi-card label="Pending" [value]="s.pending" tone="warning" [clickable]="true" (click)="filterByStatus('Pending')" />
+      <pe-kpi-card label="Success Rate" [value]="successRate(s)" tone="info" />
+      <pe-kpi-card label="FOA+DIA Credited" [value]="'₹' + (s.foaDiaCredited | number:'1.0-2')" tone="success" />
+    </section>
+  } @else if (statsError()) {
+    <div class="error-panel">Could not load the summary counts from the API.</div>
+  } @else {
     <div class="skeleton-row">
       @for (i of [1,2,3,4,5]; track i) { <div class="skeleton-card"></div> }
     </div>
-  } @else if (error()) {
-    <div class="error-panel">{{ error() }}</div>
-  } @else {
-    <section class="kpi-row">
-      <pe-kpi-card label="Total Requests" [value]="conversions().length" tone="primary" />
-      <pe-kpi-card label="Completed" [value]="completedCount" tone="success" />
-      <pe-kpi-card label="Rejected" [value]="rejectedCount" tone="danger" />
-      <pe-kpi-card label="Pending" [value]="pendingCount" tone="warning" />
-      <pe-kpi-card label="Success Rate" [value]="successRate" tone="info" />
-      <pe-kpi-card label="FOA+DIA Credited" [value]="'₹' + (totalFoaDiaCredited | number:'1.0-2')" tone="success" />
-    </section>
+  }
 
-    <div class="toolbar">
-      <input
-        type="search"
-        placeholder="Search account number, name, or transaction ID…"
-        [value]="searchTerm()"
-        (input)="searchTerm.set($any($event.target).value)"
-      />
+  <div class="toolbar">
+    <input
+      #searchBox
+      type="search"
+      placeholder="Search account number, name, or transaction ID…"
+      [value]="searchTerm()"
+      (input)="onSearchInput($any($event.target).value)"
+    />
+    <select (change)="onStatusChange($any($event.target).value)">
+      <option value="" [selected]="!statusFilter()">All statuses</option>
+      @for (o of statusOptions; track o.value) { <option [value]="o.value" [selected]="statusFilter() === o.value">{{ o.label }}</option> }
+    </select>
+    @if (hasActiveFilters) { <button type="button" class="toolbar__clear" (click)="clearFilters(); searchBox.value = ''">Clear filters</button> }
+  </div>
+
+  @if (list.loading() && list.items().length === 0) {
+    <div class="skeleton-row"><div class="skeleton-card"></div></div>
+  } @else if (list.error()) {
+    <div class="error-panel">
+      {{ list.error() }}
+      <button type="button" class="toolbar__clear" (click)="list.load()">Retry</button>
+    </div>
+  } @else if (list.items().length === 0) {
+    <div class="empty-panel">{{ hasActiveFilters ? 'No conversion requests match these filters.' : 'No conversion requests have been received yet.' }}</div>
+  } @else {
+    <div class="table-wrap" [class.table-wrap--loading]="list.loading()">
+      <table>
+        <thead>
+          <tr>
+            <th>Requested</th>
+            <th>Account</th>
+            <th>Consumer</th>
+            <th>Type</th>
+            <th>Transaction ID</th>
+            <th>Conversion Date</th>
+            <th>Grace Period Ends</th>
+            <th class="num">Outstanding</th>
+            <th class="num">FOA / DIA</th>
+            <th class="num">Reading @ Conversion</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (c of list.items(); track c.id) {
+            <tr>
+              <td>{{ c.requestedAt | date: 'medium' }}</td>
+              <td><a [routerLink]="['/consumers', c.accountNumber]">{{ c.accountNumber }}</a></td>
+              <td>{{ c.name }}</td>
+              <td>{{ consumerTypeLabel(c.consumerType) }}</td>
+              <td class="mono">{{ c.transactionId }}</td>
+              <td>{{ c.conversionDate | date: 'mediumDate' }}</td>
+              <td>{{ c.gracePeriodEndDate | date: 'mediumDate' }}</td>
+              <td class="num">₹{{ c.outstandingAmount | number: '1.0-2' }}</td>
+              <td class="num">₹{{ c.foaAmount | number: '1.0-2' }} / ₹{{ c.diaAmount | number: '1.0-2' }}</td>
+              <td class="num">
+                @if (c.readingAtConversion !== null) {
+                  {{ c.readingAtConversion | number: '1.1-3' }} kWh
+                } @else {
+                  <span class="empty-note">—</span>
+                }
+              </td>
+              <td>
+                @switch (c.status) {
+                  @case (ConversionStatus.Completed) { <pe-status-badge label="Completed" tone="success" /> }
+                  @case (ConversionStatus.Rejected) { <pe-status-badge label="Rejected" tone="danger" /> }
+                  @case (ConversionStatus.Approved) { <pe-status-badge label="Approved" tone="warning" /> }
+                  @default { <pe-status-badge label="Requested" tone="neutral" /> }
+                }
+                @if (c.decisionNote) {
+                  <div class="decision-note">{{ c.decisionNote }}</div>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
     </div>
 
-    @if (filtered.length === 0) {
-      <div class="empty-panel">No conversion requests matched your search.</div>
-    } @else {
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Requested</th>
-              <th>Account</th>
-              <th>Consumer</th>
-              <th>Type</th>
-              <th>Transaction ID</th>
-              <th>Conversion Date</th>
-              <th>Grace Period Ends</th>
-              <th class="num">Outstanding</th>
-              <th class="num">FOA / DIA</th>
-              <th class="num">Reading @ Conversion</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (c of filtered; track c.id) {
-              <tr>
-                <td>{{ c.requestedAt | date: 'medium' }}</td>
-                <td><a [routerLink]="['/consumers', c.accountNumber]">{{ c.accountNumber }}</a></td>
-                <td>{{ c.name }}</td>
-                <td>{{ consumerTypeLabel(c.consumerType) }}</td>
-                <td class="mono">{{ c.transactionId }}</td>
-                <td>{{ c.conversionDate | date: 'mediumDate' }}</td>
-                <td>{{ c.gracePeriodEndDate | date: 'mediumDate' }}</td>
-                <td class="num">₹{{ c.outstandingAmount | number: '1.0-2' }}</td>
-                <td class="num">₹{{ c.foaAmount | number: '1.0-2' }} / ₹{{ c.diaAmount | number: '1.0-2' }}</td>
-                <td class="num">
-                  @if (c.readingAtConversion !== null) {
-                    {{ c.readingAtConversion | number: '1.1-3' }} kWh
-                  } @else {
-                    <span class="empty-note">—</span>
-                  }
-                </td>
-                <td>
-                  @switch (c.status) {
-                    @case (ConversionStatus.Completed) { <pe-status-badge label="Completed" tone="success" /> }
-                    @case (ConversionStatus.Rejected) { <pe-status-badge label="Rejected" tone="danger" /> }
-                    @case (ConversionStatus.Approved) { <pe-status-badge label="Approved" tone="warning" /> }
-                    @default { <pe-status-badge label="Requested" tone="neutral" /> }
-                  }
-                  @if (c.decisionNote) {
-                    <div class="decision-note">{{ c.decisionNote }}</div>
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    }
+    <div class="pager">
+      <span>{{ list.totalCount() | number }} request(s){{ hasActiveFilters ? ' match' : '' }} · page {{ list.pageIndex() + 1 }}</span>
+      <span class="pager__buttons">
+        <button type="button" (click)="list.previous()" [disabled]="list.pageIndex() === 0 || list.loading()">Previous</button>
+        <button type="button" (click)="list.next()" [disabled]="!list.nextCursor() || list.loading()">Next</button>
+      </span>
+    </div>
   }
 </div>

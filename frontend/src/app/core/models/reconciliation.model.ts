@@ -17,3 +17,10 @@ export interface ApplyReconciliationAdjustmentRequest {
   reconciliationDate: string;
   reference: string;
 }
+
+/** GET /api/v1/reconciliation-adjustments/summary: totals computed by the database. */
+export interface ReconciliationSummaryStats {
+  total: number;
+  totalCredited: number;
+  totalDebited: number;
+}
