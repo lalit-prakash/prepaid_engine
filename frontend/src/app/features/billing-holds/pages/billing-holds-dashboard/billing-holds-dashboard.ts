@@ -1,16 +1,20 @@
 import { OperateOnly } from '../../../../shared/directives/operate-only';
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { Subject, Subscription, debounceTime } from 'rxjs';
 import { BillingHoldService } from '../../../../core/services/billing-hold.service';
-import { BillingHoldSummary } from '../../../../core/models/billing-hold.model';
+import { BillingHoldSummary, BillingHoldSummaryStats } from '../../../../core/models/billing-hold.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
+import { PagedList } from '../../../../shared/utils/paged-list';
+
+const PAGE_SIZE = 25;
 
 /**
- * Real, API-backed Billing Holds dashboard (GET /api/v1/meter-data/billing-holds) — every
- * MeterBillingControl hold. Clearing one is a genuine action gated behind a mandatory resolution
+ * Real, API-backed Billing Holds dashboard: counts from GET /meter-data/billing-holds/summary and the table from the
+ * keyset-paged GET /meter-data/billing-holds/search — every MeterBillingControl hold. Clearing one is a genuine action gated behind a mandatory resolution
  * note, matching this project's mandatory-reason discipline — actual DLP billing for the meter
  * resumes the moment it clears.
  */
@@ -20,10 +24,15 @@ import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
   templateUrl: './billing-holds-dashboard.html',
   styleUrl: './billing-holds-dashboard.scss',
 })
-export class BillingHoldsDashboard implements OnInit {
-  protected readonly holds = signal<BillingHoldSummary[]>([]);
-  protected readonly loading = signal(true);
-  protected readonly error = signal<string | null>(null);
+export class BillingHoldsDashboard implements OnInit, OnDestroy {
+  protected readonly stats = signal<BillingHoldSummaryStats | null>(null);
+  protected readonly statsError = signal(false);
+  protected readonly list = new PagedList<BillingHoldSummary>(
+    (after) => this.billingHoldService.search({ q: this.searchTerm(), activeOnly: !this.showCleared(), after, pageSize: PAGE_SIZE }),
+    'Could not load billing holds from the API.',
+  );
+  private readonly search$ = new Subject<string>();
+  private searchSub?: Subscription;
   protected readonly searchTerm = signal('');
   protected readonly showCleared = signal(false);
 
@@ -42,45 +51,48 @@ export class BillingHoldsDashboard implements OnInit {
   constructor(private readonly billingHoldService: BillingHoldService) {}
 
   ngOnInit(): void {
-    this.load();
+    this.searchSub = this.search$.pipe(debounceTime(300)).subscribe((term) => {
+      if (term === this.searchTerm()) return;
+      this.searchTerm.set(term);
+      this.reload();
+    });
+    this.loadStats();
+    this.list.load();
   }
 
-  private load(): void {
-    this.loading.set(true);
+  ngOnDestroy(): void {
+    this.searchSub?.unsubscribe();
+    this.list.destroy();
+  }
+
+  private loadStats(): void {
+    this.billingHoldService.summary().subscribe({ next: (s) => this.stats.set(s), error: () => this.statsError.set(true) });
+  }
+
+  /** First page again after a search or filter change or after clearing holds; selections do not carry over. */
+  private reload(): void {
     this.selectedMeterIds.set(new Set());
-    this.billingHoldService.list(!this.showCleared()).subscribe({
-      next: (holds) => {
-        this.holds.set(holds);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.error.set('Could not load billing holds from the API.');
-        this.loading.set(false);
-      },
-    });
+    this.list.reload();
+  }
+
+  protected onSearchInput(term: string): void {
+    this.search$.next(term);
   }
 
   toggleShowCleared(): void {
     this.showCleared.set(!this.showCleared());
-    this.load();
+    this.reload();
   }
 
-  protected get filtered(): BillingHoldSummary[] {
-    const term = this.searchTerm().trim().toLowerCase();
-    if (!term) return this.holds();
-    return this.holds().filter(
-      (h) =>
-        h.accountNumber.toLowerCase().includes(term) ||
-        h.name.toLowerCase().includes(term) ||
-        h.meterNumber.toLowerCase().includes(term),
-    );
+  protected changePage(direction: 'next' | 'previous'): void {
+    this.selectedMeterIds.set(new Set());
+    if (direction === 'next') this.list.next();
+    else this.list.previous();
   }
 
-  protected get activeCount(): number {
-    return this.holds().filter((h) => h.actualBillingBlocked).length;
-  }
-  protected get clearedCount(): number {
-    return this.holds().filter((h) => !h.actualBillingBlocked).length;
+  private refreshAfterClear(): void {
+    this.loadStats();
+    this.reload();
   }
 
   requestClear(meterId: string): void {
@@ -107,7 +119,7 @@ export class BillingHoldsDashboard implements OnInit {
       next: () => {
         this.clearSubmitting.set(false);
         this.clearingMeterId.set(null);
-        this.load();
+        this.refreshAfterClear();
       },
       error: (err) => {
         this.clearSubmitting.set(false);
@@ -119,7 +131,7 @@ export class BillingHoldsDashboard implements OnInit {
   // ------------------------------------------------------------------ Bulk clear
 
   protected get activeHolds(): BillingHoldSummary[] {
-    return this.filtered.filter((h) => h.actualBillingBlocked);
+    return this.list.items().filter((h) => h.actualBillingBlocked);
   }
 
   protected isSelected(meterId: string): boolean {
@@ -178,7 +190,7 @@ export class BillingHoldsDashboard implements OnInit {
             ? `Cleared ${clearedCount} billing hold(s).`
             : `Cleared ${clearedCount} billing hold(s); ${skippedCount} skipped (no active hold).`,
         );
-        this.load();
+        this.refreshAfterClear();
       },
       error: (err) => {
         this.bulkSubmitting.set(false);
