@@ -72,6 +72,9 @@ builder.Services.AddScoped<IEmergencyCreditGuard, EmergencyCreditGuard>();
 
 // The DLP billing pipeline service — see IBillingEngineService's doc comment. Scoped (not
 // singleton) since it holds a scoped PrepaidEngineDbContext.
+builder.Services.Configure<PrepaidEngine.Application.Wallets.LowBalanceOptions>(builder.Configuration.GetSection(PrepaidEngine.Application.Wallets.LowBalanceOptions.SectionName));
+if (!(builder.Configuration.GetSection(PrepaidEngine.Application.Wallets.LowBalanceOptions.SectionName).Get<PrepaidEngine.Application.Wallets.LowBalanceOptions>() ?? new()).IsValid)
+    throw new InvalidOperationException("LowBalance:ThresholdRs must be zero or more.");
 builder.Services.AddScoped<IBillingEngineService, BillingEngineService>();
 
 // BP/LS/IP/Events ingestion + cross-source energy validation — see IMeterDataIngestionService's

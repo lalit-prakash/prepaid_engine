@@ -314,6 +314,7 @@ and audit entries are not tamper-evident.
 | `DemoAuth:Users:{n}:{Username,DisplayName,PasswordHash,Role}` | Sign-in users (`IT`, `Utility`) via user-secrets |
 | `Jwt:Key` | Token signing key, 32+ characters (secret; Development falls back to a random per-run key) |
 | `Jwt:AccessTokenMinutes`, `Jwt:MaxSessionHours` | Token lifetime (30) and absolute session limit (8) |
+| `LowBalance:ThresholdRs` | What counts as a low balance, in rupees (zero or more). Unset keeps the defaults: screens and counts flag a wallet below its own emergency credit limit, and billing warns below Rs.100. Set, it replaces both, so the dashboard, consumer list, consumer page and the low-balance SMS agree. A negative value stops the API starting |
 | `Security:AllowedOrigins` | Browser origins allowed by CORS (Development defaults to `http://localhost:4200`; no wildcard) |
 | `Security:RequestsPerMinutePerIp`, `Security:LoginAttemptsPerMinutePerIp` | Rate limits per client IP (600 and 10) |
 | `Security:MaxRequestBodyBytes`, `Security:TrustForwardedHeaders` | Body cap (5 MB); trust proxy headers only behind a trusted proxy |
@@ -349,6 +350,7 @@ Tracked on the project board: https://github.com/users/lalit-prakash/projects/5
 - Real MDM/HES adapter for meter credit and RC/DC (needs the endpoint and command contract); the outbox and worker exist, the adapter behind them is still the mock. RC/DC connectivity commands are still sent inline.
 - Report jobs for large exports; a scheduler with billing run history and alerting (the billing run itself is now batched, claimed and resumable).
 - System Health, Integrations and Service Requests modules; tariff fields (code, taxes, thresholds).
+- Balance history: daily balance snapshots so low-balance and disconnection trends can be charted (the low-balance threshold itself is now configurable).
 - Network hierarchy can be loaded and consumers mapped from CSV (Network Hierarchy screen), but there is no screen to edit or delete a single node, files are limited to 10,000 rows each, and development still seeds a labelled demo network; area analytics on the Analytics page, balance history and abnormal-consumption detection are still open.
 - Capped (1,000-row) lists on Exceptions, Notifications, Billing Holds, Meter Credit, RC/DC, Conversion, Reconciliation, Meter Replacements and Consumer-based lookups (the charge-calculation report loads consumers) need keyset paging and search; the cap keeps them safe but not complete.
 - Load and failure testing has not been run.

@@ -19,8 +19,9 @@ public static class DashboardEndpoints
 
     public static void MapDashboardEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/v1/dashboard/summary", async (PrepaidEngineDbContext db) =>
+        app.MapGet("/api/v1/dashboard/summary", async (PrepaidEngineDbContext db, Microsoft.Extensions.Options.IOptions<PrepaidEngine.Application.Wallets.LowBalanceOptions> lowBalance) =>
         {
+            decimal? threshold = lowBalance.Value.ThresholdRs; // null: below each wallet's own emergency credit limit
             // Consumers and wallets: one grouped query, no rows returned.
             var consumers = await db.Consumers.AsNoTracking()
                 .GroupBy(_ => 1)
@@ -29,8 +30,8 @@ public static class DashboardEndpoints
                     Total = g.Count(),
                     Active = g.Count(c => c.ConnectionStatus == ConnectionStatus.Active),
                     Disconnected = g.Count(c => c.ConnectionStatus == ConnectionStatus.Disconnected),
-                    LowBalance = g.Count(c => c.Wallet.Balance < c.Wallet.EmergencyCreditLimit),
-                    LowBalanceConnected = g.Count(c => c.ConnectionStatus != ConnectionStatus.Disconnected && c.Wallet.Balance < c.Wallet.EmergencyCreditLimit),
+                    LowBalance = g.Count(c => c.Wallet.Balance < (threshold ?? c.Wallet.EmergencyCreditLimit)),
+                    LowBalanceConnected = g.Count(c => c.ConnectionStatus != ConnectionStatus.Disconnected && c.Wallet.Balance < (threshold ?? c.Wallet.EmergencyCreditLimit)),
                     WalletTotal = g.Sum(c => (decimal?)c.Wallet.Balance) ?? 0m,
                 })
                 .FirstOrDefaultAsync();

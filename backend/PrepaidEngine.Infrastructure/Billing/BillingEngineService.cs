@@ -15,9 +15,6 @@ namespace PrepaidEngine.Infrastructure.Billing;
 /// </summary>
 public class BillingEngineService : IBillingEngineService
 {
-    /// <summary>Demo low-balance notification threshold. Production values must be
-    /// configuration, not a constant — documented as a known follow-up.</summary>
-    private const decimal LowBalanceThreshold = 100m;
 
     /// <summary>Demo provisional-DLP estimation window: average of up to this many previous
     /// valid DLP records for the consumer/meter.</summary>
@@ -26,10 +23,16 @@ public class BillingEngineService : IBillingEngineService
     private readonly PrepaidEngineDbContext _db;
     private readonly IEmergencyCreditGuard _emergencyCreditGuard;
 
-    public BillingEngineService(PrepaidEngineDbContext db, IEmergencyCreditGuard emergencyCreditGuard)
+    private readonly decimal _lowBalanceThreshold;
+
+    /// <param name="lowBalance">Optional; the low-balance warning threshold comes from the "LowBalance" settings (default Rs.100).</param>
+    public BillingEngineService(
+        PrepaidEngineDbContext db, IEmergencyCreditGuard emergencyCreditGuard,
+        Microsoft.Extensions.Options.IOptions<PrepaidEngine.Application.Wallets.LowBalanceOptions>? lowBalance = null)
     {
         _db = db;
         _emergencyCreditGuard = emergencyCreditGuard;
+        _lowBalanceThreshold = lowBalance?.Value.NotificationThreshold ?? PrepaidEngine.Application.Wallets.LowBalanceOptions.DefaultNotificationThreshold;
     }
 
     public async Task<DailyLoadProfileIngestResult> IngestDailyLoadProfileAsync(
@@ -439,7 +442,7 @@ public class BillingEngineService : IBillingEngineService
             eventType = NotificationEventType.EmergencyCredit;
             message = $"Prepaid balance for {consumer.AccountNumber} is Rs.{balance}. Emergency credit is being used. Please recharge.";
         }
-        else if (balance < LowBalanceThreshold)
+        else if (balance < _lowBalanceThreshold)
         {
             eventType = NotificationEventType.LowBalance;
             message = $"Prepaid balance for {consumer.AccountNumber} is Rs.{balance}. Please recharge to avoid supply interruption.";
