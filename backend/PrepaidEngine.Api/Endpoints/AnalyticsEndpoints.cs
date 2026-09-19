@@ -165,5 +165,24 @@ public static class AnalyticsEndpoints
         })
         .WithName("GetAnalyticsOverview")
         .RequireAuthorization();
+
+        // Balance history: the daily wallet totals recorded by WalletStatsWorker, oldest first. Only days that were
+        // recorded appear; nothing is back-filled or interpolated.
+        app.MapGet("/api/v1/analytics/balance-history", async (DateTime? from, DateTime? to, PrepaidEngineDbContext db) =>
+        {
+            var end = DateOnly.FromDateTime((to ?? DateTime.UtcNow).Date);
+            var start = DateOnly.FromDateTime((from ?? end.ToDateTime(TimeOnly.MinValue).AddDays(-29)).Date);
+            if (start > end) return Results.BadRequest(new { error = "The start date must not be after the end date." });
+            if (end.DayNumber - start.DayNumber > 365) return Results.BadRequest(new { error = "The date range can be at most 366 days." });
+
+            var rows = await db.DailyWalletStats.AsNoTracking()
+                .Where(s => s.Date >= start && s.Date <= end)
+                .OrderBy(s => s.Date)
+                .Select(s => new { s.Date, s.TotalConsumers, s.ActiveConsumers, s.DisconnectedConsumers, s.LowBalanceConsumers, s.WalletTotal, s.RecordedAt })
+                .ToListAsync();
+            return Results.Ok(new { From = start, To = end, Rows = rows });
+        })
+        .WithName("BalanceHistory")
+        .RequireAuthorization();
     }
 }

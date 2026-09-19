@@ -78,6 +78,10 @@ if (!(builder.Configuration.GetSection(PrepaidEngine.Application.Wallets.LowBala
     throw new InvalidOperationException("LowBalance:ThresholdRs must be zero or more.");
 builder.Services.AddScoped<IBillingEngineService, BillingEngineService>();
 
+// Daily wallet totals for the balance-history chart (see DailyWalletStat).
+builder.Services.AddScoped<PrepaidEngine.Infrastructure.Wallets.WalletStatsService>();
+builder.Services.AddHostedService<PrepaidEngine.Api.Wallets.WalletStatsWorker>();
+
 // BP/LS/IP/Events ingestion + cross-source energy validation — see IMeterDataIngestionService's
 // doc comment. Never bills anything; DLP billing stays entirely in IBillingEngineService above.
 builder.Services.Configure<EnergyValidationOptions>(builder.Configuration.GetSection(EnergyValidationOptions.SectionName));

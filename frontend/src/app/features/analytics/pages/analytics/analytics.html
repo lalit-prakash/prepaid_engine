@@ -69,6 +69,33 @@
       </section>
 
       <section class="card">
+        <h2>Low-balance consumers over time</h2>
+        <p class="card__note">Recorded once a day from the day the system started keeping history; earlier days are not available.</p>
+        @if (historyError()) {
+          <p class="card__note">Could not load balance history from the API.</p>
+        } @else {
+          <pe-line-chart [labels]="historyLabels()" [values]="historyLow()" seriesName="Low-balance consumers" color="var(--color-warning)" [format]="count"
+            emptyMessage="No balance history has been recorded for this period yet." ariaLabel="Low-balance consumers per day" />
+        }
+      </section>
+
+      <section class="card">
+        <h2>Disconnected consumers over time</h2>
+        @if (!historyError()) {
+          <pe-line-chart [labels]="historyLabels()" [values]="historyDisconnected()" seriesName="Disconnected consumers" color="var(--color-danger)" [format]="count"
+            emptyMessage="No balance history has been recorded for this period yet." ariaLabel="Disconnected consumers per day" />
+        }
+      </section>
+
+      <section class="card">
+        <h2>Total wallet balance over time</h2>
+        @if (!historyError()) {
+          <pe-line-chart [labels]="historyLabels()" [values]="historyWallet()" seriesName="Wallet balance (₹)" color="var(--color-success)" [format]="money"
+            emptyMessage="No balance history has been recorded for this period yet." ariaLabel="Total wallet balance per day" />
+        }
+      </section>
+
+      <section class="card">
         <h2>Wallet balance distribution</h2>
         <p class="card__note">Where {{ walletTotal() }} consumer wallet(s) sit right now (not limited to the period).</p>
         <pe-bar-chart [labels]="walletLabels" [series]="walletSeries()" [format]="count" ariaLabel="Consumers by wallet balance band" />

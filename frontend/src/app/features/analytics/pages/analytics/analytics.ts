@@ -3,8 +3,9 @@ import { HttpClient } from '@angular/common/http';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { environment } from '../../../../../environments/environment';
-import { AnalyticsOverview } from '../../../../core/models/analytics.model';
+import { AnalyticsOverview, BalanceHistory } from '../../../../core/models/analytics.model';
 import { BarChart, BarSeries } from '../../../../shared/components/bar-chart/bar-chart';
+import { LineChart } from '../../../../shared/components/line-chart/line-chart';
 import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 import { categoryLabel } from '../../../../shared/utils/category-label';
@@ -19,18 +20,20 @@ const PRESETS = [
 
 /**
  * Analytics. One request (GET /api/v1/analytics/overview) returns database-side aggregates over a
- * bounded date range; this page only charts them. It shows what the data model supports; area-wise
- * analysis, abnormal-consumption detection and balance-history trends are not offered because the
- * backend has no circle/division data, no anomaly detection and no balance snapshots.
+ * bounded date range; this page only charts them. Balance history comes from GET /api/v1/analytics/balance-history,
+ * the daily wallet totals the API records (it starts at the first recorded day; nothing is back-filled). Abnormal-
+ * consumption detection is not offered because the backend has no anomaly detection.
  */
 @Component({
   selector: 'pe-analytics',
-  imports: [BarChart, KpiCard, StatusBadge, DecimalPipe, DatePipe, RouterLink],
+  imports: [BarChart, LineChart, KpiCard, StatusBadge, DecimalPipe, DatePipe, RouterLink],
   templateUrl: './analytics.html',
   styleUrl: './analytics.scss',
 })
 export class Analytics implements OnInit {
   protected readonly data = signal<AnalyticsOverview | null>(null);
+  protected readonly history = signal<BalanceHistory | null>(null);
+  protected readonly historyError = signal(false);
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
 
@@ -103,6 +106,11 @@ export class Analytics implements OnInit {
     { name: 'Restorations', color: 'var(--color-success)', values: (this.data()?.communication ?? []).map((r) => r.restorations) },
   ]);
 
+  protected readonly historyLabels = computed(() => (this.history()?.rows ?? []).map((r) => this.label(r.date)));
+  protected readonly historyLow = computed(() => (this.history()?.rows ?? []).map((r) => r.lowBalanceConsumers));
+  protected readonly historyDisconnected = computed(() => (this.history()?.rows ?? []).map((r) => r.disconnectedConsumers));
+  protected readonly historyWallet = computed(() => (this.history()?.rows ?? []).map((r) => r.walletTotal));
+
   protected readonly walletLabels = ['Overdrawn', '< ₹100', '₹100–500', '₹500–1,000', '₹1,000–5,000', '≥ ₹5,000'];
   protected readonly walletSeries = computed<BarSeries[]>(() => {
     const w = this.data()?.walletDistribution;
@@ -132,11 +140,20 @@ export class Analytics implements OnInit {
         if (!this.fromDate()) this.fromDate.set(d.from.slice(0, 10));
         if (!this.toDate()) this.toDate.set(d.to.slice(0, 10));
         this.loading.set(false);
+        this.loadHistory(params);
       },
       error: (err) => {
         this.error.set(err?.status === 400 ? (err?.error?.error ?? 'That date range is not valid.') : 'Could not load analytics from the API.');
         this.loading.set(false);
       },
+    });
+  }
+
+  private loadHistory(params: Record<string, string>): void {
+    this.historyError.set(false);
+    this.http.get<BalanceHistory>(`${environment.apiBaseUrl}/api/v1/analytics/balance-history`, { params }).subscribe({
+      next: (h) => this.history.set(h),
+      error: () => { this.history.set(null); this.historyError.set(true); },
     });
   }
 }
