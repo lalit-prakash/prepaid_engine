@@ -134,10 +134,13 @@ export const routes: Routes = [
       },
       {
         path: 'reports/daily-billing',
+        pathMatch: 'full',
+        redirectTo: 'reports/view/daily-billing',
+      },
+      {
+        path: 'reports/view/:id',
         loadComponent: () =>
-          import('./features/reports/pages/daily-billing-report/daily-billing-report').then(
-            (m) => m.DailyBillingReport,
-          ),
+          import('./features/reports/pages/report-viewer/report-viewer').then((m) => m.ReportViewer),
       },
       {
         path: 'reports/charge-calculation',
