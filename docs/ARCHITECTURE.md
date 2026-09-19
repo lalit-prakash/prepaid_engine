@@ -137,7 +137,7 @@ filtered in the database, page size 1–100 (default 25).
 
 | Module | Endpoints |
 |---|---|
-| Consumers | `GET consumers` (unpaged, used for dashboard aggregates), `GET consumers/search`, `GET consumers/{account}`, `POST consumers/{account}/recharge`, `.../disconnect`, `.../reconnect`, `.../reconciliation-adjustments`, `POST consumers/{id}/meter-replacement`, `GET meter-replacements`, `GET consumers/{id}/notifications` |
+| Consumers | `GET consumers` (capped at 1,000 rows), `GET consumers/search`, `GET consumers/{account}`, `POST consumers/{account}/recharge`, `.../disconnect`, `.../reconnect`, `.../reconciliation-adjustments`, `POST consumers/{id}/meter-replacement`, `GET meter-replacements`, `GET consumers/{id}/notifications` |
 | Recharge / meter credit | `GET recharges`, `recharges/search`, `recharges/summary`, `recharges/{id}`; `GET meter-commands`, `meter-commands/{id}`, `POST meter-commands/{id}/retry` |
 | RC / DC | `GET connectivity-commands`, `connectivity-commands/{id}`, `POST connectivity-commands/{id}/retry` |
 | Billing | `GET bills`, `bills/search`, `bills/summary`, `bills/{id}` (with per-slab breakdown), `POST billing/daily/{date}/stage1|stage2`, `GET billing-reconciliation/daily-export`, `POST calculation-workbench/simulate` |
@@ -148,6 +148,7 @@ filtered in the database, page size 1–100 (default 25).
 | Audit | `GET audit-entries` (optional `entityId`), `audit-entries/search`, `audit-entries/summary` |
 | Reports | `GET reports/billing`, `day-wise-rc-dc`, `day-wise-recharge`, `recharge-failures`, `meter-credit-failures` — each `{ rows, truncated, generatedAt, totals? }`, 5,000-row cap |
 | Analytics | `GET analytics/overview` — database-side aggregates over a bounded range |
+| Dashboard | `GET dashboard/summary` — consumer/wallet counts and sums, latest-day billing progress, attention counts plus the newest 10 items, and the 4 latest connectivity commands, all computed in SQL |
 | Platform | `GET /health`, `POST auth/login`, `POST auth/refresh`, `GET auth/whoami`, Swagger in Development |
 
 Several endpoints exist for external systems (RMS conversions, MDMS ingestion, billing daily-export)
@@ -229,10 +230,11 @@ The specification targets 1,000,000 consumers, so operator-facing lists and KPIs
 populations into memory or the browser:
 - **Keyset pagination** on Consumers, Recharges, Bills, Audit, and the five meter-data profiles.
 - **Database-side aggregates** for recharge/bill/audit summaries, reports and analytics (`GROUP BY` in SQL).
-- **Bounded responses:** reports cap at 5,000 rows and say so; analytics ranges are capped at 366 days.
+- **Bounded responses:** reports cap at 5,000 rows and say so; analytics ranges are capped at 366 days. Every list endpoint without paging (`consumers`, `bills`, `meter-commands`, `connectivity-commands`, `conversions`, `reconciliation-adjustments`, `exceptions`, `notifications`, `billing-holds`, `meter-replacements`, the meter-data lists, `audit-entries`, `tariff-change-requests`, `tariffs`) goes through `ToCappedListAsync`: at most 1,000 rows, and `X-Result-Truncated: true` when more exist. Pages that need every row use the paged `search` endpoints.
+- **Dashboard:** `GET dashboard/summary` replaces the eight full-list downloads the dashboard used to make; no dashboard number is computed in the browser from a list any more.
 - **Indexes** for the time-ordered paging queries.
 
-Remaining unbounded reads are listed in [Known gaps](#12-known-gaps).
+Pages that still read a capped list (Exceptions, Notifications, Billing Holds, Meter Credit, RC/DC, Conversion, Reconciliation, Meter Replacements) show at most the newest 1,000 rows; moving them to keyset paging is listed in [Known gaps](#12-known-gaps).
 
 ## 6. Frontend
 
@@ -263,7 +265,7 @@ src/app/
 
 | Module | Pages |
 |---|---|
-| Dashboard | KPIs, consumption, billing progress, health, attention list (with drill-down), recent recharges/operations |
+| Dashboard | KPIs, consumption, billing progress, health, attention list (with drill-down), recent recharges/operations, all from `dashboard/summary`, `analytics/overview`, `risk-indicators` and `recharges/search` |
 | Consumers | server-searched list; tabbed detail (overview, wallet, billing, recharge, meter operations, meter data, timeline) |
 | Recharge / Meter credit | operations list + detail with separate payment and credit timeline, MDM correlation fields, retry |
 | RC/DC, Conversion, Exceptions, Reconciliation, Billing holds, Notifications, Meter replacements | list + detail/actions |
@@ -323,7 +325,6 @@ Tracked on the project board: https://github.com/users/lalit-prakash/projects/5
 - Billing batch/job model with progress; report jobs for large exports.
 - System Health, Integrations and Service Requests modules; tariff fields (code, taxes, thresholds).
 - Network hierarchy (circle/division/feeder) and area analytics; balance history; abnormal-consumption detection.
-- Unbounded reads remain on `GET consumers`, `bills`, `meter-commands`, `conversions`, `exceptions`,
-  `notifications`, `billing-holds`, `meter-replacements` and the dashboard aggregates that use them.
+- Capped (1,000-row) lists on Exceptions, Notifications, Billing Holds, Meter Credit, RC/DC, Conversion, Reconciliation, Meter Replacements and Consumer-based lookups (the charge-calculation report loads consumers) need keyset paging and search; the cap keeps them safe but not complete.
 - `Program.cs` is one large file (~3,900 lines); splitting it into endpoint modules is planned.
 - Load and failure testing has not been run.

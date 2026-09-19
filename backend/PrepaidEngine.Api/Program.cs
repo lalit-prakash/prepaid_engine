@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Api.Auth;
 using PrepaidEngine.Api.Security;
+using PrepaidEngine.Api.Dashboard;
 using PrepaidEngine.Application.Billing;
 using PrepaidEngine.Application.Connectivity;
 using PrepaidEngine.Application.Conversion;
@@ -257,6 +258,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapAuthEndpoints();
+app.MapDashboardEndpoints();
 
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
     .WithName("Health");
@@ -265,7 +267,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
 // via user-secrets). This is a stop-gap for a local demo, not a substitute for real
 // authentication/authorization before any shared or production exposure — see
 // docs/assumptions-and-security.md.
-app.MapGet("/api/v1/consumers", async (PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/consumers", async (HttpContext http, PrepaidEngineDbContext db) =>
 {
     var consumers = await db.Consumers
         .Include(c => c.Meter)
@@ -279,7 +281,7 @@ app.MapGet("/api/v1/consumers", async (PrepaidEngineDbContext db) =>
             WalletBalance = c.Wallet.Balance,
             c.Wallet.EmergencyCreditLimit
         })
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(consumers);
 })
@@ -565,7 +567,7 @@ app.MapPost("/api/v1/consumers/{accountNumber}/reconnect", async (
 .RequireAuthorization("Operations");
 
 // RC/DC read endpoints — real ConnectivityCommand records across all consumers.
-app.MapGet("/api/v1/connectivity-commands", async (string? accountNumber, PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/connectivity-commands", async (HttpContext http, string? accountNumber, PrepaidEngineDbContext db) =>
 {
     // accountNumber narrows the list to one consumer (capped) for the Consumer Detail tab.
     var commands = await (
@@ -588,7 +590,7 @@ app.MapGet("/api/v1/connectivity-commands", async (string? accountNumber, Prepai
             c.AcknowledgedAt,
         })
         .Take(accountNumber == null ? int.MaxValue : 50)
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(commands);
 })
@@ -725,7 +727,7 @@ app.MapPost("/api/v1/connectivity-commands/{id:guid}/retry", async (
 // Billing dashboard read endpoints — real data across all consumers, joined with the tariff
 // and consumption reading each bill was generated from. Demo/local-only, same Basic-auth
 // stop-gap as every other endpoint above (see docs/assumptions-and-security.md).
-app.MapGet("/api/v1/bills", async (PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/bills", async (HttpContext http, PrepaidEngineDbContext db) =>
 {
     var bills = await db.Bills
         .Join(db.Consumers, b => b.ConsumerId, c => c.Id, (b, c) => new { Bill = b, Consumer = c })
@@ -752,7 +754,7 @@ app.MapGet("/api/v1/bills", async (PrepaidEngineDbContext db) =>
             x.Bill.Status,
             x.Bill.GeneratedAt,
         })
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(bills);
 })
@@ -943,7 +945,7 @@ app.MapGet("/api/v1/auth/whoami", (ClaimsPrincipal user) =>
 // engine actually bills against (see docs/tariff-validation-report.md for sourcing). A Tariff
 // row itself is still never edited in place — see TariffChangeRequest's doc comment for the
 // governance workflow that now exists to create a new one instead.
-app.MapGet("/api/v1/tariffs", async (PrepaidEngine.Domain.Enums.TariffLifecycleStatus? status, PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/tariffs", async (HttpContext http, PrepaidEngine.Domain.Enums.TariffLifecycleStatus? status, PrepaidEngineDbContext db) =>
 {
     var query = db.Tariffs.AsQueryable();
     if (status.HasValue) query = query.Where(t => t.Status == status.Value);
@@ -961,7 +963,7 @@ app.MapGet("/api/v1/tariffs", async (PrepaidEngine.Domain.Enums.TariffLifecycleS
             SlabCount = t.Slabs.Count,
             TouPeriodCount = t.TouPeriods.Count,
         })
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(tariffs);
 })
@@ -1192,7 +1194,7 @@ app.MapPost("/api/v1/tariff-change-requests/{id:guid}/submit", async (Guid id, S
 .WithName("SubmitTariffChangeRequest")
 .RequireAuthorization("ITRole");
 
-app.MapGet("/api/v1/tariff-change-requests", async (TariffChangeRequestStatus? status, PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/tariff-change-requests", async (HttpContext http, TariffChangeRequestStatus? status, PrepaidEngineDbContext db) =>
 {
     var query = db.TariffChangeRequests.AsQueryable();
     if (status.HasValue) query = query.Where(r => r.Status == status.Value);
@@ -1206,7 +1208,7 @@ app.MapGet("/api/v1/tariff-change-requests", async (TariffChangeRequestStatus? s
             r.ApprovedBy, r.ApprovedAt, r.CommencementDate, r.RejectedBy, r.RejectedAt, r.RejectionReason, r.ActivatedAt,
         })
         .Take(500)
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(requests);
 })
@@ -1434,7 +1436,7 @@ app.MapPost("/api/v1/calculation-workbench/simulate", async (SimulateChargeReque
 // Note: RechargeStatus has no explicit "Pending" value — the RMS-Pending branch of the POST
 // endpoint below deliberately leaves a transaction in its initial "Initiated" state (RMS
 // hasn't told us Success or Failed yet), so "Initiated" here doubles as "Pending" in the UI.
-app.MapGet("/api/v1/recharges", async (string? accountNumber, PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/recharges", async (HttpContext http, string? accountNumber, PrepaidEngineDbContext db) =>
 {
     // Left join to MeterCommands: a recharge that never reached RMS Success (or hasn't been
     // dispatched to the meter yet) legitimately has no command row — that must render as "no
@@ -1459,7 +1461,7 @@ app.MapGet("/api/v1/recharges", async (string? accountNumber, PrepaidEngineDbCon
             MeterCommandStatus = mc == null ? (MeterCommandStatus?)null : mc.Status,
         })
         .Take(accountNumber == null ? int.MaxValue : 50)
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(recharges);
 })
@@ -1770,7 +1772,7 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
 // Meter Credit read endpoints — real MeterCommand records across all consumers, each traceable
 // back to the RechargeTransaction that triggered it (see MeterCommand's doc comment for why
 // these are separate entities with separate lifecycles).
-app.MapGet("/api/v1/meter-commands", async (PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/meter-commands", async (HttpContext http, PrepaidEngineDbContext db) =>
 {
     var commands = await (
         from m in db.MeterCommands
@@ -1792,7 +1794,7 @@ app.MapGet("/api/v1/meter-commands", async (PrepaidEngineDbContext db) =>
             RechargeTransactionId = r.Id,
             r.RmsReferenceId,
         })
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(commands);
 })
@@ -2050,7 +2052,7 @@ app.MapPost("/api/v1/conversions", async (
 .WithName("SubmitConversions")
 .RequireAuthorization("Operations");
 
-app.MapGet("/api/v1/conversions", async (PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/conversions", async (HttpContext http, PrepaidEngineDbContext db) =>
 {
     var conversions = await (
         from cv in db.ConversionRequests
@@ -2088,7 +2090,7 @@ app.MapGet("/api/v1/conversions", async (PrepaidEngineDbContext db) =>
             cv.DiaAmount,
             cv.ReadingAtConversion,
         })
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(conversions);
 })
@@ -2242,7 +2244,7 @@ app.MapPost("/api/v1/conversions/reverse", async (ReverseConversionApiRequest re
 .WithName("ConvertToPostpaid")
 .RequireAuthorization("Operations");
 
-app.MapGet("/api/v1/conversions/reverse", async (PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/conversions/reverse", async (HttpContext http, PrepaidEngineDbContext db) =>
 {
     var conversions = await (
         from r in db.ReverseConversionRequests
@@ -2254,7 +2256,7 @@ app.MapGet("/api/v1/conversions/reverse", async (PrepaidEngineDbContext db) =>
             r.FinalMeterReadingKwh, r.FinalWalletBalance, r.RequestedAt, r.CompletedAt,
         })
         .Take(500)
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(conversions);
 })
@@ -2303,7 +2305,7 @@ app.MapPost("/api/v1/consumers/{accountNumber}/reconciliation-adjustments", asyn
 .WithName("ApplyReconciliationAdjustment")
 .RequireAuthorization("Operations");
 
-app.MapGet("/api/v1/reconciliation-adjustments", async (PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/reconciliation-adjustments", async (HttpContext http, PrepaidEngineDbContext db) =>
 {
     var adjustments = await (
         from r in db.ReconciliationAdjustments
@@ -2321,7 +2323,7 @@ app.MapGet("/api/v1/reconciliation-adjustments", async (PrepaidEngineDbContext d
             r.BalanceAfter,
             r.AppliedAt,
         })
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(adjustments);
 })
@@ -2401,7 +2403,7 @@ app.MapGet("/api/v1/billing-reconciliation/daily-export", async (DateTime date, 
 
 // --- Operational exceptions: real, generated automatically (see RaiseException above) --------
 // whenever a MeterCommand or ConnectivityCommand reaches Failed/TimedOut — never hand-entered.
-app.MapGet("/api/v1/exceptions", async (PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/exceptions", async (HttpContext http, PrepaidEngineDbContext db) =>
 {
     var exceptions = await (
         from e in db.OperationalExceptions
@@ -2420,7 +2422,7 @@ app.MapGet("/api/v1/exceptions", async (PrepaidEngineDbContext db) =>
             e.CreatedAt,
             e.ResolvedAt,
         })
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(exceptions);
 })
@@ -2553,7 +2555,7 @@ app.MapGet("/api/v1/audit-entries/summary", async (PrepaidEngineDbContext db) =>
 .WithName("GetAuditSummary")
 .RequireAuthorization();
 
-app.MapGet("/api/v1/audit-entries", async (PrepaidEngineDbContext db, string? entityType, string? entityId, DateTime? from, DateTime? to) =>
+app.MapGet("/api/v1/audit-entries", async (HttpContext http, PrepaidEngineDbContext db, string? entityType, string? entityId, DateTime? from, DateTime? to) =>
 {
     var query = db.AuditEntries.AsQueryable();
 
@@ -2581,7 +2583,7 @@ app.MapGet("/api/v1/audit-entries", async (PrepaidEngineDbContext db, string? en
             a.OccurredAt,
         })
         .Take(string.IsNullOrWhiteSpace(entityId) ? int.MaxValue : 100)
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(entries);
 })
@@ -3260,7 +3262,7 @@ app.MapGet("/api/v1/meter-data/alarms/search", async (
 .WithName("SearchMeterAlarms")
 .RequireAuthorization();
 
-app.MapGet("/api/v1/meter-data/dlp", async (Guid? consumerId, PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/meter-data/dlp", async (HttpContext http, Guid? consumerId, PrepaidEngineDbContext db) =>
 {
     var query = db.DailyLoadProfiles.AsQueryable();
     if (consumerId.HasValue)
@@ -3288,7 +3290,7 @@ app.MapGet("/api/v1/meter-data/dlp", async (Guid? consumerId, PrepaidEngineDbCon
             d.SourceReference,
         })
         .Take(500)
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(profiles);
 })
@@ -3309,7 +3311,7 @@ app.MapPost("/api/v1/meter-data/bp", async (RegisterReadingIngestRequest request
 .WithName("IngestRegisterReading")
 .RequireAuthorization("DataAdmin");
 
-app.MapGet("/api/v1/meter-data/bp", async (Guid? consumerId, Guid? meterId, PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/meter-data/bp", async (HttpContext http, Guid? consumerId, Guid? meterId, PrepaidEngineDbContext db) =>
 {
     var query = db.RegisterReadings.AsQueryable();
     if (consumerId.HasValue) query = query.Where(r => r.ConsumerId == consumerId.Value);
@@ -3322,7 +3324,7 @@ app.MapGet("/api/v1/meter-data/bp", async (Guid? consumerId, Guid? meterId, Prep
         orderby r.ReadingTimestamp descending
         select new { r.Id, consumer.AccountNumber, consumer.Name, meter.MeterNumber, r.ReadingTimestamp, r.CumulativeImportKwh, r.Status, r.ReceivedAt, r.SourceReference })
         .Take(500)
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(readings);
 })
@@ -3338,7 +3340,7 @@ app.MapPost("/api/v1/meter-data/ls", async (LoadSurveyIntervalIngestRequest requ
 .WithName("IngestLoadSurveyInterval")
 .RequireAuthorization("DataAdmin");
 
-app.MapGet("/api/v1/meter-data/ls", async (Guid? consumerId, Guid? meterId, DateTime? from, DateTime? to, PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/meter-data/ls", async (HttpContext http, Guid? consumerId, Guid? meterId, DateTime? from, DateTime? to, PrepaidEngineDbContext db) =>
 {
     var query = db.LoadSurveyIntervals.AsQueryable();
     if (consumerId.HasValue) query = query.Where(l => l.ConsumerId == consumerId.Value);
@@ -3353,7 +3355,7 @@ app.MapGet("/api/v1/meter-data/ls", async (Guid? consumerId, Guid? meterId, Date
         orderby l.IntervalStart descending
         select new { l.Id, consumer.AccountNumber, consumer.Name, meter.MeterNumber, l.IntervalStart, l.IntervalEnd, l.ImportKwh, l.SourceReference })
         .Take(1000)
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(intervals);
 })
@@ -3374,7 +3376,7 @@ app.MapPost("/api/v1/meter-data/ip", async (InstantaneousReadingIngestRequest re
 // group-by-then-take-first step is done as its own query (translates cleanly against the base
 // entity), then joined against Consumers/Meters in memory — EF Core's SQL translator cannot
 // express a three-way join combined with "first row per group" in a single query.
-app.MapGet("/api/v1/meter-data/ip/latest", async (Guid? consumerId, Guid? meterId, PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/meter-data/ip/latest", async (HttpContext http, Guid? consumerId, Guid? meterId, PrepaidEngineDbContext db) =>
 {
     var query = db.InstantaneousReadings.AsQueryable();
     if (consumerId.HasValue) query = query.Where(i => i.ConsumerId == consumerId.Value);
@@ -3383,7 +3385,7 @@ app.MapGet("/api/v1/meter-data/ip/latest", async (Guid? consumerId, Guid? meterI
     var latestReadings = await query
         .GroupBy(i => i.MeterId)
         .Select(g => g.OrderByDescending(i => i.Timestamp).First())
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     var consumerIds = latestReadings.Select(r => r.ConsumerId).ToHashSet();
     var meterIds = latestReadings.Select(r => r.MeterId).ToHashSet();
@@ -3414,7 +3416,7 @@ app.MapPost("/api/v1/meter-data/events", async (MeterEventIngestRequest request,
 .WithName("IngestMeterEvent")
 .RequireAuthorization("DataAdmin");
 
-app.MapGet("/api/v1/meter-data/events", async (Guid? consumerId, Guid? meterId, PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/meter-data/events", async (HttpContext http, Guid? consumerId, Guid? meterId, PrepaidEngineDbContext db) =>
 {
     var query = db.MeterEvents.AsQueryable();
     if (consumerId.HasValue) query = query.Where(e => e.ConsumerId == consumerId.Value);
@@ -3427,7 +3429,7 @@ app.MapGet("/api/v1/meter-data/events", async (Guid? consumerId, Guid? meterId, 
         orderby e.EventTimestamp descending
         select new { e.Id, consumer.AccountNumber, consumer.Name, meter.MeterNumber, e.EventCode, e.EventTimestamp, e.Description, e.Status })
         .Take(500)
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(events);
 })
@@ -3443,7 +3445,7 @@ app.MapPost("/api/v1/meter-data/alarms", async (MeterAlarmIngestRequest request,
 .WithName("IngestMeterAlarm")
 .RequireAuthorization("DataAdmin");
 
-app.MapGet("/api/v1/meter-data/alarms", async (Guid? consumerId, Guid? meterId, MeterAlarmStatus? status, PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/meter-data/alarms", async (HttpContext http, Guid? consumerId, Guid? meterId, MeterAlarmStatus? status, PrepaidEngineDbContext db) =>
 {
     var query = db.MeterAlarms.AsQueryable();
     if (consumerId.HasValue) query = query.Where(a => a.ConsumerId == consumerId.Value);
@@ -3461,7 +3463,7 @@ app.MapGet("/api/v1/meter-data/alarms", async (Guid? consumerId, Guid? meterId, 
             a.Status, a.AcknowledgedAt, a.AcknowledgedBy, a.ResolvedAt, a.ResolutionNote,
         })
         .Take(500)
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(alarms);
 })
@@ -3530,7 +3532,7 @@ app.MapPost("/api/v1/meter-data/energy-validation", async (EvaluateEnergyValidat
 .WithName("EvaluateEnergyValidation")
 .RequireAuthorization("DataAdmin");
 
-app.MapGet("/api/v1/meter-data/energy-validation", async (Guid? consumerId, Guid? meterId, EnergyValidationStatus? status, PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/meter-data/energy-validation", async (HttpContext http, Guid? consumerId, Guid? meterId, EnergyValidationStatus? status, PrepaidEngineDbContext db) =>
 {
     var query = db.EnergyValidationResults.AsQueryable();
     if (consumerId.HasValue) query = query.Where(v => v.ConsumerId == consumerId.Value);
@@ -3548,7 +3550,7 @@ app.MapGet("/api/v1/meter-data/energy-validation", async (Guid? consumerId, Guid
             v.ExpectedValueKwh, v.ActualValueKwh, v.VarianceKwh, v.VariancePct, v.Status, v.Reason, v.EvaluatedAt,
         })
         .Take(500)
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(results);
 })
@@ -3619,7 +3621,7 @@ app.MapPost("/api/v1/consumers/{consumerId:guid}/meter-replacement", async (
 // a new meter's (they're different physical meters). Old/new meter numbers are resolved via a
 // left join since OldMeterId is null for an initial Installed event (not currently produced by
 // ReplaceMeterAsync, which only ever records Replaced, but the entity/join supports it).
-app.MapGet("/api/v1/meter-replacements", async (PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/meter-replacements", async (HttpContext http, PrepaidEngineDbContext db) =>
 {
     var replacements = await (
         from a in db.MeterAssignments
@@ -3642,7 +3644,7 @@ app.MapGet("/api/v1/meter-replacements", async (PrepaidEngineDbContext db) =>
             a.Reason,
             a.RecordedAt,
         })
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(replacements);
 })
@@ -3673,7 +3675,7 @@ app.MapGet("/api/v1/consumers/{consumerId:guid}/notifications", async (Guid cons
 
 // Cross-consumer operator view — GetConsumerNotifications above is scoped to one consumer (e.g.
 // for a future Consumer 360 section); this backs a standalone Notification History page.
-app.MapGet("/api/v1/notifications", async (PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/notifications", async (HttpContext http, PrepaidEngineDbContext db) =>
 {
     var notifications = await (
         from n in db.NotificationEvents
@@ -3691,7 +3693,7 @@ app.MapGet("/api/v1/notifications", async (PrepaidEngineDbContext db) =>
             n.SentAt,
             n.ProviderReference,
         })
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(notifications);
 })
@@ -3700,7 +3702,7 @@ app.MapGet("/api/v1/notifications", async (PrepaidEngineDbContext db) =>
 
 // Operator visibility into MeterBillingControl holds (spec §8) — without this, the clear
 // endpoint below has nothing for an operator to act against.
-app.MapGet("/api/v1/meter-data/billing-holds", async (bool? activeOnly, PrepaidEngineDbContext db) =>
+app.MapGet("/api/v1/meter-data/billing-holds", async (HttpContext http, bool? activeOnly, PrepaidEngineDbContext db) =>
 {
     var query = db.MeterBillingControls.AsQueryable();
     if (activeOnly ?? true)
@@ -3723,7 +3725,7 @@ app.MapGet("/api/v1/meter-data/billing-holds", async (bool? activeOnly, PrepaidE
             c.BlockedAt,
             c.ClearedAt,
         })
-        .ToListAsync();
+        .ToCappedListAsync(http);
 
     return Results.Ok(holds);
 })
