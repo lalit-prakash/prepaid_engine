@@ -124,6 +124,17 @@
   text-transform: uppercase;
   letter-spacing: 0.07em;
 }
+.sidebar__group-toggle {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.sidebar__group-toggle:hover { color: rgba(255, 255, 255, 0.7); }
 .sidebar__group-items {
   display: flex;
   flex-direction: column;
