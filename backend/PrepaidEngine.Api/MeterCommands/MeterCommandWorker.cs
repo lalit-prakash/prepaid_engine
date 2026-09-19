@@ -27,13 +27,17 @@ public class MeterCommandWorker : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly MeterCommandWorkerOptions _options;
     private readonly ILogger<MeterCommandWorker> _logger;
+    private readonly PrepaidEngine.Api.Health.WorkerStatusRegistry _status;
+    private const string StatusName = "MeterCommandWorker";
     private DateTime _lastRecovery = DateTime.MinValue;
 
-    public MeterCommandWorker(IServiceScopeFactory scopeFactory, Microsoft.Extensions.Options.IOptions<MeterCommandWorkerOptions> options, ILogger<MeterCommandWorker> logger)
+    public MeterCommandWorker(IServiceScopeFactory scopeFactory, Microsoft.Extensions.Options.IOptions<MeterCommandWorkerOptions> options, ILogger<MeterCommandWorker> logger, PrepaidEngine.Api.Health.WorkerStatusRegistry status)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
         _logger = logger;
+        _status = status;
+        _status.Expect(StatusName, options.Value.PollSeconds);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -53,6 +57,7 @@ public class MeterCommandWorker : BackgroundService
                     var recovered = await dispatcher.RecoverStuckAsync(TimeSpan.FromMinutes(_options.StuckAfterMinutes), stoppingToken);
                     if (recovered > 0) _logger.LogWarning("Timed out {Count} meter command(s) that were sent but never got an outcome.", recovered);
                 }
+                _status.Success(StatusName, _options.PollSeconds);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -61,6 +66,7 @@ public class MeterCommandWorker : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Meter command worker round failed.");
+                _status.Failure(StatusName, _options.PollSeconds, ex);
             }
 
             // Keep going straight away while there is a backlog; otherwise wait.

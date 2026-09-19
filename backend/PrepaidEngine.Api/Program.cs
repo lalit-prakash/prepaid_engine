@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Api.Auth;
 using PrepaidEngine.Api.Security;
 using PrepaidEngine.Api.Dashboard;
+using PrepaidEngine.Api.Health;
 using PrepaidEngine.Api.Endpoints;
 using PrepaidEngine.Api.Reports;
 using PrepaidEngine.Application.Billing;
@@ -111,6 +112,7 @@ else if (jwtOptions.Key.Length < 32)
 }
 builder.Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(jwtOptions));
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<PrepaidEngine.Api.Health.WorkerStatusRegistry>();
 builder.Services.AddSingleton<AuditContextInterceptor>();
 builder.Services.AddSingleton<UserStore>();
 builder.Services.AddSingleton<LoginThrottle>();
@@ -197,6 +199,7 @@ app.MapAuditEndpoints();
 app.MapAnalyticsEndpoints();
 app.MapMeterDataEndpoints();
 app.MapPagedListEndpoints();
+app.MapSystemEndpoints();
 
 // Writes docs/API_REFERENCE.md from the registered endpoints, then exits (see Docs/ApiReference.cs).
 if (args.Length >= 1 && args[0] == "dump-endpoints")

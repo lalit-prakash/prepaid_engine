@@ -1,0 +1,36 @@
+.page-header { margin-bottom: var(--space-5); }
+.page-header h1 { font-size: var(--font-size-page-title); }
+.page-header__subtitle { color: var(--text-secondary); margin-top: 4px; }
+
+.overall {
+  display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); margin-bottom: var(--space-4);
+  background: var(--color-neutral-100);
+}
+.overall span { color: var(--text-secondary); font-size: var(--font-size-meta); }
+.overall--healthy { background: var(--color-success-light); }
+.overall--degraded { background: var(--color-warning-light, var(--color-neutral-100)); }
+.overall--down { background: var(--color-danger-light); }
+
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-5); }
+.skeleton-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--space-4); }
+.skeleton-card { height: 92px; border-radius: var(--radius-lg); background: var(--color-neutral-100); }
+
+.panel { background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-5); box-shadow: var(--shadow-sm); margin-bottom: var(--space-4); }
+.panel h2 { font-size: 16px; margin: 0 0 var(--space-2); }
+.panel__hint { color: var(--text-muted); font-size: var(--font-size-meta); margin: 0 0 var(--space-3); }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-subtle); font-size: var(--font-size-body); vertical-align: top; }
+th { color: var(--text-secondary); font-weight: var(--font-weight-medium); }
+.num { text-align: right; }
+.cell-meta { color: var(--text-muted); font-size: var(--font-size-meta); max-width: 38ch; }
+
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px var(--space-5); margin: 0; }
+.kv dt { color: var(--text-secondary); }
+.kv dd { margin: 0; font-weight: var(--font-weight-medium); }
+
+.error-panel { background: var(--color-danger-light); color: var(--color-danger-dark); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); }
+.link-btn { background: none; border: none; color: var(--color-primary); cursor: pointer; text-decoration: underline; }
+.empty-note { color: var(--text-muted); font-style: italic; }

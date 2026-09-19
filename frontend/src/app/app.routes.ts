@@ -191,7 +191,10 @@ export const routes: Routes = [
             (m) => m.MeterDataDashboard,
           ),
       },
-      ...stubRoute('system-health', 'System Health'),
+      {
+        path: 'system-health',
+        loadComponent: () => import('./features/system/pages/system-health/system-health').then((m) => m.SystemHealthPage),
+      },
       ...stubRoute('service-requests', 'Service Requests'),
       {
         path: 'analytics',
@@ -206,7 +209,10 @@ export const routes: Routes = [
       },
       ...stubRoute('user-management', 'User Management'),
       ...stubRoute('roles-permissions', 'Roles & Permissions'),
-      ...stubRoute('integrations', 'Integrations'),
+      {
+        path: 'integrations',
+        loadComponent: () => import('./features/system/pages/integrations/integrations').then((m) => m.Integrations),
+      },
       ...stubRoute('system-settings', 'System Settings'),
       { path: '**', redirectTo: 'overview' },
     ],

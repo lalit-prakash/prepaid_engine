@@ -1,0 +1,99 @@
+<div class="system-health">
+  <div class="page-header">
+    <h1>System Health</h1>
+    <p class="page-header__subtitle">
+      Measured by the API on every refresh (every 15 seconds). See <a routerLink="/integrations">Integrations</a> for the systems this one talks to.
+    </p>
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-row">@for (i of [1,2,3,4]; track i) { <div class="skeleton-card"></div> }</div>
+  } @else if (error() && !health()) {
+    <div class="error-panel">{{ error() }} <button type="button" class="link-btn" (click)="load()">Retry</button></div>
+  } @else if (health(); as h) {
+    <div class="overall overall--{{ h.overall.toLowerCase() }}" role="status">
+      <strong>{{ h.overall === 'Healthy' ? 'All systems healthy' : h.overall === 'Degraded' ? 'Degraded: something needs attention' : 'Down' }}</strong>
+      <span>Checked {{ h.checkedAt | date: 'HH:mm:ss' }}</span>
+      @if (error()) { <span class="overall__stale">Latest refresh failed; showing the previous reading.</span> }
+    </div>
+
+    <section class="kpi-row">
+      <pe-kpi-card label="API" [value]="h.api.state" tone="success" [sublabel]="'Up ' + uptime(h.api.uptimeSeconds) + ' · v' + h.api.version + ' · ' + h.api.environment" />
+      <pe-kpi-card label="Database" [value]="h.database.latencyMs !== null ? (h.database.latencyMs | number: '1.0-1') + ' ms' : h.database.state"
+        [tone]="h.database.state === 'Healthy' ? 'success' : h.database.state === 'Degraded' ? 'warning' : 'danger'"
+        [sublabel]="h.database.state === 'Down' ? (h.database.error ?? 'Unreachable') : h.database.appliedMigrations + ' migrations applied' + (h.database.pendingMigrations > 0 ? ', ' + h.database.pendingMigrations + ' pending' : '')" />
+      @if (h.queues; as q) {
+        <pe-kpi-card label="Meter credit queue" [value]="q.meterCommandsQueued" [tone]="q.oldestQueuedSeconds !== null && q.oldestQueuedSeconds > 300 ? 'danger' : q.meterCommandsQueued > 0 ? 'warning' : 'success'"
+          [sublabel]="'Oldest: ' + age(q.oldestQueuedSeconds) + ' · ' + q.meterCommandsInFlight + ' in flight'" />
+        <pe-kpi-card label="Open exceptions" [value]="q.openExceptions" [tone]="q.openExceptions > 0 ? 'danger' : 'success'" [sublabel]="q.activeBillingHolds + ' billing hold(s)'" />
+      }
+    </section>
+
+    <section class="panel">
+      <h2>Background workers</h2>
+      <p class="panel__hint">Each worker reports after every round. Healthy means a success within three expected intervals. State is per API instance and starts empty after a restart.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Worker</th><th>State</th><th>Expected every</th><th>Last success</th><th>Last failure</th><th class="num">Rounds</th><th class="num">Failures</th></tr></thead>
+          <tbody>
+            @for (w of h.workers; track w.name) {
+              <tr>
+                <td>{{ w.name }}</td>
+                <td><pe-status-badge [label]="workerLabel(w.state)" [tone]="tone(w.state)" /></td>
+                <td>{{ w.expectedEverySeconds }} s</td>
+                <td>{{ w.lastSuccessAt ? (w.lastSuccessAt | date: 'd MMM, HH:mm:ss') : '—' }}</td>
+                <td>
+                  @if (w.lastFailureAt) { {{ w.lastFailureAt | date: 'd MMM, HH:mm:ss' }} <div class="cell-meta">{{ w.lastError }}</div> } @else { — }
+                </td>
+                <td class="num">{{ w.runs | number }}</td>
+                <td class="num">{{ w.failures | number }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    @if (h.queues; as q) {
+      <section class="panel">
+        <h2>Work waiting</h2>
+        <dl class="kv">
+          <dt>Meter credit commands queued</dt><dd>{{ q.meterCommandsQueued | number }}</dd>
+          <dt>Meter credit commands in flight</dt><dd>{{ q.meterCommandsInFlight | number }}</dd>
+          <dt>Remote disconnect/reconnect commands pending</dt><dd>{{ q.connectivityCommandsPending | number }}</dd>
+          <dt>Notifications pending</dt><dd>{{ q.notificationsPending | number }}</dd>
+          <dt>Open exceptions</dt><dd>{{ q.openExceptions | number }}</dd>
+          <dt>Active billing holds</dt><dd>{{ q.activeBillingHolds | number }}</dd>
+        </dl>
+      </section>
+    }
+
+    @if (h.recentBillingRuns; as runs) {
+      <section class="panel">
+        <h2>Recent billing runs</h2>
+        @if (runs.length === 0) {
+          <div class="empty-note">No billing run has been recorded yet.</div>
+        } @else {
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Run</th><th>Billing date</th><th>Status</th><th class="num">Consumers</th><th class="num">Exceptions</th><th>Started</th><th>Finished</th></tr></thead>
+              <tbody>
+                @for (r of runs; track r.startedAt + r.runType) {
+                  <tr>
+                    <td>{{ runLabel(r.runType) }}</td>
+                    <td>{{ r.billingDate | date: 'd MMM y' }}</td>
+                    <td><pe-status-badge [label]="r.status" [tone]="r.status === 'Completed' ? 'success' : r.status === 'Running' ? 'info' : r.status === 'CompletedWithExceptions' ? 'warning' : 'danger'" /></td>
+                    <td class="num">{{ r.consumerCount | number }}</td>
+                    <td class="num">{{ r.exceptionCount | number }}</td>
+                    <td>{{ r.startedAt | date: 'd MMM, HH:mm' }}</td>
+                    <td>{{ r.completedAt ? (r.completedAt | date: 'd MMM, HH:mm') : '—' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </section>
+    }
+  }
+</div>

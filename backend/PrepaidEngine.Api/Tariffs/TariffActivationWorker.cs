@@ -14,11 +14,15 @@ public sealed class TariffActivationWorker : BackgroundService
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<TariffActivationWorker> _logger;
+    private readonly PrepaidEngine.Api.Health.WorkerStatusRegistry _status;
+    private const string StatusName = "TariffActivationWorker";
 
-    public TariffActivationWorker(IServiceScopeFactory scopeFactory, ILogger<TariffActivationWorker> logger)
+    public TariffActivationWorker(IServiceScopeFactory scopeFactory, ILogger<TariffActivationWorker> logger, PrepaidEngine.Api.Health.WorkerStatusRegistry status)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _status = status;
+        _status.Expect(StatusName, 60);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -32,6 +36,7 @@ public sealed class TariffActivationWorker : BackgroundService
                 var result = await service.ActivateDueAsync(DateTime.UtcNow, stoppingToken);
                 foreach (var a in result.Activated)
                     _logger.LogInformation("Activated tariff change request {RequestId} as tariff {TariffId}.", a.ChangeRequestId, a.NewTariffId);
+                _status.Success(StatusName, 60);
             }
             catch (OperationCanceledException)
             {
@@ -41,6 +46,7 @@ public sealed class TariffActivationWorker : BackgroundService
             {
                 // e.g. the database is not reachable yet; try again on the next tick.
                 _logger.LogError(ex, "Tariff activation tick failed.");
+                _status.Failure(StatusName, 60, ex);
             }
 
             try

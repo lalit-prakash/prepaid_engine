@@ -121,16 +121,34 @@
             <span class="health__name">Prepaid Engine API</span>
             <span class="health__value">@if (apiHealth() === 'healthy') { {{ apiLatencyMs() }} ms } @else if (apiHealth() === 'down') { Down } @else { … }</span>
           </li>
-          <li><span class="dot"></span><span class="health__name">Database</span><span class="health__value health__value--muted">Not monitored</span></li>
-          <li><span class="dot"></span><span class="health__name">RMS</span><span class="health__value health__value--muted">Mock adapter</span></li>
-          <li><span class="dot"></span><span class="health__name">Meter commands</span><span class="health__value health__value--muted">Mock adapter</span></li>
-          <li><span class="dot"></span><span class="health__name">Connectivity</span><span class="health__value health__value--muted">Mock adapter</span></li>
+          @if (systemHealth(); as h) {
+            <li>
+              <span class="dot" [class.dot--success]="h.database.state === 'Healthy'" [class.dot--warning]="h.database.state === 'Degraded'" [class.dot--danger]="h.database.state === 'Down'"></span>
+              <span class="health__name">Database</span>
+              <span class="health__value">{{ h.database.latencyMs !== null ? h.database.latencyMs + ' ms' : h.database.state }}</span>
+            </li>
+            <li>
+              <span class="dot" [class.dot--success]="workersOk" [class.dot--warning]="!workersOk"></span>
+              <span class="health__name">Background workers</span>
+              <span class="health__value">{{ workersHealthy }}</span>
+            </li>
+            @if (h.queues; as q) {
+              <li>
+                <span class="dot" [class.dot--success]="q.meterCommandsQueued === 0" [class.dot--warning]="q.meterCommandsQueued > 0"></span>
+                <span class="health__name">Meter credit queue</span>
+                <span class="health__value">{{ q.meterCommandsQueued }} waiting</span>
+              </li>
+            }
+            <li><span class="dot"></span><span class="health__name">RMS and meter adapters</span><span class="health__value health__value--muted">Mock (simulated)</span></li>
+          } @else {
+            <li><span class="dot"></span><span class="health__name">Database</span><span class="health__value health__value--muted">Unavailable</span></li>
+          }
         </ul>
         <div class="banner" [class.banner--ok]="apiHealth() === 'healthy'" [class.banner--down]="apiHealth() === 'down'">
           <span class="banner__icon">{{ apiHealth() === 'down' ? '✕' : '✓' }}</span>
           <div>
             <strong>{{ apiHealth() === 'healthy' ? 'API reachable' : apiHealth() === 'down' ? 'API unreachable' : 'Checking…' }}</strong>
-            <span>1 of 5 services monitored</span>
+            <span>@if (systemHealth(); as h) { Overall: {{ h.overall }} } @else { Health details unavailable }</span>
           </div>
         </div>
         <a routerLink="/system-health" class="panel__link">View System Health <pe-icon name="link" [size]="12" /></a>
