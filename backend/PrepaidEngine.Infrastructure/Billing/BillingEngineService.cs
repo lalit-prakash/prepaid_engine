@@ -134,186 +134,246 @@ public class BillingEngineService : IBillingEngineService
         return new DailyLoadProfileIngestResult(profile.Id, profile.Status.ToString(), false, null);
     }
 
-    public async Task<IReadOnlyList<DailyProcessingResult>> ProcessDailyStage1Async(
+    /// <summary>How long a running billing run may go without a heartbeat before another instance may take it over.</summary>
+    private static readonly TimeSpan RunLease = TimeSpan.FromMinutes(10);
+
+    /// <summary>Consumers processed and committed together. Keeps memory flat and makes each commit small.</summary>
+    private const int BatchSize = 500;
+
+    /// <summary>Most per-consumer results handed back to the caller; the run row always holds the true counts.</summary>
+    private const int MaxResultsReturned = 5000;
+
+    public Task<IReadOnlyList<DailyProcessingResult>> ProcessDailyStage1Async(
         DateOnly billingDate, DateTime stage1CutoffUtc, CancellationToken cancellationToken = default)
-    {
-        const string stage = "Stage1";
+        => RunStageAsync(BillingRun.DlpStage1RunType, "Stage1", billingDate, stage1CutoffUtc, isStage2: false, cancellationToken);
 
-        var existingRun = await _db.BillingRuns.FirstOrDefaultAsync(
-            r => r.RunType == BillingRun.DlpStage1RunType && r.BillingDate == billingDate, cancellationToken);
-        if (existingRun is not null)
-        {
-            return new List<DailyProcessingResult>
-            {
-                new(Guid.Empty, stage, false, false, 0, true, $"Stage 1 already ran for {billingDate:yyyy-MM-dd} (status {existingRun.Status}).")
-            };
-        }
-
-        var run = new BillingRun(Guid.NewGuid(), BillingRun.DlpStage1RunType, billingDate, DateTime.UtcNow);
-        _db.BillingRuns.Add(run);
-
-        var results = new List<DailyProcessingResult>();
-
-        var consumers = await _db.Consumers
-            .Include(c => c.Meter)
-            .Include(c => c.Wallet).ThenInclude(w => w.Transactions)
-            .Where(c => c.BillingMode == BillingMode.Prepaid && c.TariffId != null)
-            .ToListAsync(cancellationToken);
-
-        foreach (var consumer in consumers)
-        {
-            var dlp = await _db.DailyLoadProfiles.FirstOrDefaultAsync(
-                d => d.ConsumerId == consumer.Id && d.MeterId == consumer.Meter.Id && d.ProfileDate == billingDate, cancellationToken);
-
-            // Stage 1 only bills DLPs actually received by the cutoff — anything later (or still
-            // missing) waits for Stage 2, which is also where a missing DLP gets its provisional
-            // estimate, never here.
-            if (dlp is null || dlp.IsProvisional || dlp.Status == DailyProfileStatus.Rejected || dlp.ReceivedAt > stage1CutoffUtc)
-                continue;
-
-            run.RecordConsumer();
-            var result = await ChargeFromDlpAsync(consumer, dlp, stage, cancellationToken);
-            if (result is not null)
-                results.Add(result);
-        }
-
-        run.Complete(DateTime.UtcNow);
-        await _db.SaveChangesAsync(cancellationToken);
-        return results;
-    }
-
-    public async Task<IReadOnlyList<DailyProcessingResult>> ProcessDailyStage2Async(
+    public Task<IReadOnlyList<DailyProcessingResult>> ProcessDailyStage2Async(
         DateOnly billingDate, DateTime stage2CutoffUtc, CancellationToken cancellationToken = default)
+        => RunStageAsync(BillingRun.DlpStage2RunType, "Stage2", billingDate, stage2CutoffUtc, isStage2: true, cancellationToken);
+
+    /// <summary>
+    /// Runs one billing stage for one date. The run row is the claim: the unique (RunType, BillingDate)
+    /// index lets exactly one instance create it, and a run that stops heartbeating for <see cref="RunLease"/>
+    /// can be taken over and resumed from its saved cursor. Consumers are processed in fixed-size batches in
+    /// key order; each batch (charges, notifications and the run's progress and cursor) is one transaction, so a
+    /// crash loses at most one batch and never double-charges (debits are also idempotent on the DLP reference).
+    /// </summary>
+    private async Task<IReadOnlyList<DailyProcessingResult>> RunStageAsync(
+        string runType, string stage, DateOnly billingDate, DateTime cutoffUtc, bool isStage2, CancellationToken cancellationToken)
     {
-        const string stage = "Stage2";
+        var stageLabel = isStage2 ? "Stage 2" : "Stage 1";
+        var claim = await ClaimRunAsync(runType, billingDate, cancellationToken);
+        if (claim.Message is not null)
+            return new List<DailyProcessingResult> { new(Guid.Empty, stage, false, false, 0, true, claim.Message.Replace("{stage}", stageLabel)) };
 
-        var existingRun = await _db.BillingRuns.FirstOrDefaultAsync(
-            r => r.RunType == BillingRun.DlpStage2RunType && r.BillingDate == billingDate, cancellationToken);
-        if (existingRun is not null)
-        {
-            return new List<DailyProcessingResult>
-            {
-                new(Guid.Empty, stage, false, false, 0, true, $"Stage 2 already ran for {billingDate:yyyy-MM-dd} (status {existingRun.Status}).")
-            };
-        }
-
-        var run = new BillingRun(Guid.NewGuid(), BillingRun.DlpStage2RunType, billingDate, DateTime.UtcNow);
-        _db.BillingRuns.Add(run);
-
+        var runId = claim.RunId;
+        var cursor = claim.ResumeAfter;
         var results = new List<DailyProcessingResult>();
 
-        var consumers = await _db.Consumers
-            .Include(c => c.Meter)
-            .Include(c => c.Wallet).ThenInclude(w => w.Transactions)
-            .Where(c => c.BillingMode == BillingMode.Prepaid && c.TariffId != null)
-            .ToListAsync(cancellationToken);
-
-        foreach (var consumer in consumers)
+        while (true)
         {
-            var control = await _db.MeterBillingControls.FirstOrDefaultAsync(
-                c => c.ConsumerId == consumer.Id && c.ActualBillingBlocked, cancellationToken);
-            if (control is not null)
-            {
-                run.RecordConsumer();
-                results.Add(new DailyProcessingResult(consumer.Id, stage, false, false, 0, true,
-                    "Actual DLP billing is on hold for this meter."));
-                continue;
-            }
-
-            var tariff = await _db.Tariffs.FirstOrDefaultAsync(t => t.Id == consumer.TariffId, cancellationToken);
-            if (tariff is null)
-            {
-                run.RecordConsumer();
-                run.RecordException();
-                results.Add(new DailyProcessingResult(consumer.Id, stage, false, false, 0, true, "Assigned tariff could not be loaded."));
-                continue;
-            }
-
-            var dlp = await _db.DailyLoadProfiles.FirstOrDefaultAsync(
-                d => d.ConsumerId == consumer.Id && d.MeterId == consumer.Meter.Id && d.ProfileDate == billingDate, cancellationToken);
-
-            if (dlp is not null && !dlp.IsProvisional && dlp.Status != DailyProfileStatus.Rejected && dlp.ReceivedAt <= stage2CutoffUtc)
-            {
-                // Arrived after Stage 1's cutoff but by Stage 2's — bill it now, for real.
-                run.RecordConsumer();
-                var result = await ChargeFromDlpAsync(consumer, dlp, stage, cancellationToken);
-                if (result is not null)
-                    results.Add(result);
-                continue;
-            }
-
-            if (dlp is not null && !dlp.IsProvisional && dlp.Status != DailyProfileStatus.Rejected)
-                continue; // arrived after the 12:00 PM cutoff itself — waits for a future stage, not billed here.
-
-            if (dlp is not null && dlp.Status == DailyProfileStatus.Rejected)
-            {
-                // A Rejected DLP already occupies this Consumer+Meter+ProfileDate slot (its
-                // MeterBillingControl hold may since have been cleared without a corrected DLP
-                // re-ingest yet) — DailyLoadProfile has a unique index on that triple, so a
-                // provisional profile can never be created here without colliding with it.
-                // Waits for a real corrected re-ingest, never silently double-billed or crashed.
-                run.RecordConsumer();
-                results.Add(new DailyProcessingResult(consumer.Id, stage, false, false, 0, true,
-                    "The DLP for this date was rejected and has not been re-ingested with corrected data."));
-                continue;
-            }
-
-            // Still no usable DLP by the 12:00 PM cutoff: provisional charge estimated from
-            // recent history, never treating the missing day as zero consumption without saying so.
-            run.RecordConsumer();
-
-            var recentValid = await _db.DailyLoadProfiles
-                .Where(d => d.ConsumerId == consumer.Id && d.MeterId == consumer.Meter.Id && !d.IsProvisional && d.Status != DailyProfileStatus.Rejected)
-                .OrderByDescending(d => d.ProfileDate)
-                .Take(ProvisionalEstimationWindow)
+            var batch = await _db.Consumers
+                .Include(c => c.Meter)
+                .Include(c => c.Wallet)
+                .Where(c => c.BillingMode == BillingMode.Prepaid && c.TariffId != null && (cursor == null || c.Id.CompareTo(cursor.Value) > 0))
+                .OrderBy(c => c.Id)
+                .Take(BatchSize)
                 .ToListAsync(cancellationToken);
-            var estimatedKwh = recentValid.Count > 0 ? recentValid.Average(d => d.TotalKwh) : 0m;
+            if (batch.Count == 0)
+                break;
 
-            var provisional = DailyLoadProfile.CreateProvisional(Guid.NewGuid(), consumer.Id, consumer.Meter.Id, billingDate, DateTime.UtcNow, estimatedKwh);
-            _db.DailyLoadProfiles.Add(provisional);
+            var consumerIds = batch.Select(c => c.Id).ToList();
+            var dlps = (await _db.DailyLoadProfiles
+                    .Where(d => d.ProfileDate == billingDate && consumerIds.Contains(d.ConsumerId))
+                    .ToListAsync(cancellationToken))
+                .GroupBy(d => (d.ConsumerId, d.MeterId))
+                .ToDictionary(g => g.Key, g => g.First());
+            var tariffIds = batch.Select(c => c.TariffId!.Value).Distinct().ToList();
+            var tariffs = await _db.Tariffs.Where(t => tariffIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, cancellationToken);
+            var billedRefs = await LoadBilledReferencesAsync(batch, dlps, cancellationToken);
+            var heldConsumers = isStage2
+                ? (await _db.MeterBillingControls.Where(c => consumerIds.Contains(c.ConsumerId) && c.ActualBillingBlocked)
+                    .Select(c => c.ConsumerId).ToListAsync(cancellationToken)).ToHashSet()
+                : new HashSet<Guid>();
 
-            var chargeAmount = CalculateDailyCharge(tariff, consumer, estimatedKwh);
-            var reference = $"DLP-PROV:{provisional.Id}";
-            if (chargeAmount > 0)
+            int processed = 0, exceptions = 0;
+            foreach (var consumer in batch)
             {
-                var debit = consumer.Wallet.Debit(chargeAmount, WalletTransactionType.DailyDlpCharge, reference);
-                _db.WalletTransactions.Add(debit);
+                dlps.TryGetValue((consumer.Id, consumer.Meter.Id), out var dlp);
+                tariffs.TryGetValue(consumer.TariffId!.Value, out var tariff);
+
+                if (!isStage2)
+                {
+                    // Stage 1 only bills DLPs actually received by the cutoff; anything later (or still missing)
+                    // waits for Stage 2, which is also where a missing DLP gets its provisional estimate, never here.
+                    if (dlp is null || dlp.IsProvisional || dlp.Status == DailyProfileStatus.Rejected || dlp.ReceivedAt > cutoffUtc)
+                        continue;
+
+                    processed++;
+                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, cancellationToken) is { } r1)
+                        AddResult(results, r1);
+                    continue;
+                }
+
+                if (heldConsumers.Contains(consumer.Id))
+                {
+                    processed++;
+                    AddResult(results, new DailyProcessingResult(consumer.Id, stage, false, false, 0, true, "Actual DLP billing is on hold for this meter."));
+                    continue;
+                }
+
+                if (tariff is null)
+                {
+                    processed++;
+                    exceptions++;
+                    AddResult(results, new DailyProcessingResult(consumer.Id, stage, false, false, 0, true, "Assigned tariff could not be loaded."));
+                    continue;
+                }
+
+                if (dlp is not null && !dlp.IsProvisional && dlp.Status != DailyProfileStatus.Rejected && dlp.ReceivedAt <= cutoffUtc)
+                {
+                    // Arrived after Stage 1's cutoff but by Stage 2's: bill it now, for real.
+                    processed++;
+                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, cancellationToken) is { } r2)
+                        AddResult(results, r2);
+                    continue;
+                }
+
+                if (dlp is not null && !dlp.IsProvisional && dlp.Status != DailyProfileStatus.Rejected)
+                    continue; // arrived after the 12:00 PM cutoff itself: waits for a future stage, not billed here.
+
+                if (dlp is not null && dlp.Status == DailyProfileStatus.Rejected)
+                {
+                    // A Rejected DLP already occupies this Consumer+Meter+ProfileDate slot (its hold may since have been
+                    // cleared without a corrected re-ingest); a provisional profile would collide with the unique index.
+                    processed++;
+                    AddResult(results, new DailyProcessingResult(consumer.Id, stage, false, false, 0, true,
+                        "The DLP for this date was rejected and has not been re-ingested with corrected data."));
+                    continue;
+                }
+
+                if (dlp is not null && dlp.IsProvisional)
+                    continue; // already provisionally billed for this date
+
+                // Still no usable DLP by the 12:00 PM cutoff: provisional charge estimated from recent history,
+                // never treating the missing day as zero consumption without saying so.
+                processed++;
+                var recentValid = await _db.DailyLoadProfiles
+                    .Where(d => d.ConsumerId == consumer.Id && d.MeterId == consumer.Meter.Id && !d.IsProvisional && d.Status != DailyProfileStatus.Rejected)
+                    .OrderByDescending(d => d.ProfileDate)
+                    .Take(ProvisionalEstimationWindow)
+                    .ToListAsync(cancellationToken);
+                var estimatedKwh = recentValid.Count > 0 ? recentValid.Average(d => d.TotalKwh) : 0m;
+
+                var provisional = DailyLoadProfile.CreateProvisional(Guid.NewGuid(), consumer.Id, consumer.Meter.Id, billingDate, DateTime.UtcNow, estimatedKwh);
+                _db.DailyLoadProfiles.Add(provisional);
+
+                var chargeAmount = CalculateDailyCharge(tariff, consumer, estimatedKwh);
+                if (chargeAmount > 0)
+                {
+                    var debit = consumer.Wallet.Debit(chargeAmount, WalletTransactionType.DailyDlpCharge, $"DLP-PROV:{provisional.Id}");
+                    _db.WalletTransactions.Add(debit);
+                }
+
+                await RaiseProvisionalNotificationAsync(consumer, cancellationToken);
+                await RaiseCreditNotificationsAsync(consumer, cancellationToken);
+                await _emergencyCreditGuard.EvaluateAsync(consumer, cancellationToken);
+
+                AddResult(results, new DailyProcessingResult(consumer.Id, "Stage2Provisional", false, true, chargeAmount, false, null));
             }
 
-            await RaiseProvisionalNotificationAsync(consumer, cancellationToken);
-            await RaiseCreditNotificationsAsync(consumer, cancellationToken);
-            await _emergencyCreditGuard.EvaluateAsync(consumer, cancellationToken);
-
-            results.Add(new DailyProcessingResult(consumer.Id, "Stage2Provisional", false, true, chargeAmount, false, null));
+            // One transaction per batch: the charges above plus the run's progress, cursor and heartbeat.
+            var run = await _db.BillingRuns.FirstAsync(r => r.Id == runId, cancellationToken);
+            run.RecordBatch(processed, exceptions, batch[^1].Id, DateTime.UtcNow);
+            await _db.SaveChangesAsync(cancellationToken);
+            _db.ChangeTracker.Clear();
+            cursor = batch[^1].Id;
         }
 
-        run.Complete(DateTime.UtcNow);
+        var finished = await _db.BillingRuns.FirstAsync(r => r.Id == runId, cancellationToken);
+        finished.Complete(DateTime.UtcNow);
         await _db.SaveChangesAsync(cancellationToken);
+        _db.ChangeTracker.Clear();
         return results;
     }
 
-    /// <summary>Shared real-DLP charging logic for both stages — posts one direct debit from the
-    /// DLP's own total kWh, idempotent on the DLP's own reference.</summary>
+    private static void AddResult(List<DailyProcessingResult> results, DailyProcessingResult result)
+    {
+        if (results.Count < MaxResultsReturned)
+            results.Add(result);
+    }
+
+    private sealed record RunClaim(Guid RunId, Guid? ResumeAfter, string? Message);
+
+    /// <summary>
+    /// Claims the run for this instance: creates it, resumes one whose owner stopped heartbeating, or refuses
+    /// because it is running elsewhere or already finished. The unique index and a conditional update decide
+    /// races, so two instances can never work the same run at once.
+    /// </summary>
+    private async Task<RunClaim> ClaimRunAsync(string runType, DateOnly billingDate, CancellationToken cancellationToken)
+    {
+        var existing = await _db.BillingRuns.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.RunType == runType && r.BillingDate == billingDate, cancellationToken);
+
+        if (existing is null)
+        {
+            var run = new BillingRun(Guid.NewGuid(), runType, billingDate, DateTime.UtcNow);
+            _db.BillingRuns.Add(run);
+            try
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+                _db.ChangeTracker.Clear();
+                return new RunClaim(run.Id, null, null);
+            }
+            catch (DbUpdateException)
+            {
+                _db.ChangeTracker.Clear(); // another instance created it first
+                return new RunClaim(Guid.Empty, null, "{stage} is already running for " + billingDate.ToString("yyyy-MM-dd") + " on another instance.");
+            }
+        }
+
+        if (existing.Status != BillingRunStatus.Running)
+            return new RunClaim(Guid.Empty, null, $"{{stage}} already ran for {billingDate:yyyy-MM-dd} (status {existing.Status}).");
+
+        var now = DateTime.UtcNow;
+        var stale = now - RunLease;
+        var won = await _db.BillingRuns
+            .Where(r => r.Id == existing.Id && r.Status == BillingRunStatus.Running && r.LastHeartbeatAt < stale)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.LastHeartbeatAt, now), cancellationToken);
+        return won == 1
+            ? new RunClaim(existing.Id, existing.ResumeAfterConsumerId, null)
+            : new RunClaim(Guid.Empty, null, "{stage} is already running for " + billingDate.ToString("yyyy-MM-dd") + " on another instance.");
+    }
+
+    /// <summary>The DLP debit references already posted for this batch's wallets, so a re-run never bills a DLP twice.</summary>
+    private async Task<HashSet<string>> LoadBilledReferencesAsync(
+        List<Consumer> batch, Dictionary<(Guid ConsumerId, Guid MeterId), DailyLoadProfile> dlps, CancellationToken cancellationToken)
+    {
+        var references = dlps.Values.Select(d => $"DLP:{d.Id}").ToList();
+        if (references.Count == 0)
+            return new HashSet<string>();
+        var walletIds = batch.Select(c => c.Wallet.Id).ToList();
+        var found = await _db.WalletTransactions
+            .Where(t => walletIds.Contains(t.WalletId) && t.Reference != null && references.Contains(t.Reference))
+            .Select(t => t.Reference!)
+            .ToListAsync(cancellationToken);
+        return found.ToHashSet();
+    }
+
+    /// <summary>Shared real-DLP charging logic for both stages: posts one direct debit from the DLP's own
+    /// total kWh, idempotent on the DLP's own reference.</summary>
     private async Task<DailyProcessingResult?> ChargeFromDlpAsync(
-        Consumer consumer, DailyLoadProfile dlp, string stage, CancellationToken cancellationToken)
+        Consumer consumer, DailyLoadProfile dlp, Tariff? tariff, HashSet<string> billedRefs, string stage, CancellationToken cancellationToken)
     {
         if (dlp.TotalKwh < 0)
-        {
             return new DailyProcessingResult(consumer.Id, stage, true, false, 0, true, "DLP has negative total consumption.");
-        }
 
-        var tariff = await _db.Tariffs.FirstOrDefaultAsync(t => t.Id == consumer.TariffId, cancellationToken);
         if (tariff is null)
-        {
             return new DailyProcessingResult(consumer.Id, stage, true, false, 0, true, "Assigned tariff could not be loaded.");
-        }
 
         var reference = $"DLP:{dlp.Id}";
-        var alreadyBilled = consumer.Wallet.Transactions.Any(t => t.Reference == reference);
-        if (alreadyBilled || dlp.Status == DailyProfileStatus.Billed)
-        {
+        if (billedRefs.Contains(reference) || dlp.Status == DailyProfileStatus.Billed)
             return new DailyProcessingResult(consumer.Id, stage, true, false, 0, true, "This DLP has already been billed.");
-        }
 
         var chargeAmount = CalculateDailyCharge(tariff, consumer, dlp.TotalKwh);
         if (chargeAmount > 0)
