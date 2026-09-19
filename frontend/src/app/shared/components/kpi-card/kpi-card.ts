@@ -1,7 +1,7 @@
 import { Component, input } from '@angular/core';
 import { Icon } from '../icon/icon';
 
-export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'analytic';
 
 /**
  * A single KPI tile for dashboards (Overview, Billing, Recharge Operations,
@@ -12,7 +12,7 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
   selector: 'pe-kpi-card',
   imports: [Icon],
   template: `
-    <div class="kpi" [class]="'kpi--' + tone()" [class.kpi--clickable]="clickable()" [class.kpi--horizontal]="horizontal()">
+    <div class="kpi" [class]="'kpi--' + tone()" [class.kpi--clickable]="clickable()" [class.kpi--horizontal]="horizontal()" [class.kpi--tile]="tile()">
       @if (icon()) {
         <div class="kpi__icon"><pe-icon [name]="icon()!" [size]="17" /></div>
       }
@@ -84,8 +84,28 @@ export type KpiTone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'n
     }
     .kpi--horizontal .kpi__body { min-width: 0; flex: 1; }
 
+    /* Dashboard tile: a tinted icon block on the left, label / large value / note stacked on the right. */
+    :host { display: block; }
+    .kpi--tile {
+      height: 100%;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      border-top: none;
+      min-height: 96px;
+    }
+    .kpi--tile .kpi__icon { width: 44px; height: 44px; border-radius: 12px; margin-bottom: 0; flex-shrink: 0; }
+    .kpi--tile .kpi__body { flex: 1; min-width: 0; }
+    .kpi--tile .kpi__label { font-size: 12px; color: var(--text-secondary); margin-bottom: 2px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .kpi--tile .kpi__value { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+    .kpi--tile .kpi__sublabel { margin-top: 3px; font-size: 12px; color: var(--text-muted); }
+    .kpi--analytic .kpi__icon { background: var(--color-analytic-light); }
+
     .kpi--primary { border-top-color: var(--color-primary); }
     .kpi--success { border-top-color: var(--color-success); }
+    .kpi--analytic { border-top-color: var(--color-analytic); }
     .kpi--warning { border-top-color: var(--color-warning); }
     .kpi--danger  { border-top-color: var(--color-danger); }
     .kpi--info    { border-top-color: var(--color-info); }
@@ -169,6 +189,8 @@ export class KpiCard {
   /** Compact icon-left row layout (used by the Dashboard's KPI strip) instead of the
    * default icon-on-top stacked card used elsewhere. */
   readonly horizontal = input(false);
+  /** Larger dashboard tile layout (tinted icon block + stacked label/value/note). */
+  readonly tile = input(false);
   /** True when this number has no real backend source yet (see docs/ARCHITECTURE.md). */
   readonly illustrative = input(false);
   /** True when the metric is real but genuinely cannot be computed right now (e.g. no rows

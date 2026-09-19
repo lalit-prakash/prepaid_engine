@@ -42,6 +42,17 @@ export class Shell implements OnInit {
   @ViewChild('searchInput') searchInputRef?: ElementRef<HTMLInputElement>;
 
   protected readonly collapsed = signal(false);
+
+  /** The signed-in user's name, initials and role for the header (from the real login, not a placeholder). */
+  protected get userName(): string {
+    return this.auth.username() ?? 'Operator';
+  }
+  protected get userInitials(): string {
+    return this.userName.slice(0, 2).toUpperCase();
+  }
+  protected get userRole(): string {
+    return this.auth.role() ?? 'Operator';
+  }
   protected readonly userMenuOpen = signal(false);
   protected readonly quickActionsOpen = signal(false);
   protected readonly pendingNotificationCount = signal(0);
