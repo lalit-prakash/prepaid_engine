@@ -10,3 +10,10 @@ export interface BillingHoldSummary {
   blockedAt: string;
   clearedAt: string | null;
 }
+
+/** GET /api/v1/meter-data/billing-holds/summary: counts computed in the database. */
+export interface BillingHoldSummaryStats {
+  total: number;
+  active: number;
+  cleared: number;
+}
