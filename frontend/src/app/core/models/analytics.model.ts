@@ -22,3 +22,20 @@ export interface AnalyticsOverview {
   tariffMix: { tariffId: string; tariffName: string; category: number; tariffStatus: number; billCount: number; billed: number }[];
   exceptions: { sourceType: number; status: number; count: number }[];
 }
+
+/** GET /api/v1/analytics/balance-history: the daily wallet totals that were recorded, oldest first. */
+export interface BalanceHistory {
+  from: string;
+  to: string;
+  rows: BalanceHistoryRow[];
+}
+
+export interface BalanceHistoryRow {
+  date: string;
+  totalConsumers: number;
+  activeConsumers: number;
+  disconnectedConsumers: number;
+  lowBalanceConsumers: number;
+  walletTotal: number;
+  recordedAt: string;
+}
