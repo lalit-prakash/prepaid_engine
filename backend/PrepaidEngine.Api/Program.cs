@@ -125,9 +125,18 @@ builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.JwtBearer
 // plain .RequireAuthorization() (no role requirement), so this is additive, not a breaking change.
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("ITRole", policy => policy.RequireRole(nameof(UserRole.IT)));
-    options.AddPolicy("UtilityRole", policy => policy.RequireRole(nameof(UserRole.Utility)));
-    options.AddPolicy("TariffGovernanceRole", policy => policy.RequireRole(nameof(UserRole.IT), nameof(UserRole.Utility)));
+    // Deny by default: every write endpoint must name one of these policies (checked at startup below).
+    // Read endpoints use plain RequireAuthorization(), so any signed-in role, including ReadOnly, can read.
+    const string admin = nameof(UserRole.Admin), it = nameof(UserRole.IT), utility = nameof(UserRole.Utility), op = nameof(UserRole.Operator);
+    options.AddPolicy("Authenticated", policy => policy.RequireAuthenticatedUser());
+    // Operational actions: recharge, disconnect/reconnect, retries, conversions, reconciliation, exceptions, replacements, holds, alarms.
+    options.AddPolicy("Operations", policy => policy.RequireRole(admin, it, op));
+    // Bulk data and billing runs.
+    options.AddPolicy("DataAdmin", policy => policy.RequireRole(admin, it));
+    // Tariff governance: drafting is IT (or Admin); approving is Utility only, so no one approves their own change.
+    options.AddPolicy("ITRole", policy => policy.RequireRole(admin, it));
+    options.AddPolicy("UtilityRole", policy => policy.RequireRole(utility));
+    options.AddPolicy("TariffGovernanceRole", policy => policy.RequireRole(admin, it, utility));
 });
 
 // Local-dev-only CORS so the Angular dev server (ng serve, default port 4200) can call this
@@ -493,7 +502,7 @@ app.MapPost("/api/v1/consumers/{accountNumber}/disconnect", async (
     });
 })
 .WithName("DisconnectConsumer")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
 
 app.MapPost("/api/v1/consumers/{accountNumber}/reconnect", async (
     string accountNumber,
@@ -563,7 +572,7 @@ app.MapPost("/api/v1/consumers/{accountNumber}/reconnect", async (
     });
 })
 .WithName("ReconnectConsumer")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
 
 // RC/DC read endpoints — real ConnectivityCommand records across all consumers.
 app.MapGet("/api/v1/connectivity-commands", async (string? accountNumber, PrepaidEngineDbContext db) =>
@@ -721,7 +730,7 @@ app.MapPost("/api/v1/connectivity-commands/{id:guid}/retry", async (
     });
 })
 .WithName("RetryConnectivityCommand")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
 
 // Billing dashboard read endpoints — real data across all consumers, joined with the tariff
 // and consumption reading each bill was generated from. Demo/local-only, same Basic-auth
@@ -1429,7 +1438,7 @@ app.MapPost("/api/v1/calculation-workbench/simulate", async (SimulateChargeReque
     });
 })
 .WithName("SimulateCharge")
-.RequireAuthorization();
+.RequireAuthorization("Authenticated");
 
 // Recharge Operations read endpoints — real RechargeTransaction records across all consumers.
 // Note: RechargeStatus has no explicit "Pending" value — the RMS-Pending branch of the POST
@@ -1766,7 +1775,7 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
     }
 })
 .WithName("RechargeConsumer")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
 
 // Meter Credit read endpoints — real MeterCommand records across all consumers, each traceable
 // back to the RechargeTransaction that triggered it (see MeterCommand's doc comment for why
@@ -1890,7 +1899,7 @@ app.MapPost("/api/v1/meter-commands/{id:guid}/retry", async (
     });
 })
 .WithName("RetryMeterCommand")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
 
 // --- Prepaid conversion: RMS pushes a batch of postpaid->prepaid conversion requests. ----------
 // Each item is validated and, if accepted, dispatches a PaymentModeChangeCommand down the
@@ -2049,7 +2058,7 @@ app.MapPost("/api/v1/conversions", async (
     return Results.Ok(responses);
 })
 .WithName("SubmitConversions")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
 
 app.MapGet("/api/v1/conversions", async (PrepaidEngineDbContext db) =>
 {
@@ -2241,7 +2250,7 @@ app.MapPost("/api/v1/conversions/reverse", async (ReverseConversionApiRequest re
     });
 })
 .WithName("ConvertToPostpaid")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
 
 app.MapGet("/api/v1/conversions/reverse", async (PrepaidEngineDbContext db) =>
 {
@@ -2302,7 +2311,7 @@ app.MapPost("/api/v1/consumers/{accountNumber}/reconciliation-adjustments", asyn
     });
 })
 .WithName("ApplyReconciliationAdjustment")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
 
 app.MapGet("/api/v1/reconciliation-adjustments", async (PrepaidEngineDbContext db) =>
 {
@@ -2482,7 +2491,7 @@ app.MapPost("/api/v1/exceptions/{id:guid}/resolve", async (Guid id, ResolutionRe
     return Results.Ok(new { exception.Id, exception.Status, exception.ResolutionNote, exception.ResolvedAt });
 })
 .WithName("ResolveOperationalException")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
 
 // --- Audit entries: an immutable, append-only log — read-only, filterable by entity type and ---
 // a date range (see README.md for exactly which actions append an entry).
@@ -2621,7 +2630,7 @@ app.MapPost("/api/v1/tariffs/{id:guid}/versions", async (Guid id, TariffVersionR
     return Results.Ok(new { version.Id, version.TariffId, version.FieldName, version.OldValue, version.NewValue, version.EffectiveDate, version.RecordedAt });
 })
 .WithName("RecordTariffVersion")
-.RequireAuthorization();
+.RequireAuthorization("ITRole");
 
 app.MapGet("/api/v1/tariffs/{id:guid}/versions", async (Guid id, PrepaidEngineDbContext db) =>
 {
@@ -3021,7 +3030,7 @@ app.MapPost("/api/v1/meter-data/dlp", async (DailyLoadProfileIngestRequest reque
     return Results.Ok(result);
 })
 .WithName("IngestDailyLoadProfile")
-.RequireAuthorization();
+.RequireAuthorization("DataAdmin");
 
 // Cross-consumer operator visibility into every Daily Load Profile — real, provisional, or
 // billed — never hidden behind the daily settlement result alone.
@@ -3308,7 +3317,7 @@ app.MapPost("/api/v1/meter-data/bp", async (RegisterReadingIngestRequest request
     return Results.Ok(result);
 })
 .WithName("IngestRegisterReading")
-.RequireAuthorization();
+.RequireAuthorization("DataAdmin");
 
 app.MapGet("/api/v1/meter-data/bp", async (Guid? consumerId, Guid? meterId, PrepaidEngineDbContext db) =>
 {
@@ -3337,7 +3346,7 @@ app.MapPost("/api/v1/meter-data/ls", async (LoadSurveyIntervalIngestRequest requ
     return Results.Ok(result);
 })
 .WithName("IngestLoadSurveyInterval")
-.RequireAuthorization();
+.RequireAuthorization("DataAdmin");
 
 app.MapGet("/api/v1/meter-data/ls", async (Guid? consumerId, Guid? meterId, DateTime? from, DateTime? to, PrepaidEngineDbContext db) =>
 {
@@ -3369,7 +3378,7 @@ app.MapPost("/api/v1/meter-data/ip", async (InstantaneousReadingIngestRequest re
     return Results.Ok(result);
 })
 .WithName("IngestInstantaneousReading")
-.RequireAuthorization();
+.RequireAuthorization("DataAdmin");
 
 // Latest IP reading per meter — meter-health snapshot, never a daily-billing input. The
 // group-by-then-take-first step is done as its own query (translates cleanly against the base
@@ -3413,7 +3422,7 @@ app.MapPost("/api/v1/meter-data/events", async (MeterEventIngestRequest request,
     return Results.Ok(result);
 })
 .WithName("IngestMeterEvent")
-.RequireAuthorization();
+.RequireAuthorization("DataAdmin");
 
 app.MapGet("/api/v1/meter-data/events", async (Guid? consumerId, Guid? meterId, PrepaidEngineDbContext db) =>
 {
@@ -3442,7 +3451,7 @@ app.MapPost("/api/v1/meter-data/alarms", async (MeterAlarmIngestRequest request,
     return Results.Ok(result);
 })
 .WithName("IngestMeterAlarm")
-.RequireAuthorization();
+.RequireAuthorization("DataAdmin");
 
 app.MapGet("/api/v1/meter-data/alarms", async (Guid? consumerId, Guid? meterId, MeterAlarmStatus? status, PrepaidEngineDbContext db) =>
 {
@@ -3487,7 +3496,7 @@ app.MapPost("/api/v1/meter-data/alarms/{id:guid}/acknowledge", async (Guid id, A
     return Results.Ok(new { alarm.Id, alarm.Status, alarm.AcknowledgedAt, alarm.AcknowledgedBy });
 })
 .WithName("AcknowledgeMeterAlarm")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
 
 app.MapPost("/api/v1/meter-data/alarms/{id:guid}/resolve", async (Guid id, ResolveAlarmRequest request, PrepaidEngineDbContext db) =>
 {
@@ -3507,7 +3516,7 @@ app.MapPost("/api/v1/meter-data/alarms/{id:guid}/resolve", async (Guid id, Resol
     return Results.Ok(new { alarm.Id, alarm.Status, alarm.ResolvedAt, alarm.ResolutionNote });
 })
 .WithName("ResolveMeterAlarm")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
 
 // DLP completeness for a given date across every active prepaid consumer — see
 // DlpCompletenessStatus's doc comment for what each status means and how it should influence
@@ -3529,7 +3538,7 @@ app.MapPost("/api/v1/meter-data/energy-validation", async (EvaluateEnergyValidat
     return Results.Ok(outcomes);
 })
 .WithName("EvaluateEnergyValidation")
-.RequireAuthorization();
+.RequireAuthorization("DataAdmin");
 
 app.MapGet("/api/v1/meter-data/energy-validation", async (Guid? consumerId, Guid? meterId, EnergyValidationStatus? status, PrepaidEngineDbContext db) =>
 {
@@ -3569,7 +3578,7 @@ app.MapPost("/api/v1/billing/daily/{billingDate}/stage1", async (DateOnly billin
     return Results.Ok(results);
 })
 .WithName("ProcessDailyBillingStage1")
-.RequireAuthorization();
+.RequireAuthorization("DataAdmin");
 
 app.MapPost("/api/v1/billing/daily/{billingDate}/stage2", async (DateOnly billingDate, DateTime? cutoff, IBillingEngineService billingEngine) =>
 {
@@ -3578,7 +3587,7 @@ app.MapPost("/api/v1/billing/daily/{billingDate}/stage2", async (DateOnly billin
     return Results.Ok(results);
 })
 .WithName("ProcessDailyBillingStage2")
-.RequireAuthorization();
+.RequireAuthorization("DataAdmin");
 
 app.MapPost("/api/v1/consumers/{consumerId:guid}/meter-replacement", async (
     Guid consumerId, MeterReplacementApiRequest request, IBillingEngineService billingEngine) =>
@@ -3613,7 +3622,7 @@ app.MapPost("/api/v1/consumers/{consumerId:guid}/meter-replacement", async (
     }
 })
 .WithName("ReplaceMeter")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
 
 // Cross-consumer operator view of every recorded meter replacement (spec §15-16) — the audit
 // trail that exists specifically so an old meter's cumulative reading is never compared against
@@ -3753,7 +3762,7 @@ app.MapPost("/api/v1/meter-data/{meterId:guid}/billing-hold/clear", async (
     return Results.Ok(new { control.Id, control.MeterId, control.ActualBillingBlocked, control.ClearedAt });
 })
 .WithName("ClearMeterBillingHold")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
 
 // Bulk variant of the endpoint above — the same mandatory-reason discipline, one shared
 // resolution note applied to every meter in the batch (an operator clearing several holds at
@@ -3792,7 +3801,21 @@ app.MapPost("/api/v1/meter-data/billing-holds/clear-bulk", async (
     return Results.Ok(results);
 })
 .WithName("ClearMeterBillingHoldsBulk")
-.RequireAuthorization();
+.RequireAuthorization("Operations");
+
+// Deny-by-default guard: refuse to start if any write endpoint (other than sign-in) has no named authorization policy.
+{
+    var unprotected = app.Services.GetRequiredService<EndpointDataSource>().Endpoints
+        .OfType<RouteEndpoint>()
+        .Where(e => e.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.HttpMethodMetadata>() is { } m
+                    && m.HttpMethods.Any(h => h is "POST" or "PUT" or "PATCH" or "DELETE")
+                    && e.Metadata.GetMetadata<Microsoft.AspNetCore.Authorization.IAllowAnonymous>() is null
+                    && !e.Metadata.GetOrderedMetadata<Microsoft.AspNetCore.Authorization.IAuthorizeData>().Any(a => !string.IsNullOrEmpty(a.Policy)))
+        .Select(e => e.RoutePattern.RawText)
+        .ToList();
+    if (unprotected.Count > 0)
+        throw new InvalidOperationException("Write endpoints without an authorization policy: " + string.Join(", ", unprotected));
+}
 
 app.Run();
 

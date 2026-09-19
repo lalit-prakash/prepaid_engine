@@ -50,7 +50,7 @@ export class TariffChangeRequestDetailPage implements OnInit {
   protected readonly auditError = signal(false);
 
   protected readonly isUtility = computed(() => this.auth.role() === 'Utility');
-  protected readonly isIt = computed(() => this.auth.role() === 'IT');
+  protected readonly isIt = computed(() => this.auth.role() === 'IT' || this.auth.role() === 'Admin');
 
   protected commencementDate = '';
   protected rejectionReason = '';

@@ -1,3 +1,4 @@
+import { OperateOnly } from '../../../../shared/directives/operate-only';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -14,7 +15,7 @@ import { StatusBadge } from '../../../../shared/components/badge/status-badge';
  */
 @Component({
   selector: 'pe-meter-credit-detail',
-  imports: [StatusBadge, DecimalPipe, DatePipe, RouterLink],
+  imports: [OperateOnly, StatusBadge, DecimalPipe, DatePipe, RouterLink],
   templateUrl: './meter-credit-detail.html',
   styleUrl: './meter-credit-detail.scss',
 })

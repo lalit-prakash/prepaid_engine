@@ -217,7 +217,7 @@
               <input type="text" name="idempotencyKey" [(ngModel)]="idempotencyKey" />
             </label>
           </div>
-          <button type="submit" [disabled]="rechargeSubmitting()">
+          <button type="submit" [disabled]="rechargeSubmitting()" peOperate>
             {{ rechargeSubmitting() ? 'Submitting to RMS…' : 'Recharge' }}
           </button>
         </form>
@@ -320,7 +320,7 @@
           @if (!confirmingDisconnect()) {
             <div class="rcdc-row">
               <input type="text" placeholder="Reason for disconnect…" [(ngModel)]="disconnectReason" />
-              <button type="button" class="danger-btn" (click)="requestDisconnect()" [disabled]="connectivitySubmitting()">
+              <button type="button" class="danger-btn" (click)="requestDisconnect()" peOperate [disabled]="connectivitySubmitting()">
                 Disconnect
               </button>
             </div>
@@ -337,7 +337,7 @@
           @if (!confirmingReconnect()) {
             <div class="rcdc-row">
               <input type="text" placeholder="Reason for reconnect…" [(ngModel)]="reconnectReason" />
-              <button type="button" class="primary-btn" (click)="requestReconnect()" [disabled]="connectivitySubmitting()">
+              <button type="button" class="primary-btn" (click)="requestReconnect()" peOperate [disabled]="connectivitySubmitting()">
                 Reconnect
               </button>
             </div>

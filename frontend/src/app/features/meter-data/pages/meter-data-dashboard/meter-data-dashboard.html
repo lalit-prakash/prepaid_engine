@@ -270,9 +270,9 @@
                   </div>
                 } @else {
                   @if (a.status === MeterAlarmStatus.Open) {
-                    <button type="button" class="btn-sm" (click)="startAcknowledge(a.id)">Acknowledge</button>
+                    <button type="button" class="btn-sm" (click)="startAcknowledge(a.id)" peOperate>Acknowledge</button>
                   } @else if (a.status === MeterAlarmStatus.Acknowledged) {
-                    <button type="button" class="btn-sm" (click)="startResolve(a.id)">Resolve</button>
+                    <button type="button" class="btn-sm" (click)="startResolve(a.id)" peOperate>Resolve</button>
                   } @else {
                     <span class="mono">{{ a.resolutionNote }}</span>
                   }

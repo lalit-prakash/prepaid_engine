@@ -1,3 +1,4 @@
+import { OperateOnly } from '../../../../shared/directives/operate-only';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { Observable } from 'rxjs';
@@ -55,7 +56,7 @@ type ConnectivityOutcome =
  */
 @Component({
   selector: 'pe-consumer-360',
-  imports: [FormsModule, StatusBadge, DatePipe, DecimalPipe, RouterLink],
+  imports: [OperateOnly, FormsModule, StatusBadge, DatePipe, DecimalPipe, RouterLink],
   templateUrl: './consumer-360.html',
   styleUrl: './consumer-360.scss',
 })

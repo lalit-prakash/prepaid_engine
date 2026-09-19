@@ -1,3 +1,4 @@
+import { OperateOnly } from '../../../../shared/directives/operate-only';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, ElementRef, OnDestroy, OnInit, signal, viewChild } from '@angular/core';
 import { Subject, Subscription, debounceTime } from 'rxjs';
@@ -35,7 +36,7 @@ type PagedTabId = Exclude<MeterDataTab, 'ip'>;
  */
 @Component({
   selector: 'pe-meter-data-dashboard',
-  imports: [StatusBadge, DecimalPipe, DatePipe, FormsModule, RouterLink],
+  imports: [OperateOnly, StatusBadge, DecimalPipe, DatePipe, FormsModule, RouterLink],
   templateUrl: './meter-data-dashboard.html',
   styleUrl: './meter-data-dashboard.scss',
 })

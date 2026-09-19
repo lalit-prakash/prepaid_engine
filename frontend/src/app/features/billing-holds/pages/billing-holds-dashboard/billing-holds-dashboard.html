@@ -36,7 +36,7 @@
       <div class="bulk-bar">
         @if (!bulkClearing()) {
           <span>{{ selectedMeterIds().size }} selected</span>
-          <button type="button" class="clear-btn" (click)="requestBulkClear()">Clear Selected</button>
+          <button type="button" class="clear-btn" (click)="requestBulkClear()" peOperate>Clear Selected</button>
         } @else {
           <div class="bulk-confirm">
             <p>
@@ -111,7 +111,7 @@
                 <td>
                   @if (h.actualBillingBlocked) {
                     @if (clearingMeterId() !== h.meterId) {
-                      <button type="button" class="clear-btn" (click)="requestClear(h.meterId)">Clear Hold</button>
+                      <button type="button" class="clear-btn" (click)="requestClear(h.meterId)" peOperate>Clear Hold</button>
                     } @else {
                       <div class="clear-confirm">
                         <input

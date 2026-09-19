@@ -41,7 +41,7 @@ export class TariffManagement implements OnInit {
   protected readonly changeRequestsLoading = signal(true);
   protected readonly changeRequestsError = signal<string | null>(null);
 
-  protected readonly isIt = computed(() => this.auth.role() === 'IT');
+  protected readonly isIt = computed(() => this.auth.role() === 'IT' || this.auth.role() === 'Admin');
   protected readonly isUtility = computed(() => this.auth.role() === 'Utility');
 
   protected readonly pendingCount = computed(

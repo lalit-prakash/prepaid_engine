@@ -67,7 +67,7 @@
                 <td>
                   @if (e.status === OperationalExceptionStatus.Open) {
                     @if (resolvingId() !== e.id) {
-                      <button type="button" class="resolve-btn" (click)="requestResolve(e.id)">Resolve</button>
+                      <button type="button" class="resolve-btn" (click)="requestResolve(e.id)" peOperate>Resolve</button>
                     } @else {
                       <div class="resolve-confirm">
                         <input

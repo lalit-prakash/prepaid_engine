@@ -89,15 +89,21 @@ exceptions to 400/409.
   (HS256, claims: name, display_name, role, auth_time), and `LoginThrottle` (5 failures, 15-minute lock).
   `Jwt:Key` is a secret; the legacy single `DemoAuth:Username/Password` pair still works as one `IT` user.
   `dotnet run --project backend/PrepaidEngine.Api -- hash-password "<pw>"` prints a hash for the config.
-- Roles: `IT` and `Utility`. Policies: `ITRole`, `UtilityRole`, `TariffGovernanceRole` (either).
-- Role-gated endpoints (the frontend hides buttons, but the API is the boundary):
+- Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. Policies: `Authenticated`, `Operations` (Admin/IT/Operator),
+  `DataAdmin` (Admin/IT), `ITRole` (Admin/IT), `UtilityRole` (Utility), `TariffGovernanceRole` (Admin/IT/Utility).
+- **Deny by default:** at startup `Program.cs` scans every endpoint and throws if a POST/PUT/PATCH/DELETE (other than
+  sign-in) has no named policy, so a new write endpoint cannot ship unprotected.
+- Role-gated endpoints (the frontend hides buttons via `peOperate` and `AuthService.canOperate`, but the API is the boundary):
 
 | Endpoint | Policy |
 |---|---|
-| create / edit-draft / submit tariff change request | `ITRole` |
+| create / edit-draft / submit tariff change request, `tariffs/{id}/versions` | `ITRole` |
 | approve / reject tariff change request, `activate-due` | `UtilityRole` |
-| cancel tariff change request | `TariffGovernanceRole` (IT: Draft/Rejected; Utility: PendingApproval/Scheduled) |
-| everything else | any authenticated user |
+| cancel tariff change request | `TariffGovernanceRole` (IT/Admin: Draft/Rejected; Utility: PendingApproval/Scheduled) |
+| recharge, disconnect, reconnect, connectivity/meter-command retry, conversions, reconciliation adjustments, exception resolve, meter replacement, billing-hold clear, alarm acknowledge/resolve | `Operations` |
+| `meter-data/*` ingestion, energy validation, `billing/daily/*/stage1,2` | `DataAdmin` |
+| calculation-workbench simulate | `Authenticated` |
+| every GET | any authenticated user |
 
 - Self-approval is blocked twice: an IT credential cannot reach `approve`, and `TariffChangeRequest.Approve`
   rejects the submitter as approver.
@@ -269,8 +275,8 @@ src/app/
 See [assumptions-and-security.md](assumptions-and-security.md) for the checklist. In short: EF Core
 parameterised queries only, decimal money, no secrets in source (`CHANGE_ME` placeholders + user-secrets),
 constant-time credential comparison, server-side role enforcement on governance actions, and audit of
-governance and operational actions. **Not production-ready:** users are configured rather than stored, tokens cannot be revoked, only two roles
-exist, and audit entries lack actor role and correlation id.
+governance and operational actions. **Not production-ready:** users are configured rather than stored, tokens cannot be revoked, role assignment is by configuration
+and audit entries lack actor role and correlation id.
 
 ## 8. Configuration
 | Key | Purpose |
