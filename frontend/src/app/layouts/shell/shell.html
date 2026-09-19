@@ -44,6 +44,24 @@
           </div>
         </div>
       }
+      <div class="sidebar__group">
+        @if (!collapsed()) {
+          <button type="button" class="sidebar__group-header sidebar__group-toggle" (click)="moreOpen.set(!moreOpen())" [attr.aria-expanded]="moreOpen()">
+            <span>{{ moreGroup.label }}</span>
+            <span aria-hidden="true">{{ moreOpen() ? '▾' : '▸' }}</span>
+          </button>
+        }
+        @if (moreOpen() || collapsed()) {
+          <div class="sidebar__group-items">
+            @for (item of moreGroup.items; track item.path) {
+              <a class="sidebar__link" [routerLink]="item.path" routerLinkActive="sidebar__link--active" [title]="item.label">
+                <span class="sidebar__icon"><pe-icon [name]="item.icon" /></span>
+                @if (!collapsed()) { <span class="sidebar__label">{{ item.label }}</span> }
+              </a>
+            }
+          </div>
+        }
+      </div>
     </nav>
 
     <button type="button" class="sidebar__collapse-toggle" (click)="toggleCollapsed()"

@@ -66,9 +66,6 @@ export class Shell implements OnInit {
         { label: 'Meter Operations', path: '/meter-credit', icon: 'plug' },
         { label: 'Disconnect / Reconnect', path: '/rc-dc', icon: 'refresh' },
         { label: 'Service Requests', path: '/service-requests', icon: 'wrench', stub: true },
-        { label: 'Meter Replacements', path: '/meter-replacements', icon: 'toolbox' },
-        { label: 'Conversion', path: '/conversion', icon: 'repeat' },
-        { label: 'Exceptions', path: '/exceptions', icon: 'alert' },
       ],
     },
     {
@@ -79,8 +76,6 @@ export class Shell implements OnInit {
         { label: 'Analytics', path: '/analytics', icon: 'chart' },
         { label: 'Reports', path: '/reports', icon: 'document' },
         { label: 'SLA Monitoring', path: '/sla-monitoring', icon: 'clock' },
-        { label: 'Billing Holds', path: '/billing-holds', icon: 'pause' },
-        { label: 'Reconciliation', path: '/reconciliation', icon: 'calculator' },
       ],
     },
     {
@@ -90,7 +85,6 @@ export class Shell implements OnInit {
         { label: 'User Management', path: '/user-management', icon: 'users', stub: true },
         { label: 'Roles & Permissions', path: '/roles-permissions', icon: 'lock', stub: true },
         { label: 'Integrations', path: '/integrations', icon: 'link', stub: true },
-        { label: 'Calculation Workbench', path: '/calculation-workbench', icon: 'flask' },
       ],
     },
     {
@@ -98,10 +92,24 @@ export class Shell implements OnInit {
       items: [
         { label: 'Audit Logs', path: '/audit', icon: 'scroll' },
         { label: 'System Settings', path: '/system-settings', icon: 'gear', stub: true },
-        { label: 'Notifications', path: '/notifications', icon: 'bell' },
       ],
     },
   ];
+
+  /** Working pages that are not in the reference sidebar; kept reachable under a collapsible group. */
+  protected readonly moreGroup: NavGroup = {
+    label: 'More',
+    items: [
+        { label: 'Meter Replacements', path: '/meter-replacements', icon: 'toolbox' },
+        { label: 'Conversion', path: '/conversion', icon: 'repeat' },
+        { label: 'Exceptions', path: '/exceptions', icon: 'alert' },
+        { label: 'Billing Holds', path: '/billing-holds', icon: 'pause' },
+        { label: 'Reconciliation', path: '/reconciliation', icon: 'calculator' },
+        { label: 'Calculation Workbench', path: '/calculation-workbench', icon: 'flask' },
+        { label: 'Notifications', path: '/notifications', icon: 'bell' },
+    ],
+  };
+  protected readonly moreOpen = signal(false);
 
   protected readonly quickActions = [
     { label: 'Recharge Consumer', path: '/recharge' },
@@ -114,7 +122,9 @@ export class Shell implements OnInit {
     private readonly auth: AuthService,
     private readonly notificationService: NotificationService,
     private readonly router: Router,
-  ) {}
+  ) {
+    this.moreOpen.set(this.moreGroup.items.some((i) => this.router.url.startsWith(i.path)));
+  }
 
   ngOnInit(): void {
     // Real pending-notification count for the header bell badge — never a
