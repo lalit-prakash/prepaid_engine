@@ -51,11 +51,15 @@ method, STS token format or vendor payload is assumed anywhere.
 
 ## Security review (of what is actually built)
 
-**Authentication.** HTTP Basic (`BasicAuthenticationHandler`) with configured demo users and two roles,
-`IT` and `Utility`. Credentials come from user-secrets, are compared with
-`CryptographicOperations.FixedTimeEquals`, and are never in source. This is a stop-gap: one shared secret
-per user, no token expiry, no lockout, no rate limiting, no MFA. **Do not expose the API beyond a trusted
-network until real token-based authentication is in place.**
+**Authentication.** JWT bearer (`backend/PrepaidEngine.Api/Auth`). `POST /api/v1/auth/login` checks the login
+id and password and returns an HS256 token (default 30 minutes; `POST /auth/refresh` renews it until 8 hours
+after the original sign-in). Passwords are stored as PBKDF2-SHA256 hashes (210,000 iterations, per-user salt)
+and compared in constant time; an unknown login id costs the same as a wrong password. After 5 failed
+attempts a login id is locked for 15 minutes (HTTP 429 with `Retry-After`). The signing key (`Jwt:Key`,
+32+ characters) is a secret from user-secrets or the environment; outside Development the API refuses to
+start without one. The browser keeps only the token, its expiry and the display name in `sessionStorage`
+(never the password). Known limits: users come from configuration rather than a database, the lockout is
+in memory per API instance, tokens cannot be revoked before they expire, and there is no MFA.
 
 **Authorization.** Every `/api/v1` endpoint requires authentication (`/health` and Swagger in
 Development aside). Tariff governance is role-enforced on the server: IT creates, edits and submits;
@@ -67,12 +71,12 @@ a known gap.
 | Area | Status | Notes |
 |---|---|---|
 | SQL injection | Mitigated | All data access uses EF Core parameterised LINQ. Search text is escaped for `LIKE` wildcards, so `%` and `_` match literally. |
-| Secrets in source | OK | `appsettings.json` holds only `CHANGE_ME` placeholders; real values are in user-secrets (dev-only — use a secrets manager for any shared deployment). |
+| Secrets in source | OK | `appsettings.json` holds only a `CHANGE_ME` connection-string placeholder and no user credentials or signing key; real values are in user-secrets (dev-only — use a secrets manager for any shared deployment). |
 | Money precision | OK | Money is `decimal(18,2)`; no floating point in financial paths. |
 | Recharge / meter-credit idempotency | OK | Unique index on `RechargeTransactions.RmsReferenceId`; one `MeterCommand` per recharge; required caller idempotency key. A real RMS adapter must keep this guarantee. |
 | Historical bill integrity | OK | Tariff rows are immutable; a bill keeps the tariff it used. |
 | Input validation | OK for current scope | Domain entities throw on invalid state; tariff submission runs full structural validation; date-only inputs are normalised to UTC in the persistence layer. |
-| Audit logging | Partial | Tariff governance, RC/DC dispatch and retry, conversion, reconciliation, exception resolution, tariff version records and billing-hold clearing are audited with the acting user. **Missing:** actor role, correlation id, source/IP, and login/logout/failed-login events. The log is append-only and the API has no way to edit or delete an entry. |
+| Audit logging | Partial | Tariff governance, RC/DC dispatch and retry, conversion, reconciliation, exception resolution, tariff version records and billing-hold clearing are audited with the acting user. **Missing:** actor role, correlation id, source/IP, and login/logout events (failed and successful sign-ins are written to the application log, not the audit table). The log is append-only and the API has no way to edit or delete an entry. |
 | Transport security | Partial | `UseHttpsRedirection` is wired; no HSTS or other security headers. CORS is limited to `http://localhost:4200` and only in Development. |
 | Dependency vulnerabilities | Clean at last check | `dotnet list package --vulnerable --include-transitive` reports none. The test-only `SQLitePCLRaw` packages were updated to 2.1.13 to clear GHSA-2m69-gcr7-jv3q. Re-run periodically. |
 | Unbounded reads | Known risk | Several list endpoints (`consumers`, `bills`, `meter-commands`, `conversions`, `exceptions`, `notifications`, `billing-holds`, `meter-replacements`) return every row. Fine for the demo data set; must be paged or aggregated before real volumes. |

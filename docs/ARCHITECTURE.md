@@ -34,7 +34,7 @@ Two rules shape most of the design:
 flowchart LR
   RMS[RMS] -- payment confirmed --> API
   subgraph Engine[Prepaid Engine]
-    UI[Angular UI] -- HTTP Basic, JSON --> API[ASP.NET Core API]
+    UI[Angular UI] -- JWT bearer, JSON --> API[ASP.NET Core API]
     API --> APP[Application ports]
     APP --> INF[Infrastructure adapters]
     INF --> DB[(PostgreSQL)]
@@ -59,7 +59,7 @@ backend/
                                 ISlaMonitoringService, IEmergencyCreditGuard, request/response models
   PrepaidEngine.Infrastructure  EF Core + Npgsql, migrations, adapters (Mock*), BillingEngineService,
                                 MeterDataIngestionService, SlaMonitoringService, TariffActivationService, DbSeeder
-  PrepaidEngine.Api             minimal-API host: Program.cs, Basic auth, background workers
+  PrepaidEngine.Api             minimal-API host: Program.cs, JWT auth (Auth/), background workers
   PrepaidEngine.Tests           xUnit (domain rules, services, EF mapping on SQLite in-memory)
 frontend/                       Angular 22, standalone components, plain SCSS design tokens
 docs/                           this file, DOMAIN_RULES, assumptions-and-security, tariff-validation-report
@@ -84,9 +84,11 @@ exceptions to 400/409.
 - `/health` is open; every `/api/v1/*` endpoint requires authentication.
 
 ### 3.2 Authentication and authorization
-- `BasicAuthenticationHandler` (demo stop-gap): users come from `DemoAuth:Users` (username, password,
-  role) or the legacy single `DemoAuth:Username/Password` pair (treated as `IT`). Credentials are compared
-  with `CryptographicOperations.FixedTimeEquals`; real values live in user-secrets, never in source.
+- JWT bearer auth (`Auth/`): `AuthEndpoints` (`POST auth/login`, `POST auth/refresh`), `UserStore` (users from
+  `DemoAuth:Users`: login id, display name, role, PBKDF2 `PasswordHash`), `PasswordHasher`, `TokenService`
+  (HS256, claims: name, display_name, role, auth_time), and `LoginThrottle` (5 failures, 15-minute lock).
+  `Jwt:Key` is a secret; the legacy single `DemoAuth:Username/Password` pair still works as one `IT` user.
+  `dotnet run --project backend/PrepaidEngine.Api -- hash-password "<pw>"` prints a hash for the config.
 - Roles: `IT` and `Utility`. Policies: `ITRole`, `UtilityRole`, `TariffGovernanceRole` (either).
 - Role-gated endpoints (the frontend hides buttons, but the API is the boundary):
 
@@ -99,7 +101,7 @@ exceptions to 400/409.
 
 - Self-approval is blocked twice: an IT credential cannot reach `approve`, and `TariffChangeRequest.Approve`
   rejects the submitter as approver.
-- `GET /api/v1/auth/whoami` returns the caller's username and role for UI convenience only.
+- `GET /api/v1/auth/whoami` returns the caller's login id, display name and role for UI convenience only.
 
 ### 3.3 Persistence
 - One `PrepaidEngineDbContext`; entity configuration in `Persistence/Configurations`, migrations in
@@ -139,7 +141,7 @@ filtered in the database, page size 1–100 (default 25).
 | Audit | `GET audit-entries` (optional `entityId`), `audit-entries/search`, `audit-entries/summary` |
 | Reports | `GET reports/billing`, `day-wise-rc-dc`, `day-wise-recharge`, `recharge-failures`, `meter-credit-failures` — each `{ rows, truncated, generatedAt, totals? }`, 5,000-row cap |
 | Analytics | `GET analytics/overview` — database-side aggregates over a bounded range |
-| Platform | `GET /health`, `GET auth/whoami`, Swagger in Development |
+| Platform | `GET /health`, `POST auth/login`, `POST auth/refresh`, `GET auth/whoami`, Swagger in Development |
 
 Several endpoints exist for external systems (RMS conversions, MDMS ingestion, billing daily-export)
 and have no UI caller by design.
@@ -240,8 +242,9 @@ src/app/
               overview, rc-dc, recharge, reconciliation, reports, sla-monitoring, tariffs
 ```
 
-- **Auth:** `AuthService` holds the Basic credential (encoded) and the role in `sessionStorage`;
-  `authInterceptor` attaches it to API calls and signs out on 401. The role only decides which actions the
+- **Auth:** `AuthService` calls `auth/login`, keeps the token, expiry, display name and role in `sessionStorage`
+  (never the password) and renews the token a minute before it expires; `authInterceptor` attaches
+  `Authorization: Bearer` to API calls and signs out on 401. The role only decides which actions the
   UI shows; the API enforces authorization.
 - **Route guard:** `authGuard`; `unsavedChangesGuard` protects the tariff change-request form.
 - **Standard list page:** debounced server search, filters, keyset Previous/Next, record count, and
@@ -266,14 +269,16 @@ src/app/
 See [assumptions-and-security.md](assumptions-and-security.md) for the checklist. In short: EF Core
 parameterised queries only, decimal money, no secrets in source (`CHANGE_ME` placeholders + user-secrets),
 constant-time credential comparison, server-side role enforcement on governance actions, and audit of
-governance and operational actions. **Not production-ready:** Basic auth is a demo scheme, only two roles
+governance and operational actions. **Not production-ready:** users are configured rather than stored, tokens cannot be revoked, only two roles
 exist, and audit entries lack actor role and correlation id.
 
 ## 8. Configuration
 | Key | Purpose |
 |---|---|
 | `ConnectionStrings:PrepaidEngine` | PostgreSQL connection (real value via user-secrets) |
-| `DemoAuth:Users:{n}:{Username,Password,Role}` | Demo users (`IT`, `Utility`) via user-secrets |
+| `DemoAuth:Users:{n}:{Username,DisplayName,PasswordHash,Role}` | Sign-in users (`IT`, `Utility`) via user-secrets |
+| `Jwt:Key` | Token signing key, 32+ characters (secret; Development falls back to a random per-run key) |
+| `Jwt:AccessTokenMinutes`, `Jwt:MaxSessionHours` | Token lifetime (30) and absolute session limit (8) |
 | `EnergyValidation:{WarningTolerancePct,FailTolerancePct}` | DLP vs BP energy validation thresholds |
 | `SlaMonitoring:*TargetMinutes` | SLA targets |
 | `environment.apiBaseUrl` (frontend) | API base URL, default `http://localhost:5043` |
@@ -301,7 +306,7 @@ See the repository [README](../README.md).
 Tracked on the project board: https://github.com/users/lalit-prakash/projects/5
 
 - Real authentication (tokens/MFA) and RBAC beyond IT/Utility; user and role management.
-- Audit entries lack actor role, correlation id and source; login events are not audited.
+- Audit entries lack actor role, correlation id and source; login events go to the application log but are not audited.
 - Recharge outbox and a background MDM command worker; real MDM/HES adapter (needs the endpoint and
   command contract).
 - Billing batch/job model with progress; report jobs for large exports.

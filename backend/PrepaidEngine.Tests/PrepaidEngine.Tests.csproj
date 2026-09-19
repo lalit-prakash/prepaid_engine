@@ -29,6 +29,7 @@
     <ProjectReference Include="..\PrepaidEngine.Domain\PrepaidEngine.Domain.csproj" />
     <ProjectReference Include="..\PrepaidEngine.Application\PrepaidEngine.Application.csproj" />
     <ProjectReference Include="..\PrepaidEngine.Infrastructure\PrepaidEngine.Infrastructure.csproj" />
+    <ProjectReference Include="..\PrepaidEngine.Api\PrepaidEngine.Api.csproj" />
   </ItemGroup>
 
 </Project>

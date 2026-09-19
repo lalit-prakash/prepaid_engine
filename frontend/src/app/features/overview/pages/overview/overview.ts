@@ -220,7 +220,8 @@ export class Overview implements OnInit, OnDestroy {
 
   // ---------------------------------------------------------------- hero
   protected get operatorName(): string {
-    return this.auth.username() ?? 'Operator';
+    const first = this.auth.username()?.split(/\s+/)[0];
+    return first ? first.charAt(0).toUpperCase() + first.slice(1).toLowerCase() : 'Operator';
   }
 
   protected get greeting(): string {

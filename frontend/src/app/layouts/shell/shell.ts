@@ -48,7 +48,8 @@ export class Shell implements OnInit {
     return this.auth.username() ?? 'Operator';
   }
   protected get userInitials(): string {
-    return this.userName.slice(0, 2).toUpperCase();
+    const words = this.userName.split(/\s+/).filter(Boolean);
+    return (words.length > 1 ? words[0][0] + words[words.length - 1][0] : this.userName.slice(0, 2)).toUpperCase();
   }
   protected get userRole(): string {
     return this.auth.role() ?? 'Operator';

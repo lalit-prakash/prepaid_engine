@@ -5,7 +5,7 @@ import { catchError, throwError } from 'rxjs';
 import { AuthService } from '../services/auth.service';
 import { environment } from '../../../environments/environment';
 
-/** Attaches the cached Basic-auth header to same-origin API calls, and signs
+/** Attaches the bearer token to same-origin API calls, and signs
  * the user back out (returning them to /login) if the API ever rejects it. */
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
