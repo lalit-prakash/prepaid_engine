@@ -19,6 +19,7 @@ public class RegisterReadingConfiguration : IEntityTypeConfiguration<RegisterRea
 
         builder.HasIndex(r => new { r.ConsumerId, r.MeterId, r.ReadingTimestamp }).IsUnique();
         builder.HasIndex(r => r.MeterId);
+        builder.HasIndex(r => r.ReadingTimestamp);
 
         builder.HasOne<Consumer>().WithMany().HasForeignKey(r => r.ConsumerId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<SmartMeter>().WithMany().HasForeignKey(r => r.MeterId).OnDelete(DeleteBehavior.Restrict);

@@ -9,6 +9,8 @@ import {
   InstantaneousReadingSummary,
   MeterEventSummary,
   MeterAlarmSummary,
+  MeterDataPage,
+  MeterDataQuery,
 } from '../models/meter-data.model';
 
 /** Talks to the real GET /api/v1/meter-data/dlp endpoint — the raw Daily Load Profile stream,
@@ -53,6 +55,24 @@ export class MeterDataService {
   listMeterAlarms(consumerId?: string): Observable<MeterAlarmSummary[]> {
     return this.http.get<MeterAlarmSummary[]>(`${this.baseUrl}/alarms`, { params: consumerId ? { consumerId } : {} });
   }
+
+  /** Server-paginated, filtered search over one time-series profile (dlp | bp | ls | events | alarms). */
+  private search<T>(profile: string, query: MeterDataQuery): Observable<MeterDataPage<T>> {
+    const params: Record<string, string> = {};
+    if (query.q?.trim()) params['q'] = query.q.trim();
+    if (query.from) params['from'] = query.from;
+    if (query.to) params['to'] = query.to;
+    if (query.status) params['status'] = query.status;
+    if (query.after) params['after'] = query.after;
+    if (query.pageSize) params['pageSize'] = String(query.pageSize);
+    return this.http.get<MeterDataPage<T>>(`${this.baseUrl}/${profile}/search`, { params });
+  }
+
+  searchDailyLoadProfiles(q: MeterDataQuery) { return this.search<DailyLoadProfileSummary>('dlp', q); }
+  searchRegisterReadings(q: MeterDataQuery) { return this.search<RegisterReadingSummary>('bp', q); }
+  searchLoadSurveyIntervals(q: MeterDataQuery) { return this.search<LoadSurveyIntervalSummary>('ls', q); }
+  searchMeterEvents(q: MeterDataQuery) { return this.search<MeterEventSummary>('events', q); }
+  searchMeterAlarms(q: MeterDataQuery) { return this.search<MeterAlarmSummary>('alarms', q); }
 
   acknowledgeAlarm(id: string, acknowledgedBy: string): Observable<MeterAlarmSummary> {
     return this.http.post<MeterAlarmSummary>(`${this.baseUrl}/alarms/${id}/acknowledge`, { acknowledgedBy });
