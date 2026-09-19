@@ -3,34 +3,12 @@ import { HttpClient } from '@angular/common/http';
 import { Component, OnInit, computed, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { environment } from '../../../../../environments/environment';
+import { AnalyticsOverview } from '../../../../core/models/analytics.model';
 import { BarChart, BarSeries } from '../../../../shared/components/bar-chart/bar-chart';
 import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 import { categoryLabel } from '../../../../shared/utils/category-label';
 
-interface AnalyticsOverview {
-  from: string;
-  to: string;
-  generatedAt: string;
-  totals: {
-    consumptionKwh: number;
-    rechargeAttempts: number;
-    rechargeReceived: number;
-    rechargeFailed: number;
-    bills: number;
-    billed: number;
-    settled: number;
-    collectionRatePercent: number | null;
-  };
-  consumption: { date: string; totalKwh: number; meterCount: number }[];
-  recharges: { date: string; attempts: number; amountReceived: number; failed: number }[];
-  billing: { date: string; billCount: number; billed: number; settled: number }[];
-  commands: { date: string; disconnects: number; reconnects: number }[];
-  communication: { date: string; failures: number; restorations: number }[];
-  walletDistribution: { overdrawn: number; upTo100: number; upTo500: number; upTo1000: number; upTo5000: number; over5000: number };
-  tariffMix: { tariffId: string; tariffName: string; category: number; tariffStatus: number; billCount: number; billed: number }[];
-  exceptions: { sourceType: number; status: number; count: number }[];
-}
 
 const EXCEPTION_SOURCES = ['Meter credit command', 'Connectivity command', 'Energy validation'];
 const PRESETS = [

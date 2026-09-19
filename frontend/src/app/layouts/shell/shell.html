@@ -102,10 +102,10 @@
 
         <div class="header__menu">
           <button type="button" class="header__user" (click)="toggleUserMenu()">
-            <span class="header__avatar">SO</span>
+            <span class="header__avatar">{{ userInitials }}</span>
             <span class="header__user-text">
-              <span class="header__user-name">System Operator</span>
-              <span class="header__user-role">Operator</span>
+              <span class="header__user-name">{{ userName }}</span>
+              <span class="header__user-role">{{ userRole }}</span>
             </span>
             <pe-icon name="chevronDown" [size]="13" />
           </button>

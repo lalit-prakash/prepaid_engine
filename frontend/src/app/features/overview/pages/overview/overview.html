@@ -1,18 +1,20 @@
 <div class="overview">
-  <div class="hero">
+  <header class="hero">
     <div class="hero__text">
       <h1>{{ greeting }}, {{ operatorName }}!</h1>
       <p class="hero__subtitle">Here's what's happening across your prepaid network today.</p>
     </div>
     <p class="hero__tagline">Reliable. Efficient. Connected.</p>
-    <p class="hero__clock">{{ formattedDateTime }}</p>
-  </div>
+    <div class="hero__clock">
+      <div class="hero__date">{{ heroDate }}</div>
+      <div class="hero__time">{{ heroTime }}</div>
+      <span class="hero__accent"></span>
+    </div>
+  </header>
 
   @if (loading()) {
     <div class="skeleton-row">
-      @for (i of [1,2,3,4,5]; track i) {
-        <div class="skeleton-card"></div>
-      }
+      @for (i of [1,2,3,4,5]; track i) { <div class="skeleton-card"></div> }
     </div>
   } @else if (error()) {
     <div class="error-panel">
@@ -21,81 +23,87 @@
     </div>
   } @else {
     <section class="kpi-row" aria-label="Key performance indicators">
-      <pe-kpi-card label="Prepaid Consumers" [value]="consumers().length" tone="primary" icon="users"
-        [horizontal]="true" [clickable]="true" (click)="goToConsumers()" />
-      <pe-kpi-card label="Wallet Balance" [value]="'₹' + (totalWalletBalance | number:'1.0-0')" tone="info" icon="wallet" [horizontal]="true" />
-      @if (healthyMetersAvailable) {
-        <pe-kpi-card label="Healthy Meters" [value]="healthyMetersPct + '%'" icon="signal" [horizontal]="true"
-          [sublabel]="healthyMetersFraction" tone="success" />
+      <pe-kpi-card [tile]="true" label="Total Prepaid Consumers" [value]="consumers().length" tone="primary" icon="users"
+        [sublabel]="activeCount + ' active · ' + disconnectedCount + ' disconnected'" [clickable]="true" (click)="goToConsumers()" />
+      <pe-kpi-card [tile]="true" label="Total Wallet Balance" [value]="'₹' + (totalWalletBalance | number:'1.0-0')" tone="success" icon="wallet"
+        [sublabel]="'across ' + consumers().length + ' wallets'" />
+      <pe-kpi-card [tile]="true" label="Healthy Meters" [value]="healthyMetersPct + '%'" tone="success" icon="signal"
+        [sublabel]="activeCount + ' / ' + consumers().length + ' active'" />
+      <pe-kpi-card [tile]="true" label="Low Balance Consumers" [value]="lowBalanceCount" tone="warning" icon="alert"
+        sublabel="balance below emergency limit" [clickable]="true" (click)="goToConsumers({ lowBalance: 'true' })" />
+      @if (billingAvailable) {
+        <pe-kpi-card [tile]="true" label="Billing (DLP)" [value]="billing().pct + '%'" tone="analytic" icon="receipt"
+          [sublabel]="billing().successful + ' of ' + billing().total + ' profiles processed'" [progressPct]="billing().pct" />
       } @else {
-        <pe-kpi-card label="Healthy Meters" value="" [unavailable]="true" tone="neutral" icon="signal" [horizontal]="true" />
-      }
-      <pe-kpi-card label="Low Balance" [value]="lowBalanceCount" tone="warning" icon="alert" [horizontal]="true"
-        [clickable]="true" (click)="goToConsumers({ lowBalance: 'true' })" />
-      <pe-kpi-card label="Disconnected" [value]="disconnectedCount" tone="danger" icon="plug" [horizontal]="true"
-        [clickable]="true" (click)="goToConsumers({ status: 'Disconnected' })" />
-      @if (billingProgressAvailable) {
-        <pe-kpi-card label="Today's Billing" [value]="billingProgressPct + '%'" icon="receipt" [horizontal]="true"
-          sublabel="processed" tone="success" [progressPct]="billingProgressPct" />
-      } @else {
-        <pe-kpi-card label="Today's Billing" value="" [unavailable]="true" tone="neutral" icon="receipt" [horizontal]="true" />
+        <pe-kpi-card [tile]="true" label="Billing (DLP)" value="" [unavailable]="true" tone="analytic" icon="receipt" />
       }
     </section>
 
-    <section class="tri-row">
+    <section class="row row--trend">
       <div class="panel panel--trend">
         <div class="panel__header">
-          <h2>Daily Consumption Trend</h2>
-          <span class="panel__source">Daily Load Profile (DLP)</span>
+          <h2>{{ trendTitle }}</h2>
+          <select class="select" aria-label="Trend period" (change)="onTrendRange($any($event.target).value)">
+            @for (r of trendRanges; track r.days) { <option [value]="r.days" [selected]="trendDays() === r.days">{{ r.label }}</option> }
+          </select>
         </div>
-        @if (!consumptionTrendAvailable()) {
-          <div class="panel__unavailable">
-            @if (dlpLoading()) { Loading daily load profile data… }
-            @else if (dlpError()) { Data unavailable — could not reach the meter-data API. }
-            @else { Data unavailable — no Daily Load Profile has been generated yet. }
-          </div>
+        <div class="pills" role="tablist" aria-label="Trend metric">
+          @for (t of trendTabs; track t.id) {
+            <button type="button" role="tab" class="pill" [class.pill--active]="trendTab() === t.id" [attr.aria-selected]="trendTab() === t.id" (click)="setTrendTab(t.id)">{{ t.label }}</button>
+          }
+        </div>
+        @if (analyticsError()) {
+          <div class="panel__unavailable">Data unavailable — could not reach the analytics API.</div>
+        } @else if (analyticsLoading() && !analytics()) {
+          <div class="panel__loading">Loading trend…</div>
         } @else {
-          <div class="trend-chart">
-            @for (day of dailyConsumptionTrend(); track day.date) {
-              <div class="trend-chart__col">
-                <div class="trend-chart__bar-track">
-                  <div class="trend-chart__bar" [style.height.%]="(day.totalKwh / consumptionTrendMaxKwh()) * 100"
-                    [title]="day.totalKwh + ' kWh on ' + day.date"></div>
-                </div>
-                <span class="trend-chart__value">{{ day.totalKwh | number:'1.0-0' }}</span>
-                <span class="trend-chart__date">{{ day.date | date:'d MMM' }}</span>
+          <div class="trend" [class.trend--loading]="analyticsLoading()">
+            <div class="trend__chart">
+              <pe-line-chart [labels]="trend().labels" [values]="trend().values" [seriesName]="trend().name" [color]="trend().colour"
+                [format]="trendFormat()" [ariaLabel]="trend().name + ' per day'" emptyMessage="No data in this period." />
+            </div>
+            <dl class="trend__stats">
+              <div>
+                <dt>Total {{ trend().name }}</dt>
+                <dd>@if (trend().money) { ₹{{ trend().total | number:'1.0-0' }} } @else { {{ trend().total | number:'1.0-1' }} <small>kWh</small> }</dd>
               </div>
-            }
+              @if (trendStats(); as s) {
+                <div>
+                  <dt>Peak day</dt>
+                  <dd>{{ trendFormat()(s.peakValue) }}</dd>
+                  <dd class="trend__note">on {{ s.peakLabel }}</dd>
+                </div>
+                <div>
+                  <dt>Average per active day</dt>
+                  <dd>{{ trendFormat()(s.average) }}</dd>
+                </div>
+              }
+            </dl>
           </div>
         }
       </div>
 
       <div class="panel">
-        <div class="panel__header">
-          <h2>Billing Progress (DLP)</h2>
-        </div>
+        <div class="panel__header"><h2>Billing Progress (DLP)</h2>@if (billingAvailable) { <span class="big-pct">{{ billing().pct }}%</span> }</div>
         @if (dlpLoading()) {
           <div class="panel__loading">Loading daily load profile data…</div>
         } @else if (dlpError()) {
           <div class="panel__unavailable">Data unavailable — could not reach the meter-data API.</div>
-        } @else if (dlpStatusDonut().length === 0) {
-          <div class="panel__unavailable">Data unavailable — no Daily Load Profile has been generated yet.</div>
+        } @else if (!billingAvailable) {
+          <div class="panel__unavailable">Data unavailable — no Daily Load Profile has been received yet.</div>
         } @else {
-          <div class="donut-row">
-            <div class="donut-wrap">
-              <div class="donut" [style.background]="dlpDonutGradient()"></div>
-              <span class="donut__center">{{ billingProgressPct }}%</span>
-            </div>
-            <ul class="donut__legend">
-              @for (slice of dlpStatusDonut(); track slice.label) {
-                <li>
-                  <pe-status-badge [label]="slice.label" [tone]="slice.tone" />
-                  <span class="donut__legend-count">{{ slice.count }} ({{ slice.pct }}%)</span>
-                </li>
-              }
-            </ul>
+          <div class="bar" role="progressbar" [attr.aria-valuenow]="billing().pct" aria-valuemin="0" aria-valuemax="100" aria-label="Profiles billed">
+            <div class="bar__fill" [style.width.%]="billing().pct"></div>
           </div>
+          <p class="bar__caption"><strong>{{ billing().successful }}</strong> / {{ billing().total }} profiles processed</p>
+          <ul class="stat-list">
+            <li><span class="dot dot--success"></span>Successful<b>{{ billing().successful }}</b></li>
+            <li><span class="dot dot--warning"></span>Pending<b>{{ billing().pending }}</b></li>
+            <li><span class="dot dot--danger"></span>Failed<b>{{ billing().failed }}</b></li>
+          </ul>
+          <p class="panel__foot">Profile date {{ billing().profileDate | date:'d MMM y' }}@if (billing().latestReceived) { · last received {{ billing().latestReceived | date:'d MMM, HH:mm' }} }</p>
         }
+        <a routerLink="/meter-data" class="panel__link">View Billing Details <pe-icon name="link" [size]="12" /></a>
       </div>
 
       <div class="panel">
@@ -103,200 +111,158 @@
           <h2>System Health</h2>
           <span class="panel__source">Live probe</span>
         </div>
-        <ul class="health-list">
+        <ul class="health">
           <li>
-            @switch (apiHealth()) {
-              @case ('healthy') { <pe-status-badge label="Healthy" tone="success" /> }
-              @case ('down') { <pe-status-badge label="Down" tone="danger" /> }
-              @default { <pe-status-badge label="Checking" tone="neutral" /> }
-            }
-            Prepaid Engine API
+            <span class="dot" [class.dot--success]="apiHealth() === 'healthy'" [class.dot--danger]="apiHealth() === 'down'"></span>
+            <span class="health__name">Prepaid Engine API</span>
+            <span class="health__value">@if (apiHealth() === 'healthy') { {{ apiLatencyMs() }} ms } @else if (apiHealth() === 'down') { Down } @else { … }</span>
           </li>
-          <li><pe-status-badge label="Not monitored" tone="neutral" /> Database</li>
-          <li><pe-status-badge label="Mock adapter" tone="neutral" /> RMS Client</li>
-          <li><pe-status-badge label="Mock adapter" tone="neutral" /> Meter Command Client</li>
-          <li><pe-status-badge label="Mock adapter" tone="neutral" /> Connectivity Command Client</li>
+          <li><span class="dot"></span><span class="health__name">Database</span><span class="health__value health__value--muted">Not monitored</span></li>
+          <li><span class="dot"></span><span class="health__name">RMS</span><span class="health__value health__value--muted">Mock adapter</span></li>
+          <li><span class="dot"></span><span class="health__name">Meter commands</span><span class="health__value health__value--muted">Mock adapter</span></li>
+          <li><span class="dot"></span><span class="health__name">Connectivity</span><span class="health__value health__value--muted">Mock adapter</span></li>
         </ul>
-        <a routerLink="/system-health" class="panel__link">View system health →</a>
+        <div class="banner" [class.banner--ok]="apiHealth() === 'healthy'" [class.banner--down]="apiHealth() === 'down'">
+          <span class="banner__icon">{{ apiHealth() === 'down' ? '✕' : '✓' }}</span>
+          <div>
+            <strong>{{ apiHealth() === 'healthy' ? 'API reachable' : apiHealth() === 'down' ? 'API unreachable' : 'Checking…' }}</strong>
+            <span>1 of 5 services monitored</span>
+          </div>
+        </div>
+        <a routerLink="/system-health" class="panel__link">View System Health <pe-icon name="link" [size]="12" /></a>
       </div>
     </section>
 
-    <section class="tri-row">
+    <section class="row row--three">
       <div class="panel">
         <div class="panel__header">
           <h2>Prepaid Network Health</h2>
-          <span class="panel__source">{{ consumers().length }} consumers</span>
+          <span class="panel__source">Total Consumers <b class="strong">{{ consumers().length }}</b></span>
         </div>
         @if (!networkHealthAvailable()) {
-          <div class="panel__unavailable">Data unavailable — could not reach the consumers API.</div>
+          <div class="panel__unavailable">Data unavailable — no consumers to summarise.</div>
         } @else {
           <div class="donut-row">
-            <div class="donut-wrap">
-              <div class="donut" [style.background]="networkHealthGradient()"></div>
-              <span class="donut__center">{{ networkHealthPct() }}%</span>
+            <div class="donut" [style.background]="networkGradient()">
+              <div class="donut__hole"><strong>{{ networkHealthyPct() }}%</strong><span>Healthy</span></div>
             </div>
-            <ul class="donut__legend">
-              @for (slice of networkHealthDonut(); track slice.label) {
+            <ul class="legend">
+              @for (s of networkHealth(); track s.label) {
                 <li>
-                  <pe-status-badge [label]="slice.label" [tone]="slice.tone" />
-                  <span class="donut__legend-count">{{ slice.count }}</span>
+                  <span class="swatch" [class.swatch--success]="s.tone === 'success'" [class.swatch--warning]="s.tone === 'warning'" [class.swatch--danger]="s.tone === 'danger'"></span>
+                  <span class="legend__label">{{ s.label }}</span>
+                  <b>{{ s.count }}</b>
+                  <span class="legend__pct">{{ s.pct }}%</span>
                 </li>
               }
             </ul>
           </div>
         }
-        <a routerLink="/consumers" class="panel__link">View consumer analysis →</a>
+        <a routerLink="/consumers" class="panel__link">View Consumer Analysis <pe-icon name="link" [size]="12" /></a>
       </div>
 
       <div class="panel">
         <div class="panel__header">
           <h2>Attention Required</h2>
-          <span class="panel__source">{{ attentionItems().length }} total</span>
+          <a routerLink="/exceptions" class="panel__link panel__link--inline">View All <pe-icon name="link" [size]="12" /></a>
         </div>
-        <div class="attention-tabs">
-          <button type="button" [class.attention-tabs__item--active]="attentionFilter() === 'all'"
-            class="attention-tabs__item" (click)="setAttentionFilter('all')">All ({{ attentionItems().length }})</button>
-          <button type="button" [class.attention-tabs__item--active]="attentionFilter() === 'critical'"
-            class="attention-tabs__item" (click)="setAttentionFilter('critical')">Critical ({{ attentionCriticalCount() }})</button>
-          <button type="button" [class.attention-tabs__item--active]="attentionFilter() === 'warning'"
-            class="attention-tabs__item" (click)="setAttentionFilter('warning')">Warning ({{ attentionWarningCount() }})</button>
+        <div class="pills" role="tablist" aria-label="Attention severity">
+          <button type="button" role="tab" class="pill" [class.pill--active]="attentionFilter() === 'all'" (click)="setAttentionFilter('all')">All ({{ attentionItems().length }})</button>
+          <button type="button" role="tab" class="pill" [class.pill--active]="attentionFilter() === 'critical'" (click)="setAttentionFilter('critical')">Critical ({{ attentionCritical() }})</button>
+          <button type="button" role="tab" class="pill" [class.pill--active]="attentionFilter() === 'warning'" (click)="setAttentionFilter('warning')">Warning ({{ attentionWarning() }})</button>
         </div>
-        @if (!attentionAvailable()) {
+        @if (!attentionReady()) {
           <div class="panel__loading">Loading…</div>
-        } @else if (attentionError()) {
-          <div class="panel__unavailable">Data unavailable — could not reach the exceptions/billing-holds APIs.</div>
-        } @else if (filteredAttentionItems().length === 0) {
+        } @else if (attentionFailed()) {
+          <div class="panel__unavailable">Data unavailable — part of this list could not be loaded.</div>
+        } @else if (attentionShown().length === 0) {
           <div class="panel__empty">Nothing needs attention right now.</div>
         } @else {
-          <ul class="alert-list">
-            @for (item of filteredAttentionItems(); track item.id) {
-              <li class="alert-list__item--link" tabindex="0" role="link"
-                (click)="goTo(item.link)" (keydown.enter)="goTo(item.link)">
-                <pe-status-badge [label]="item.severity === 'critical' ? 'Critical' : 'Warning'"
-                  [tone]="item.severity === 'critical' ? 'danger' : 'warning'" />
-                <span class="alert-list__text"><strong>{{ item.title }}</strong> — {{ item.detail }}</span>
+          <ul class="attention">
+            @for (item of attentionShown(); track item.id) {
+              <li tabindex="0" role="link" (click)="goTo(item.link)" (keydown.enter)="goTo(item.link)">
+                <span class="attention__icon" [class.attention__icon--critical]="item.severity === 'critical'">
+                  <pe-icon name="alert" [size]="15" />
+                </span>
+                <div class="attention__body">
+                  <strong>{{ item.title }}</strong>
+                  <span>{{ item.detail }}</span>
+                </div>
+                <time class="attention__time">{{ timeAgo(item.at) }}</time>
               </li>
             }
           </ul>
         }
-        <a routerLink="/exceptions" class="panel__link">View all →</a>
       </div>
 
       <div class="panel">
-        <div class="panel__header">
-          <h2>Billing Holds</h2>
-        </div>
-        @if (billingHoldsLoading()) {
+        <div class="panel__header"><h2>Revenue Protection</h2></div>
+        @if (riskError()) {
+          <div class="panel__unavailable">Data unavailable — could not reach the risk-indicators API.</div>
+        } @else if (!risk()) {
           <div class="panel__loading">Loading…</div>
-        } @else if (billingHoldsError()) {
-          <div class="panel__unavailable">Data unavailable — could not reach the billing-holds API.</div>
         } @else {
-          <div class="stat-block">
-            <div class="stat-block__icon"><pe-icon name="shield" [size]="22" /></div>
+          <div class="shield">
+            <span class="shield__icon"><pe-icon name="shield" [size]="30" /></span>
             <div>
-              <div class="stat-block__value">{{ billingHolds().length }}</div>
-              <div class="stat-block__label">Active billing holds — real-time DLP billing blocked</div>
+              <div class="shield__value">{{ riskTotal() }}</div>
+              <div class="shield__label">open risk conditions</div>
             </div>
           </div>
-          @if (billingHolds().length > 0) {
-            <ul class="alert-list">
-              @for (h of billingHolds().slice(0, 4); track h.id) {
-                <li>
-                  <pe-status-badge label="Blocked" tone="danger" />
-                  <span class="alert-list__text">{{ h.name }} ({{ h.accountNumber }}) — {{ h.blockReason }}</span>
-                </li>
-              }
-            </ul>
-          }
+          <ul class="risk">
+            @for (r of riskRows(); track r.label) {
+              <li tabindex="0" role="link" (click)="goTo(r.link)" (keydown.enter)="goTo(r.link)">
+                <span class="dot" [class.dot--danger]="r.count > 0" [class.dot--success]="r.count === 0"></span>
+                <span class="risk__label">{{ r.label }}</span>
+                <b>{{ r.count }}</b>
+              </li>
+            }
+          </ul>
         }
-        <a routerLink="/billing-holds" class="panel__link">View billing holds →</a>
+        <a routerLink="/exceptions" class="panel__link">View Exceptions <pe-icon name="link" [size]="12" /></a>
       </div>
     </section>
 
-    <section class="panel">
-      <div class="panel__header">
-        <h2>Tariff Governance</h2>
-        <span class="panel__source">Change requests</span>
-      </div>
-      @if (tariffRequestsLoading()) {
-        <div class="panel__loading">Loading…</div>
-      } @else if (tariffRequestsError()) {
-        <div class="panel__unavailable">Data unavailable — could not reach the tariff change-requests API.</div>
-      } @else {
-        <ul class="alert-list">
-          <li class="alert-list__item--link" tabindex="0" role="link" (click)="goTo('/tariffs')" (keydown.enter)="goTo('/tariffs')">
-            <pe-status-badge [label]="pendingTariffApprovals() > 0 ? 'Action needed' : 'Clear'" [tone]="pendingTariffApprovals() > 0 ? 'warning' : 'success'" />
-            <span class="alert-list__text"><strong>{{ pendingTariffApprovals() }}</strong> tariff change(s) awaiting Utility approval</span>
-          </li>
-          <li class="alert-list__item--link" tabindex="0" role="link" (click)="goTo('/tariffs')" (keydown.enter)="goTo('/tariffs')">
-            <pe-status-badge [label]="scheduledTariffActivations() > 0 ? 'Scheduled' : 'None'" [tone]="scheduledTariffActivations() > 0 ? 'info' : 'neutral'" />
-            <span class="alert-list__text"><strong>{{ scheduledTariffActivations() }}</strong> approved tariff change(s) scheduled to activate</span>
-          </li>
-        </ul>
-      }
-      <a routerLink="/tariffs" class="panel__link">Open Tariff &amp; Parameters →</a>
-    </section>
-
-    <section class="panel">
-      <h2>Alerts &amp; Notifications</h2>
-      @if (notificationsLoading()) {
-        <div class="panel__loading">Loading…</div>
-      } @else if (notificationsError()) {
-        <div class="panel__unavailable">Data unavailable — could not reach the notifications API.</div>
-      } @else if (recentNotifications().length === 0) {
-        <div class="panel__empty">No notifications have been generated yet.</div>
-      } @else {
-        <ul class="alert-list">
-          @for (n of recentNotifications(); track n.id) {
-            <li>
-              <pe-status-badge
-                [label]="n.status === NotificationStatus.Sent ? 'Sent' : n.status === NotificationStatus.Failed ? 'Failed' : 'Pending'"
-                [tone]="n.status === NotificationStatus.Sent ? 'success' : n.status === NotificationStatus.Failed ? 'danger' : 'warning'" />
-              <span class="alert-list__text">{{ n.message }} — {{ n.name }} ({{ n.accountNumber }})</span>
-            </li>
-          }
-        </ul>
-      }
-      <a routerLink="/notifications" class="panel__link">View all notifications →</a>
-    </section>
-
-    <section class="panel-row">
+    <section class="row row--two">
       <div class="panel">
-        <h2>Recent Recharges</h2>
+        <div class="panel__header">
+          <h2>Recent Recharges</h2>
+          <a routerLink="/recharge" class="panel__link panel__link--inline">View All <pe-icon name="link" [size]="12" /></a>
+        </div>
         @if (rechargesLoading()) {
           <div class="panel__loading">Loading…</div>
         } @else if (rechargesError()) {
           <div class="panel__unavailable">Data unavailable — could not reach the recharges API.</div>
-        } @else if (recentRecharges().length === 0) {
+        } @else if (recharges().length === 0) {
           <div class="panel__empty">No recharges have been recorded yet.</div>
         } @else {
-          <table class="mini-table">
-            <thead>
-              <tr><th>Consumer</th><th>Amount</th><th>Reference</th><th>Time</th><th>Payment</th><th>Meter credit</th></tr>
-            </thead>
+          <div class="table-scroll"><table class="mini-table">
+            <thead><tr><th>Consumer</th><th>Meter No.</th><th class="num">Amount</th><th>Time</th><th>Payment</th><th>Meter credit</th></tr></thead>
             <tbody>
-              @for (r of recentRecharges(); track r.id) {
-                <tr class="mini-table__row--link" tabindex="0" (click)="goTo('/recharge/' + r.id)" (keydown.enter)="goTo('/recharge/' + r.id)">
-                  <td>{{ r.name }} <span class="mini-table__meta">{{ r.accountNumber }}</span></td>
+              @for (r of recharges(); track r.id) {
+                <tr tabindex="0" (click)="goTo('/recharge/' + r.id)" (keydown.enter)="goTo('/recharge/' + r.id)">
+                  <td>{{ r.name }}</td>
+                  <td class="mono">{{ r.meterNumber }}</td>
                   <td class="num">₹{{ r.amount | number:'1.0-2' }}</td>
-                  <td class="mini-table__meta">{{ r.rmsReferenceId }}</td>
-                  <td class="mini-table__meta">{{ r.initiatedAt | date:'d MMM, HH:mm' }}</td>
+                  <td class="muted">{{ r.initiatedAt | date:'d MMM, HH:mm' }}</td>
                   <td>
                     <pe-status-badge
-                      [label]="r.status === RechargeStatus.Success ? 'Payment received' : r.status === RechargeStatus.Failed ? 'Payment failed' : r.status === RechargeStatus.Reversed ? 'Reversed' : 'Payment pending'"
+                      [label]="r.status === RechargeStatus.Success ? 'Received' : r.status === RechargeStatus.Failed ? 'Failed' : r.status === RechargeStatus.Reversed ? 'Reversed' : 'Pending'"
                       [tone]="r.status === RechargeStatus.Success ? 'success' : r.status === RechargeStatus.Failed ? 'danger' : r.status === RechargeStatus.Reversed ? 'warning' : 'info'" />
                   </td>
                   <td><pe-status-badge [label]="meterCreditLabel(r.meterCommandStatus)" [tone]="meterCreditTone(r.meterCommandStatus)" /></td>
                 </tr>
               }
             </tbody>
-          </table>
+          </table></div>
         }
-        <a routerLink="/recharge" class="panel__link">View all recharges →</a>
       </div>
 
       <div class="panel">
-        <h2>Meter Operations</h2>
+        <div class="panel__header">
+          <h2>Recent Meter Operations</h2>
+          <a routerLink="/rc-dc" class="panel__link panel__link--inline">View All <pe-icon name="link" [size]="12" /></a>
+        </div>
         @if (connectivityLoading()) {
           <div class="panel__loading">Loading…</div>
         } @else if (connectivityError()) {
@@ -304,37 +270,26 @@
         } @else if (recentMeterOps().length === 0) {
           <div class="panel__empty">No connectivity commands have been issued yet.</div>
         } @else {
-          <table class="mini-table">
-            <thead>
-              <tr><th>Consumer</th><th>Operation</th><th>Time</th><th>Status</th></tr>
-            </thead>
+          <div class="table-scroll"><table class="mini-table">
+            <thead><tr><th>Consumer</th><th>Meter No.</th><th>Operation</th><th>Time</th><th>Status</th></tr></thead>
             <tbody>
               @for (c of recentMeterOps(); track c.id) {
-                <tr class="mini-table__row--link" tabindex="0" (click)="goTo('/rc-dc/' + c.id)" (keydown.enter)="goTo('/rc-dc/' + c.id)">
-                  <td>{{ c.name }} <span class="mini-table__meta">{{ c.accountNumber }}</span></td>
+                <tr tabindex="0" (click)="goTo('/rc-dc/' + c.id)" (keydown.enter)="goTo('/rc-dc/' + c.id)">
+                  <td>{{ c.name }}</td>
+                  <td class="mono">{{ meterNumberByAccount().get(c.accountNumber) ?? '—' }}</td>
                   <td>{{ c.commandType === 0 ? 'Disconnect' : 'Reconnect' }}</td>
-                  <td class="mini-table__meta">{{ c.createdAt | date:'d MMM, HH:mm' }}</td>
+                  <td class="muted">{{ c.createdAt | date:'d MMM, HH:mm' }}</td>
                   <td>
                     <pe-status-badge
-                      [label]="c.status === ConnectivityCommandStatus.Acknowledged ? 'Acknowledged' : c.status === ConnectivityCommandStatus.Failed ? 'Failed' : c.status === ConnectivityCommandStatus.TimedOut ? 'Timed out' : c.status === ConnectivityCommandStatus.Sent ? 'Sent' : 'Queued'"
+                      [label]="c.status === ConnectivityCommandStatus.Acknowledged ? 'Completed' : c.status === ConnectivityCommandStatus.Failed ? 'Failed' : c.status === ConnectivityCommandStatus.TimedOut ? 'Timed out' : c.status === ConnectivityCommandStatus.Sent ? 'Processing' : 'Queued'"
                       [tone]="c.status === ConnectivityCommandStatus.Acknowledged ? 'success' : c.status === ConnectivityCommandStatus.Failed || c.status === ConnectivityCommandStatus.TimedOut ? 'danger' : 'info'" />
                   </td>
                 </tr>
               }
             </tbody>
-          </table>
+          </table></div>
         }
-        <a routerLink="/rc-dc" class="panel__link">View all RC/DC operations →</a>
       </div>
-    </section>
-
-    <section class="panel">
-      <h2>Quick Reports</h2>
-      <ul class="quick-reports">
-        @for (report of quickReports; track report.path) {
-          <li><a [routerLink]="report.path">{{ report.label }} →</a></li>
-        }
-      </ul>
     </section>
   }
 </div>
