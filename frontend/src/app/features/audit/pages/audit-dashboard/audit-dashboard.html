@@ -79,7 +79,7 @@
             <tr class="row-clickable" tabindex="0" role="button" [attr.aria-expanded]="expandedId() === e.id"
               (click)="toggle(e.id)" (keydown.enter)="toggle(e.id)">
               <td>{{ e.occurredAt | date: 'd MMM y, HH:mm:ss' }}</td>
-              <td>{{ e.actor }}</td>
+              <td>{{ e.actor }}@if (e.actorRole) { <span class="cell-meta">{{ e.actorRole }}</span> }</td>
               <td>{{ e.action }}</td>
               <td>{{ e.entityType }} <span class="cell-meta mono">{{ e.entityId.slice(0, 8) }}</span></td>
               <td class="details">{{ e.details ?? (e.oldValue || e.newValue ? (e.oldValue ?? '—') + ' → ' + (e.newValue ?? '—') : '—') }}</td>
@@ -93,6 +93,9 @@
                     <dt>Entity ID</dt><dd class="mono">{{ e.entityId }}</dd>
                     <dt>Action</dt><dd>{{ e.action }}</dd>
                     <dt>Actor</dt><dd>{{ e.actor }}</dd>
+                    <dt>Actor role</dt><dd>{{ e.actorRole ?? (e.actor === 'system' ? 'System' : '—') }}</dd>
+                    <dt>Source address</dt><dd class="mono">{{ e.sourceIp ?? '—' }}</dd>
+                    <dt>Correlation ID</dt><dd class="mono">{{ e.correlationId ?? '—' }}</dd>
                     <dt>Timestamp</dt><dd>{{ e.occurredAt | date: 'yyyy-MM-dd HH:mm:ss.SSS' }}</dd>
                     <dt>Old value</dt><dd class="mono">{{ e.oldValue ?? '—' }}</dd>
                     <dt>New value</dt><dd class="mono">{{ e.newValue ?? '—' }}</dd>

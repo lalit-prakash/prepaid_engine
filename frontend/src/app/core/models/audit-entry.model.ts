@@ -5,6 +5,11 @@ export interface AuditEntrySummary {
   entityId: string;
   action: string;
   actor: string;
+  /** Role of the signed-in user; null for system actions and entries recorded before this was captured. */
+  actorRole: string | null;
+  sourceIp: string | null;
+  /** Shared by everything recorded for one request. */
+  correlationId: string | null;
   oldValue: string | null;
   newValue: string | null;
   details: string | null;
