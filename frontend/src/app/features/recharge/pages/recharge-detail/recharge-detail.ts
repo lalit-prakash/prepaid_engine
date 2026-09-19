@@ -1,5 +1,5 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { RechargeService } from '../../../../core/services/recharge.service';
 import {
@@ -23,7 +23,7 @@ import { StatusBadge } from '../../../../shared/components/badge/status-badge';
   templateUrl: './recharge-detail.html',
   styleUrl: './recharge-detail.scss',
 })
-export class RechargeDetail implements OnInit {
+export class RechargeDetail implements OnInit, OnDestroy {
   protected readonly recharge = signal<RechargeDetailModel | null>(null);
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
@@ -35,12 +35,29 @@ export class RechargeDetail implements OnInit {
     private readonly rechargeService: RechargeService,
   ) {}
 
+  private id = '';
+  private followUp?: ReturnType<typeof setTimeout>;
+  private followUps = 0;
+
   ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get('id') ?? '';
-    this.rechargeService.getById(id).subscribe({
+    this.id = this.route.snapshot.paramMap.get('id') ?? '';
+    this.load();
+  }
+
+  ngOnDestroy(): void {
+    clearTimeout(this.followUp);
+  }
+
+  private load(): void {
+    this.rechargeService.getById(this.id).subscribe({
       next: (recharge) => {
         this.recharge.set(recharge);
         this.loading.set(false);
+        // The meter credit is sent by a background worker within seconds of the recharge: look again a few times.
+        const status = recharge.meterCommand?.status;
+        if ((status === MeterCommandStatus.Queued || status === MeterCommandStatus.Sent) && this.followUps++ < 10) {
+          this.followUp = setTimeout(() => this.load(), 3000);
+        }
       },
       error: (err) => {
         this.error.set(

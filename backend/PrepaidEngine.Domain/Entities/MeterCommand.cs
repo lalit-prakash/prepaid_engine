@@ -78,6 +78,10 @@ public class MeterCommand
 
     /// <summary>The only state that means the meter was actually credited — a real downstream
     /// acknowledgement, never inferred from RMS payment confirmation alone.</summary>
+    /// <summary>Records the id the meter/MDM layer gave the command. Used by the dispatcher, which claims the command
+    /// (Queued to Sent) with a single conditional update before it sends.</summary>
+    public void RecordExternalCommandId(string? externalCommandId) => ExternalCommandId = externalCommandId;
+
     public void MarkAcknowledged(DateTime acknowledgedAt, string? responseCode = null, string? responseMessage = null)
     {
         if (Status != MeterCommandStatus.Sent)

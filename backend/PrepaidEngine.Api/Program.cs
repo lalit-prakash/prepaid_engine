@@ -51,6 +51,11 @@ builder.Services.AddSingleton<IRmsClient, MockRmsClient>();
 // one exists; keep MockMeterCommandClient registered for local dev / tests until then.
 builder.Services.AddSingleton<IMeterCommandClient, MockMeterCommandClient>();
 
+// Recharges only queue the meter credit command; this worker delivers it (see MeterCommandDispatcher).
+builder.Services.Configure<PrepaidEngine.Api.MeterCommands.MeterCommandWorkerOptions>(builder.Configuration.GetSection(PrepaidEngine.Api.MeterCommands.MeterCommandWorkerOptions.SectionName));
+builder.Services.AddScoped<PrepaidEngine.Infrastructure.MeterCommands.MeterCommandDispatcher>();
+builder.Services.AddHostedService<PrepaidEngine.Api.MeterCommands.MeterCommandWorker>();
+
 // TODO(connectivity-command integration): swap for a real adapter once one exists; keep
 // MockConnectivityCommandClient registered for local dev / tests until then.
 builder.Services.AddSingleton<IConnectivityCommandClient, MockConnectivityCommandClient>();
@@ -1657,7 +1662,6 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
     RechargeRequest request,
     PrepaidEngineDbContext db,
     IRmsClient rmsClient,
-    IMeterCommandClient meterCommandClient,
     IEmergencyCreditGuard emergencyCreditGuard,
     ClaimsPrincipal user) =>
 {
@@ -1731,32 +1735,12 @@ app.MapPost("/api/v1/consumers/{accountNumber}/recharge", async (
             var walletTransaction = consumer.Wallet.Credit(request.Amount, WalletTransactionType.Recharge, rmsResult.RmsReferenceId);
             db.WalletTransactions.Add(walletTransaction);
 
-            // Dispatch the meter credit command. RMS confirming payment does not by itself mean
-            // the meter was credited — that only becomes true if/when MarkAcknowledged() below
-            // actually runs, per MeterCommand's own state machine.
+            // Queue the meter credit command in the same transaction as the wallet credit. RMS confirming payment
+            // does not by itself mean the meter was credited: the MeterCommandWorker delivers the command and
+            // only its acknowledgement makes that true, per MeterCommand's own state machine. The recharge
+            // never waits on the meter/MDM layer.
             var meterCommand = new MeterCommand(Guid.NewGuid(), consumer.Id, recharge.Id, request.Amount, DateTime.UtcNow);
             db.MeterCommands.Add(meterCommand);
-
-            var meterResult = await meterCommandClient.SendCreditCommandAsync(
-                new SendCreditCommandRequest(consumer.Id, request.Amount, request.IdempotencyKey));
-            meterCommand.MarkSent(DateTime.UtcNow, meterResult.ExternalCommandId);
-
-            switch (meterResult.Outcome)
-            {
-                case MeterCommandOutcome.Acknowledged:
-                    meterCommand.MarkAcknowledged(DateTime.UtcNow, meterResult.ResponseCode, meterResult.Message);
-                    break;
-                case MeterCommandOutcome.Failed:
-                    meterCommand.MarkFailed(meterResult.Message ?? "Meter rejected the credit command.", meterResult.ResponseCode);
-                    RaiseException(db, OperationalExceptionSourceType.MeterCommand, meterCommand.Id, consumer.Id,
-                        $"Meter command {meterCommand.Id} failed: {meterCommand.ErrorMessage}");
-                    break;
-                case MeterCommandOutcome.TimedOut:
-                    meterCommand.MarkTimedOut();
-                    RaiseException(db, OperationalExceptionSourceType.MeterCommand, meterCommand.Id, consumer.Id,
-                        $"Meter command {meterCommand.Id} timed out waiting for meter acknowledgement.");
-                    break;
-            }
 
             // The wallet was credited above regardless of the meter command's own outcome — check
             // for an auto-reconnect independently of whether the meter command itself succeeded.
@@ -1872,7 +1856,7 @@ app.MapGet("/api/v1/meter-commands/{id:guid}", async (Guid id, PrepaidEngineDbCo
 app.MapPost("/api/v1/meter-commands/{id:guid}/retry", async (
     Guid id,
     PrepaidEngineDbContext db,
-    IMeterCommandClient meterCommandClient) =>
+    ClaimsPrincipal user) =>
 {
     var command = await db.MeterCommands.FirstOrDefaultAsync(m => m.Id == id);
     if (command is null)
@@ -1887,28 +1871,9 @@ app.MapPost("/api/v1/meter-commands/{id:guid}/retry", async (
         return Results.Conflict(new { error = ex.Message });
     }
 
-    var correlationId = $"retry-{command.RetryCount}-{Guid.NewGuid():N}";
-    var meterResult = await meterCommandClient.SendCreditCommandAsync(
-        new SendCreditCommandRequest(command.ConsumerId, command.CreditAmount, correlationId));
-    command.MarkSent(DateTime.UtcNow, meterResult.ExternalCommandId);
-
-    switch (meterResult.Outcome)
-    {
-        case MeterCommandOutcome.Acknowledged:
-            command.MarkAcknowledged(DateTime.UtcNow, meterResult.ResponseCode, meterResult.Message);
-            break;
-        case MeterCommandOutcome.Failed:
-            command.MarkFailed(meterResult.Message ?? "Meter rejected the credit command.", meterResult.ResponseCode);
-            RaiseException(db, OperationalExceptionSourceType.MeterCommand, command.Id, command.ConsumerId,
-                $"Meter command {command.Id} failed on retry #{command.RetryCount}: {command.ErrorMessage}");
-            break;
-        case MeterCommandOutcome.TimedOut:
-            command.MarkTimedOut();
-            RaiseException(db, OperationalExceptionSourceType.MeterCommand, command.Id, command.ConsumerId,
-                $"Meter command {command.Id} timed out on retry #{command.RetryCount}.");
-            break;
-    }
-
+    // Back to Queued: the MeterCommandWorker sends it within a couple of seconds and records the outcome.
+    Audit(db, nameof(MeterCommand), command.Id.ToString(), "METER_COMMAND_RETRY_QUEUED", user.Identity?.Name ?? "unknown",
+        details: $"Retry #{command.RetryCount}.");
     await db.SaveChangesAsync();
 
     return Results.Ok(new

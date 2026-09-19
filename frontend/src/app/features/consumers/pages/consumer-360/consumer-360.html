@@ -243,6 +243,8 @@
                   <div class="outcome__note outcome__note--warn">RMS confirmed payment, but the meter credit command failed — see Recharge Operations for detail.</div>
                 } @else if (outcome.meterCommandStatus === 'TimedOut') {
                   <div class="outcome__note outcome__note--warn">RMS confirmed payment, but no acknowledgement arrived from the meter — see Recharge Operations for detail.</div>
+                } @else if (outcome.meterCommandStatus === 'Queued') {
+                  <div class="outcome__note">Payment received and the wallet is credited. The meter credit command is queued and is sent in the background; open the recharge to follow it.</div>
                 } @else if (outcome.meterCommandStatus) {
                   <div class="outcome__note">Meter credit command: {{ outcome.meterCommandStatus }}.</div>
                 }

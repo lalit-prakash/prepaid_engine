@@ -1,6 +1,6 @@
 import { OperateOnly } from '../../../../shared/directives/operate-only';
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MeterCommandService } from '../../../../core/services/meter-command.service';
 import { MeterCommandDetail as MeterCommandDetailModel, MeterCommandStatus } from '../../../../core/models/meter-command.model';
@@ -19,7 +19,7 @@ import { StatusBadge } from '../../../../shared/components/badge/status-badge';
   templateUrl: './meter-credit-detail.html',
   styleUrl: './meter-credit-detail.scss',
 })
-export class MeterCreditDetail implements OnInit {
+export class MeterCreditDetail implements OnInit, OnDestroy {
   protected readonly command = signal<MeterCommandDetailModel | null>(null);
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
@@ -29,6 +29,8 @@ export class MeterCreditDetail implements OnInit {
   protected readonly MeterCommandStatus = MeterCommandStatus;
 
   private id = '';
+  private followUp?: ReturnType<typeof setTimeout>;
+  private followUps = 0;
 
   constructor(
     private readonly route: ActivatedRoute,
@@ -46,6 +48,7 @@ export class MeterCreditDetail implements OnInit {
       next: (command) => {
         this.command.set(command);
         this.loading.set(false);
+        this.scheduleFollowUp(command.status);
       },
       error: (err) => {
         this.error.set(
@@ -54,6 +57,18 @@ export class MeterCreditDetail implements OnInit {
         this.loading.set(false);
       },
     });
+  }
+
+  /** A command that is still queued or in flight is sent by a background worker within seconds: look again a few times. */
+  private scheduleFollowUp(status: MeterCommandStatus): void {
+    clearTimeout(this.followUp);
+    if ((status === MeterCommandStatus.Queued || status === MeterCommandStatus.Sent) && this.followUps++ < 10) {
+      this.followUp = setTimeout(() => this.load(), 3000);
+    }
+  }
+
+  ngOnDestroy(): void {
+    clearTimeout(this.followUp);
   }
 
   protected get canRetry(): boolean {
@@ -77,6 +92,7 @@ export class MeterCreditDetail implements OnInit {
     this.meterCommandService.retry(this.id).subscribe({
       next: () => {
         this.retrying.set(false);
+        this.followUps = 0;
         this.load(); // re-fetch so every field (status, retryCount, sentAt, ...) reflects the real post-retry state
       },
       error: (err) => {
