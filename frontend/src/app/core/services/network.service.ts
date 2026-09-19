@@ -22,7 +22,55 @@ export interface NetworkNode {
   name: string;
 }
 
-/** Talks to GET /api/v1/network/nodes. */
+export interface NetworkSummary {
+  zones: number;
+  circles: number;
+  divisions: number;
+  subDivisions: number;
+  substations: number;
+  feeders: number;
+  dtrs: number;
+  consumersMapped: number;
+  consumersUnmapped: number;
+}
+
+export interface ImportRowError {
+  row: number;
+  ok: boolean;
+  message: string | null;
+}
+
+/** What an import or dry run reports. Nothing is saved when `rowsWithErrors` > 0 or `dryRun` is true. */
+export interface ImportResult {
+  dryRun: boolean;
+  saved: boolean;
+  rowsRead: number;
+  rowsWithErrors: number;
+  created: Record<string, number>;
+  renamed: Record<string, number>;
+  consumersMapped: number;
+  consumersRemapped: number;
+  consumersUnchanged: number;
+  errors: ImportRowError[];
+}
+
+/** One line of a hierarchy file: the path down to one DTR. */
+export interface HierarchyRow {
+  zoneCode: string; zoneName: string;
+  circleCode: string; circleName: string;
+  divisionCode: string; divisionName: string;
+  subDivisionCode: string; subDivisionName: string;
+  substationCode: string; substationName: string;
+  feederCode: string; feederName: string;
+  dtrCode: string; dtrName: string;
+}
+
+export interface ConsumerMappingRow {
+  accountNumber: string;
+  dtrCode: string;
+}
+
+/** Talks to the /api/v1/network endpoints. */
 @Injectable({ providedIn: 'root' })
 export class NetworkService {
   private readonly baseUrl = `${environment.apiBaseUrl}/api/v1/network`;
@@ -33,5 +81,17 @@ export class NetworkService {
     const params: Record<string, string> = { level };
     if (parentId) params['parentId'] = parentId;
     return this.http.get<NetworkNode[]>(`${this.baseUrl}/nodes`, { params });
+  }
+
+  summary(): Observable<NetworkSummary> {
+    return this.http.get<NetworkSummary>(`${this.baseUrl}/summary`);
+  }
+
+  importHierarchy(rows: HierarchyRow[], dryRun: boolean): Observable<ImportResult> {
+    return this.http.post<ImportResult>(`${this.baseUrl}/import`, { rows, dryRun });
+  }
+
+  mapConsumers(rows: ConsumerMappingRow[], dryRun: boolean): Observable<ImportResult> {
+    return this.http.post<ImportResult>(`${this.baseUrl}/consumer-mapping`, { rows, dryRun });
   }
 }

@@ -25,6 +25,13 @@ public abstract class NetworkNodeBase
 
     public string Name { get; protected set; } = string.Empty;
 
+    /// <summary>Changes the display name; the code, which identifies the node, never changes.</summary>
+    public void Rename(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A name is required.", nameof(name));
+        Name = name.Trim();
+    }
+
     protected static void Require(string code, string name)
     {
         if (string.IsNullOrWhiteSpace(code)) throw new ArgumentException("A code is required.", nameof(code));

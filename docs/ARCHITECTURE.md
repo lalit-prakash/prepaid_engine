@@ -147,7 +147,7 @@ filtered in the database, page size 1–100 (default 25).
 | Operations | `GET exceptions`, `exceptions/{id}`, `POST exceptions/{id}/resolve`; `GET notifications`; `GET sla`; `GET risk-indicators` |
 | Audit | `GET audit-entries` (optional `entityId`), `audit-entries/search`, `audit-entries/summary` |
 | Reports | `GET reports/billing`, `day-wise-rc-dc`, `day-wise-recharge`, `recharge-failures`, `meter-credit-failures` — each `{ rows, truncated, generatedAt, totals? }`, 5,000-row cap. **Network hierarchy on every report:** all accept `zoneId`, `circleId`, `divisionId`, `subDivisionId`, `substationId`, `feederId`, `dtrId` filters; the three row-level reports return `zone`, `circle`, `division`, `subDivision`, `substation`, `feeder`, `dtr` on each row; the two day-wise reports take `level` (`zone`…`dtr`) and break each day down by that level in a `group` column |
-| Network | `GET network/nodes?level=&parentId=` — the nodes at one level under a parent, for the cascading report filters. `GET consumers/{account}` also returns the consumer's `network` path |
+| Network | `GET network/nodes?level=&parentId=` — the nodes at one level under a parent, for the cascading report filters; `GET network/summary` — counts per level and mapped/unmapped consumers; `POST network/import` — load the hierarchy from flat rows (one path down to a DTR per row); `POST network/consumer-mapping` — map consumers to DTRs by account number and DTR code. Both POSTs take `{ rows, dryRun }`, need the `DataAdmin` policy, accept up to 10,000 rows, match nodes by code (new code creates, changed name renames, a code under a different parent is an error), are **all-or-nothing** (any bad row saves nothing), report every problem by row, and write one audit entry when saved. `GET consumers/{account}` also returns the consumer's `network` path |
 | Analytics | `GET analytics/overview` — database-side aggregates over a bounded range |
 | Dashboard | `GET dashboard/summary` — consumer/wallet counts and sums, latest-day billing progress, attention counts plus the newest 10 items, and the 4 latest connectivity commands, all computed in SQL |
 | Platform | `GET /health`, `POST auth/login`, `POST auth/refresh`, `GET auth/whoami`, Swagger in Development |
@@ -273,6 +273,7 @@ src/app/
 
 | Module | Pages |
 |---|---|
+| Network Hierarchy | Counts per level and mapped/unmapped consumers; CSV upload with a mandatory dry run (per-line errors, what would be created or renamed) before an admin confirms; template download; import controls only for Admin/IT |
 | Dashboard | KPIs, consumption, billing progress, health, attention list (with drill-down), recent recharges/operations, all from `dashboard/summary`, `analytics/overview`, `risk-indicators` and `recharges/search` |
 | Consumers | server-searched list; tabbed detail (overview, wallet, billing, recharge, meter operations, meter data, timeline) |
 | Recharge / Meter credit | operations list + detail with separate payment and credit timeline, MDM correlation fields, retry |
@@ -332,7 +333,7 @@ Tracked on the project board: https://github.com/users/lalit-prakash/projects/5
   command contract).
 - Report jobs for large exports; a scheduler with billing run history and alerting (the billing run itself is now batched, claimed and resumable).
 - System Health, Integrations and Service Requests modules; tariff fields (code, taxes, thresholds).
-- Network hierarchy is modelled and shown on every report, but there is no import or maintenance screen for it yet (development seeds a labelled demo network); area analytics on the Analytics page, balance history and abnormal-consumption detection are still open.
+- Network hierarchy can be loaded and consumers mapped from CSV (Network Hierarchy screen), but there is no screen to edit or delete a single node, files are limited to 10,000 rows each, and development still seeds a labelled demo network; area analytics on the Analytics page, balance history and abnormal-consumption detection are still open.
 - Capped (1,000-row) lists on Exceptions, Notifications, Billing Holds, Meter Credit, RC/DC, Conversion, Reconciliation, Meter Replacements and Consumer-based lookups (the charge-calculation report loads consumers) need keyset paging and search; the cap keeps them safe but not complete.
 - `Program.cs` is one large file (~3,900 lines); splitting it into endpoint modules is planned.
 - Load and failure testing has not been run.

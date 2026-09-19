@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Infrastructure.Persistence;
 
@@ -32,7 +33,47 @@ public static class NetworkEndpoints
         })
         .WithName("ListNetworkNodes")
         .RequireAuthorization();
+
+        // How much of the network is loaded and how many consumers are still unmapped: counts only, in SQL.
+        app.MapGet("/api/v1/network/summary", async (PrepaidEngineDbContext db) => Results.Ok(new
+        {
+            Zones = await db.Zones.CountAsync(),
+            Circles = await db.Circles.CountAsync(),
+            Divisions = await db.Divisions.CountAsync(),
+            SubDivisions = await db.SubDivisions.CountAsync(),
+            Substations = await db.Substations.CountAsync(),
+            Feeders = await db.Feeders.CountAsync(),
+            Dtrs = await db.Dtrs.CountAsync(),
+            ConsumersMapped = await db.Consumers.CountAsync(c => c.DtrId != null),
+            ConsumersUnmapped = await db.Consumers.CountAsync(c => c.DtrId == null),
+        }))
+        .WithName("NetworkSummary")
+        .RequireAuthorization();
+
+        // Import the hierarchy from flat rows (one path down to a DTR per row). dryRun validates and reports without saving.
+        app.MapPost("/api/v1/network/import", async (NetworkImportRequest request, ClaimsPrincipal user, PrepaidEngineDbContext db) =>
+        {
+            if (request.Rows is null || request.Rows.Count == 0) return Results.BadRequest(new { error = "The file has no rows." });
+            if (request.Rows.Count > NetworkImport.MaxRows) return Results.BadRequest(new { error = $"At most {NetworkImport.MaxRows} rows per request." });
+            return Results.Ok(await NetworkImport.ImportHierarchyAsync(db, request.Rows, request.DryRun, user.Identity?.Name ?? "unknown"));
+        })
+        .WithName("ImportNetworkHierarchy")
+        .RequireAuthorization("DataAdmin");
+
+        // Map consumers to DTRs by account number and DTR code.
+        app.MapPost("/api/v1/network/consumer-mapping", async (ConsumerMappingRequest request, ClaimsPrincipal user, PrepaidEngineDbContext db) =>
+        {
+            if (request.Rows is null || request.Rows.Count == 0) return Results.BadRequest(new { error = "The file has no rows." });
+            if (request.Rows.Count > NetworkImport.MaxRows) return Results.BadRequest(new { error = $"At most {NetworkImport.MaxRows} rows per request." });
+            return Results.Ok(await NetworkImport.MapConsumersAsync(db, request.Rows, request.DryRun, user.Identity?.Name ?? "unknown"));
+        })
+        .WithName("MapConsumersToDtr")
+        .RequireAuthorization("DataAdmin");
     }
 
     private sealed record NodeDto(Guid Id, string Code, string Name);
+
+    public sealed record NetworkImportRequest(List<NetworkImportRow>? Rows, bool DryRun);
+
+    public sealed record ConsumerMappingRequest(List<ConsumerMappingRow>? Rows, bool DryRun);
 }
