@@ -11,8 +11,8 @@ export class RechargeService {
 
   constructor(private readonly http: HttpClient) {}
 
-  list(): Observable<RechargeSummary[]> {
-    return this.http.get<RechargeSummary[]>(this.baseUrl);
+  list(accountNumber?: string): Observable<RechargeSummary[]> {
+    return this.http.get<RechargeSummary[]>(this.baseUrl, { params: accountNumber ? { accountNumber } : {} });
   }
 
   getById(id: string): Observable<RechargeDetail> {

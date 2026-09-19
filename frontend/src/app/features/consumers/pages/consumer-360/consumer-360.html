@@ -18,6 +18,8 @@
           <span>Meter {{ c.meter.meterNumber }}</span>
           <span>·</span>
           <span>{{ c.connectedLoadKw }} kW load</span>
+          <span>·</span>
+          <span>{{ c.mobileNumber ?? 'No mobile on record' }}</span>
         </div>
       </div>
       @switch (c.connectionStatus) {
@@ -55,7 +57,137 @@
       }
     </section>
 
-    <div class="c360-grid">
+
+    <nav class="c360-tabs" role="tablist" aria-label="Consumer sections">
+      @for (t of tabs; track t.id) {
+        <button type="button" role="tab" class="c360-tabs__item" [class.c360-tabs__item--active]="activeTab() === t.id"
+          [attr.aria-selected]="activeTab() === t.id" (click)="selectTab(t.id)">{{ t.label }}</button>
+      }
+    </nav>
+
+    @switch (activeTab()) {
+      @case ('overview') {
+      <div class="c360-grid">
+        <section class="panel">
+          <h2>Consumer profile</h2>
+          <dl class="kv">
+            <dt>Account number</dt><dd>{{ c.accountNumber }}</dd>
+            <dt>Name</dt><dd>{{ c.name }}</dd>
+            <dt>Mobile</dt><dd>{{ c.mobileNumber ?? 'Not on record' }}</dd>
+            <dt>Service address</dt><dd>{{ c.serviceAddress }}</dd>
+            <dt>Connected load</dt><dd>{{ c.connectedLoadKw }} kW</dd>
+          </dl>
+        </section>
+        <section class="panel">
+          <h2>Meter</h2>
+          <dl class="kv">
+            <dt>Meter number</dt><dd>{{ c.meter.meterNumber }}</dd>
+            <dt>Phase</dt><dd>{{ c.meter.phase === 0 ? 'Single phase' : 'Three phase' }}</dd>
+            <dt>Last reading</dt><dd>{{ c.meter.lastReadingKwh | number: '1.0-3' }} kWh</dd>
+          </dl>
+        </section>
+        @if (walletStats(); as w) {
+          <section class="panel">
+            <h2>Prepaid wallet</h2>
+            <dl class="kv">
+              <dt>Current balance</dt><dd>₹{{ c.wallet.balance | number: '1.2-2' }}</dd>
+              <dt>Available balance</dt><dd>₹{{ w.available | number: '1.2-2' }} <span class="kv__note">(balance + emergency credit)</span></dd>
+              <dt>Emergency credit</dt><dd>₹{{ c.wallet.emergencyCreditLimit | number: '1.2-2' }}</dd>
+              <dt>Balance status</dt><dd>
+                @if (w.lowBalance) { <pe-status-badge label="Low balance" tone="warning" /> } @else { <pe-status-badge label="OK" tone="success" /> }
+              </dd>
+              <dt>Last recharge</dt><dd>{{ w.lastRechargeAt ? ((w.lastRechargeAt | date: 'd MMM y, HH:mm') + ' — ₹' + (w.lastRechargeAmount | number: '1.2-2')) : 'No recharge yet' }}</dd>
+              <dt>Cumulative recharge</dt><dd>₹{{ w.cumulativeRecharge | number: '1.2-2' }}</dd>
+              <dt>Cumulative charges</dt><dd>₹{{ w.cumulativeCharges | number: '1.2-2' }}</dd>
+            </dl>
+          </section>
+        }
+      </div>
+      }
+      @case ('wallet') {
+      <section class="panel">
+        <h2>Wallet Ledger</h2>
+        @if (c.wallet.transactions.length === 0) {
+          <p class="empty-note">No wallet transactions recorded for this consumer yet.</p>
+        } @else {
+          <table class="mini-table">
+            <thead>
+              <tr><th>Type</th><th class="num">Amount</th><th>When</th><th>Reference</th></tr>
+            </thead>
+            <tbody>
+              @for (t of [...c.wallet.transactions].reverse(); track t.reference + t.occurredAt) {
+                <tr>
+                  <td>
+                    @if (t.type === WalletTransactionType.Recharge) {
+                      <pe-status-badge label="Recharge" tone="success" />
+                    } @else {
+                      <pe-status-badge label="Bill Debit" tone="info" />
+                    }
+                  </td>
+                  <td class="num">{{ t.amount < 0 ? '' : '+' }}₹{{ t.amount | number: '1.2-2' }}</td>
+                  <td>{{ t.occurredAt | date: 'medium' }}</td>
+                  <td class="mono">{{ t.reference }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </section>
+      }
+      @case ('billing') {
+      <section class="panel">
+        <h2>Bills</h2>
+        @if (c.bills.length === 0) {
+          <p class="empty-note">No bills generated for this consumer yet.</p>
+        } @else {
+          <table class="mini-table">
+            <thead>
+              <tr>
+                <th>Generated</th>
+                <th class="num">Gross Energy</th>
+                <th class="num">Rebate</th>
+                <th class="num">Net Energy</th>
+                <th class="num">Fixed</th>
+                <th class="num">Duty</th>
+                <th class="num">FPPAS</th>
+                <th class="num">TMC</th>
+                <th class="num">CPMC</th>
+                <th class="num">Arrears</th>
+                <th class="num">Total</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (b of [...c.bills].reverse(); track b.id) {
+                <tr class="row-clickable" [routerLink]="['/billing', b.id]">
+                  <td>{{ b.generatedAt | date: 'mediumDate' }}</td>
+                  <td class="num">₹{{ b.energyChargeGross | number: '1.2-2' }}</td>
+                  <td class="num">-₹{{ b.prepaidRebateAmount | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.energyChargeNet | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.fixedCharge | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.electricityDutyAmount | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.fppasAmount | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.tmcAmount | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.cpmcAmount | number: '1.2-2' }}</td>
+                  <td class="num">₹{{ b.arrearsAmount | number: '1.2-2' }}</td>
+                  <td class="num"><strong>₹{{ b.amount | number: '1.2-2' }}</strong></td>
+                  <td>
+                    @switch (b.status) {
+                      @case (BillStatus.Paid) { <pe-status-badge label="Paid" tone="success" /> }
+                      @case (BillStatus.PartiallyPaid) { <pe-status-badge label="Partially Paid" tone="warning" /> }
+                      @case (BillStatus.Overdue) { <pe-status-badge label="Overdue" tone="danger" /> }
+                      @case (BillStatus.Cancelled) { <pe-status-badge label="Cancelled" tone="neutral" /> }
+                      @default { <pe-status-badge label="Generated" tone="info" /> }
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </section>
+      }
+      @case ('recharge') {
       <section class="panel">
         <div class="panel__header-row">
           <h2>Recharge</h2>
@@ -132,6 +264,46 @@
       </section>
 
       <section class="panel">
+        <h2>Recharge history</h2>
+        @if (recharges().loading) {
+          <p class="empty-note">Loading…</p>
+        } @else if (recharges().error) {
+          <p class="empty-note">Data unavailable — could not load this consumer's recharges.</p>
+        } @else if (recharges().data.length === 0) {
+          <p class="empty-note">No recharges recorded for this consumer yet.</p>
+        } @else {
+          <table class="mini-table">
+            <thead><tr><th>Time</th><th class="num">Amount</th><th>Reference</th><th>Payment</th><th>Meter credit</th></tr></thead>
+            <tbody>
+              @for (r of recharges().data; track r.id) {
+                <tr class="row-clickable" [routerLink]="['/recharge', r.id]">
+                  <td>{{ r.initiatedAt | date: 'd MMM y, HH:mm' }}</td>
+                  <td class="num">₹{{ r.amount | number: '1.2-2' }}</td>
+                  <td class="mono">{{ r.rmsReferenceId }}</td>
+                  <td>
+                    <pe-status-badge
+                      [label]="r.status === RechargeStatus.Success ? 'Payment received' : r.status === RechargeStatus.Failed ? 'Payment failed' : r.status === RechargeStatus.Reversed ? 'Reversed' : 'Payment pending'"
+                      [tone]="r.status === RechargeStatus.Success ? 'success' : r.status === RechargeStatus.Failed ? 'danger' : r.status === RechargeStatus.Reversed ? 'warning' : 'info'" />
+                  </td>
+                  <td>
+                    @switch (r.meterCommandStatus) {
+                      @case (MeterCommandStatus.Acknowledged) { <pe-status-badge label="Meter credited" tone="success" /> }
+                      @case (MeterCommandStatus.Failed) { <pe-status-badge label="Meter credit failed" tone="danger" /> }
+                      @case (MeterCommandStatus.TimedOut) { <pe-status-badge label="Meter credit timed out" tone="danger" /> }
+                      @case (MeterCommandStatus.Sent) { <pe-status-badge label="Awaiting meter ack" tone="info" /> }
+                      @case (MeterCommandStatus.Queued) { <pe-status-badge label="Meter credit queued" tone="info" /> }
+                      @default { <pe-status-badge label="No meter credit" tone="neutral" /> }
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </section>
+      }
+      @case ('meter-ops') {
+      <section class="panel">
         <div class="panel__header-row">
           <h2>RC / DC</h2>
           <a [routerLink]="['/rc-dc']" [queryParams]="{ q: c.accountNumber }" class="panel__cross-link">
@@ -195,85 +367,133 @@
       </section>
 
       <section class="panel">
-        <h2>Wallet Ledger</h2>
-        @if (c.wallet.transactions.length === 0) {
-          <p class="empty-note">No wallet transactions recorded for this consumer yet.</p>
+        <h2>Command history</h2>
+        @if (commands().loading) {
+          <p class="empty-note">Loading…</p>
+        } @else if (commands().error) {
+          <p class="empty-note">Data unavailable — could not load this consumer's commands.</p>
+        } @else if (commands().data.length === 0) {
+          <p class="empty-note">No disconnect/reconnect commands for this consumer yet.</p>
         } @else {
           <table class="mini-table">
-            <thead>
-              <tr><th>Type</th><th class="num">Amount</th><th>When</th><th>Reference</th></tr>
-            </thead>
+            <thead><tr><th>Time</th><th>Operation</th><th>Reason</th><th>Retries</th><th>Status</th></tr></thead>
             <tbody>
-              @for (t of [...c.wallet.transactions].reverse(); track t.reference + t.occurredAt) {
-                <tr>
+              @for (cmd of commands().data; track cmd.id) {
+                <tr class="row-clickable" [routerLink]="['/rc-dc', cmd.id]">
+                  <td>{{ cmd.createdAt | date: 'd MMM y, HH:mm' }}</td>
+                  <td>{{ cmd.commandType === 0 ? 'Disconnect' : 'Reconnect' }}</td>
+                  <td>{{ cmd.reason }}</td>
+                  <td class="num">{{ cmd.retryCount }}</td>
                   <td>
-                    @if (t.type === WalletTransactionType.Recharge) {
-                      <pe-status-badge label="Recharge" tone="success" />
-                    } @else {
-                      <pe-status-badge label="Bill Debit" tone="info" />
-                    }
+                    <pe-status-badge
+                      [label]="cmd.status === ConnectivityCommandStatus.Acknowledged ? 'Acknowledged' : cmd.status === ConnectivityCommandStatus.Failed ? 'Failed' : cmd.status === ConnectivityCommandStatus.TimedOut ? 'Timed out' : cmd.status === ConnectivityCommandStatus.Sent ? 'Sent' : 'Queued'"
+                      [tone]="cmd.status === ConnectivityCommandStatus.Acknowledged ? 'success' : cmd.status === ConnectivityCommandStatus.Failed || cmd.status === ConnectivityCommandStatus.TimedOut ? 'danger' : 'info'" />
                   </td>
-                  <td class="num">{{ t.amount < 0 ? '' : '+' }}₹{{ t.amount | number: '1.2-2' }}</td>
-                  <td>{{ t.occurredAt | date: 'medium' }}</td>
-                  <td class="mono">{{ t.reference }}</td>
                 </tr>
               }
             </tbody>
           </table>
         }
       </section>
-    </div>
-
-    <section class="panel">
-      <h2>Bills</h2>
-      @if (c.bills.length === 0) {
-        <p class="empty-note">No bills generated for this consumer yet.</p>
-      } @else {
-        <table class="mini-table">
-          <thead>
-            <tr>
-              <th>Generated</th>
-              <th class="num">Gross Energy</th>
-              <th class="num">Rebate</th>
-              <th class="num">Net Energy</th>
-              <th class="num">Fixed</th>
-              <th class="num">Duty</th>
-              <th class="num">FPPAS</th>
-              <th class="num">TMC</th>
-              <th class="num">CPMC</th>
-              <th class="num">Arrears</th>
-              <th class="num">Total</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (b of [...c.bills].reverse(); track b.id) {
-              <tr class="row-clickable" [routerLink]="['/billing', b.id]">
-                <td>{{ b.generatedAt | date: 'mediumDate' }}</td>
-                <td class="num">₹{{ b.energyChargeGross | number: '1.2-2' }}</td>
-                <td class="num">-₹{{ b.prepaidRebateAmount | number: '1.2-2' }}</td>
-                <td class="num">₹{{ b.energyChargeNet | number: '1.2-2' }}</td>
-                <td class="num">₹{{ b.fixedCharge | number: '1.2-2' }}</td>
-                <td class="num">₹{{ b.electricityDutyAmount | number: '1.2-2' }}</td>
-                <td class="num">₹{{ b.fppasAmount | number: '1.2-2' }}</td>
-                <td class="num">₹{{ b.tmcAmount | number: '1.2-2' }}</td>
-                <td class="num">₹{{ b.cpmcAmount | number: '1.2-2' }}</td>
-                <td class="num">₹{{ b.arrearsAmount | number: '1.2-2' }}</td>
-                <td class="num"><strong>₹{{ b.amount | number: '1.2-2' }}</strong></td>
-                <td>
-                  @switch (b.status) {
-                    @case (BillStatus.Paid) { <pe-status-badge label="Paid" tone="success" /> }
-                    @case (BillStatus.PartiallyPaid) { <pe-status-badge label="Partially Paid" tone="warning" /> }
-                    @case (BillStatus.Overdue) { <pe-status-badge label="Overdue" tone="danger" /> }
-                    @case (BillStatus.Cancelled) { <pe-status-badge label="Cancelled" tone="neutral" /> }
-                    @default { <pe-status-badge label="Generated" tone="info" /> }
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
       }
-    </section>
+      @case ('meter-data') {
+      <section class="panel">
+        <h2>Daily load profile (DLP)</h2>
+        @if (dlp().loading) { <p class="empty-note">Loading…</p> }
+        @else if (dlp().error) { <p class="empty-note">Data unavailable — could not reach the meter-data API.</p> }
+        @else if (dlp().data.length === 0) { <p class="empty-note">No daily load profile has been received for this meter yet.</p> }
+        @else {
+          <table class="mini-table">
+            <thead><tr><th>Date</th><th class="num">Consumption</th><th>Received</th><th>Status</th></tr></thead>
+            <tbody>
+              @for (p of dlp().data; track p.id) {
+                <tr>
+                  <td>{{ p.profileDate | date: 'mediumDate' }}</td>
+                  <td class="num">{{ p.totalKwh | number: '1.0-3' }} kWh</td>
+                  <td>{{ p.receivedAt | date: 'd MMM y, HH:mm' }}</td>
+                  <td>
+                    @switch (p.status) {
+                      @case (DailyProfileStatus.Billed) { <pe-status-badge label="Billed" tone="success" /> }
+                      @case (DailyProfileStatus.Reconciled) { <pe-status-badge label="Reconciled" tone="success" /> }
+                      @case (DailyProfileStatus.Rejected) { <pe-status-badge label="Rejected" tone="danger" /> }
+                      @case (DailyProfileStatus.Provisional) { <pe-status-badge label="Provisional" tone="warning" /> }
+                      @default { <pe-status-badge [label]="p.isProvisional ? 'Provisional' : 'Received'" [tone]="p.isProvisional ? 'warning' : 'info'" /> }
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </section>
+
+      <section class="panel">
+        <h2>Alarms</h2>
+        @if (alarms().loading) { <p class="empty-note">Loading…</p> }
+        @else if (alarms().error) { <p class="empty-note">Data unavailable — could not load alarms.</p> }
+        @else if (alarms().data.length === 0) { <p class="empty-note">No alarms raised for this meter.</p> }
+        @else {
+          <table class="mini-table">
+            <thead><tr><th>Raised</th><th>Severity</th><th>State</th></tr></thead>
+            <tbody>
+              @for (a of alarms().data; track a.id) {
+                <tr>
+                  <td>{{ a.raisedAt | date: 'd MMM y, HH:mm' }}</td>
+                  <td>
+                    @switch (a.severity) {
+                      @case (MeterAlarmSeverity.Critical) { <pe-status-badge label="Critical" tone="danger" /> }
+                      @case (MeterAlarmSeverity.Warning) { <pe-status-badge label="Warning" tone="warning" /> }
+                      @default { <pe-status-badge label="Info" tone="info" /> }
+                    }
+                  </td>
+                  <td>{{ a.status === MeterAlarmStatus.Open ? 'Open' : a.status === MeterAlarmStatus.Acknowledged ? 'Acknowledged' : 'Resolved' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </section>
+
+      <section class="panel">
+        <h2>Meter events</h2>
+        @if (events().loading) { <p class="empty-note">Loading…</p> }
+        @else if (events().error) { <p class="empty-note">Data unavailable — could not load events.</p> }
+        @else if (events().data.length === 0) { <p class="empty-note">No events recorded for this meter.</p> }
+        @else {
+          <table class="mini-table">
+            <thead><tr><th>Time</th><th>Description</th></tr></thead>
+            <tbody>
+              @for (e of events().data; track e.id) {
+                <tr><td>{{ e.eventTimestamp | date: 'd MMM y, HH:mm' }}</td><td>{{ e.description ?? 'Event code ' + e.eventCode }}</td></tr>
+              }
+            </tbody>
+          </table>
+        }
+      </section>
+      }
+      @case ('timeline') {
+      <section class="panel">
+        <h2>Activity timeline</h2>
+        <p class="panel__hint">Recharges, meter commands, bills and this consumer's audit entries, newest first. Audit entries for other record types are not yet linked to a consumer, so they are not shown here.</p>
+        @if (timelineLoading()) { <p class="empty-note">Loading…</p> }
+        @else if (timelineError()) { <p class="empty-note">Data unavailable — part of the timeline could not be loaded.</p> }
+        @else if (timeline().length === 0) { <p class="empty-note">No activity recorded yet.</p> }
+        @else {
+          <ol class="timeline">
+            @for (t of timeline(); track t.at + t.kind + t.title) {
+              <li>
+                <pe-status-badge [label]="t.kind" [tone]="t.tone" />
+                <div class="timeline__body">
+                  <div><strong>{{ t.title }}</strong> <span class="timeline__time">{{ t.at | date: 'd MMM y, HH:mm' }}</span></div>
+                  <div class="timeline__detail">{{ t.detail }}</div>
+                </div>
+                @if (t.link) { <a [routerLink]="t.link" class="panel__cross-link">Open →</a> }
+              </li>
+            }
+          </ol>
+        }
+      </section>
+      }
+    }
   }
 </div>

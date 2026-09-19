@@ -18,8 +18,8 @@ export class ConnectivityCommandService {
 
   constructor(private readonly http: HttpClient) {}
 
-  list(): Observable<ConnectivityCommandSummary[]> {
-    return this.http.get<ConnectivityCommandSummary[]>(this.baseUrl);
+  list(accountNumber?: string): Observable<ConnectivityCommandSummary[]> {
+    return this.http.get<ConnectivityCommandSummary[]>(this.baseUrl, { params: accountNumber ? { accountNumber } : {} });
   }
 
   getById(id: string): Observable<ConnectivityCommandDetail> {

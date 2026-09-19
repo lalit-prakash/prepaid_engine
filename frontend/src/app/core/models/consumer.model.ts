@@ -87,8 +87,10 @@ export interface ConsumerSummary {
 }
 
 export interface ConsumerDetail {
+  id: string;
   accountNumber: string;
   name: string;
+  mobileNumber: string | null;
   serviceAddress: string;
   connectionStatus: ConnectionStatus;
   connectedLoadKw: number;
