@@ -1,7 +1,7 @@
 # API reference
 
 Every HTTP endpoint the Prepaid Engine API exposes: method, path, who may call it, and its parameters.
-Generated from the running app (123 endpoints), so it matches the code. Do not edit by hand; regenerate with:
+Generated from the running app (125 endpoints), so it matches the code. Do not edit by hand; regenerate with:
 
 ```
 ASPNETCORE_ENVIRONMENT=Production Jwt__Key=<any 32+ characters> dotnet run --project backend/PrepaidEngine.Api -- dump-endpoints docs/API_REFERENCE.md
@@ -159,6 +159,8 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | GET | `/api/v1/meter-data/alarms/search` | Any signed-in user | query `q` string (optional)<br>query `from` date (optional)<br>query `to` date (optional)<br>query `status` MeterAlarmStatus (Open|Acknowledged|Resolved) (optional)<br>query `severity` MeterAlarmSeverity (Info|Warning|Critical) (optional)<br>query `after` string (optional)<br>query `pageSize` int (optional) |
 | GET | `/api/v1/meter-data/billing-holds` | Any signed-in user | query `activeOnly` bool (optional) |
 | POST | `/api/v1/meter-data/billing-holds/clear-bulk` | `Operations` (Admin, IT, Operator) | **body** `BulkClearBillingHoldsRequest` { `meterIds` list of guid, `note` string } |
+| GET | `/api/v1/meter-data/billing-holds/search` | Any signed-in user | query `q` string (optional)<br>query `activeOnly` bool (optional)<br>query `after` string (optional)<br>query `pageSize` int (optional) |
+| GET | `/api/v1/meter-data/billing-holds/summary` | Any signed-in user | none |
 | GET | `/api/v1/meter-data/bp` | Any signed-in user | query `consumerId` guid (optional)<br>query `meterId` guid (optional) |
 | POST | `/api/v1/meter-data/bp` | `DataAdmin` (Admin, IT) | **body** `RegisterReadingIngestRequest` { `consumerId` guid, `meterId` guid, `readingTimestamp` date, `cumulativeImportKwh` number, `sourceReference` string? } |
 | GET | `/api/v1/meter-data/bp/search` | Any signed-in user | query `q` string (optional)<br>query `from` date (optional)<br>query `to` date (optional)<br>query `status` RegisterReadingStatus (Received|Validated|Rejected) (optional)<br>query `after` string (optional)<br>query `pageSize` int (optional) |
