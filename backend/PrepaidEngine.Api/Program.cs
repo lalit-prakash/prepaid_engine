@@ -127,6 +127,15 @@ builder.Services.AddSingleton<AuditContextInterceptor>();
 builder.Services.AddSingleton<UserStore>();
 builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddSingleton<TokenService>();
+builder.Services.Configure<PrepaidEngine.Api.Auth.Email.EmailOptions>(builder.Configuration.GetSection(PrepaidEngine.Api.Auth.Email.EmailOptions.SectionName));
+// Real SMTP when Email:Host is set. Without it, Development prints messages to the console; any other environment sends nothing (and the reset says so).
+if (!string.IsNullOrWhiteSpace(builder.Configuration["Email:Host"]))
+    builder.Services.AddSingleton<PrepaidEngine.Api.Auth.Email.IEmailSender, PrepaidEngine.Api.Auth.Email.SmtpEmailSender>();
+else if (builder.Environment.IsDevelopment())
+    builder.Services.AddSingleton<PrepaidEngine.Api.Auth.Email.IEmailSender, PrepaidEngine.Api.Auth.Email.ConsoleEmailSender>();
+else
+    builder.Services.AddSingleton<PrepaidEngine.Api.Auth.Email.IEmailSender, PrepaidEngine.Api.Auth.Email.NoEmailSender>();
+builder.Services.AddScoped<PasswordResetService>();
 builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(o =>
     {

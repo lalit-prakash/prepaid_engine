@@ -2,7 +2,8 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { BillingHoldSummary } from '../models/billing-hold.model';
+import { BillingHoldSummary, BillingHoldSummaryStats } from '../models/billing-hold.model';
+import { Page } from '../../shared/utils/paged-list';
 
 /** One meter's outcome from a bulk clear — a mix of cleared and skipped meters is expected and
  * not itself an error (see BillingHoldService.clearBulk). */
@@ -24,6 +25,19 @@ export class BillingHoldService {
   private readonly baseUrl = `${environment.apiBaseUrl}/api/v1/meter-data`;
 
   constructor(private readonly http: HttpClient) {}
+
+  /** GET /meter-data/billing-holds/search: newest first, keyset-paged. */
+  search(params: { q?: string; activeOnly: boolean; after?: string | null; pageSize?: number }): Observable<Page<BillingHoldSummary>> {
+    const query: Record<string, string> = { activeOnly: String(params.activeOnly) };
+    if (params.q?.trim()) query['q'] = params.q.trim();
+    if (params.after) query['after'] = params.after;
+    if (params.pageSize) query['pageSize'] = String(params.pageSize);
+    return this.http.get<Page<BillingHoldSummary>>(`${this.baseUrl}/billing-holds/search`, { params: query });
+  }
+
+  summary(): Observable<BillingHoldSummaryStats> {
+    return this.http.get<BillingHoldSummaryStats>(`${this.baseUrl}/billing-holds/summary`);
+  }
 
   list(activeOnly = true): Observable<BillingHoldSummary[]> {
     return this.http.get<BillingHoldSummary[]>(`${this.baseUrl}/billing-holds?activeOnly=${activeOnly}`);

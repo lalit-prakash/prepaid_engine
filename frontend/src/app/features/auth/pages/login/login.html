@@ -65,58 +65,107 @@
       </div>
 
       <div class="panel__body">
-        <h2 class="panel__title">Welcome Back</h2>
-        <p class="panel__subtitle">Login to your Prepaid Engine account</p>
+        @switch (mode()) {
+          @case ('login') {
+            <h2 class="panel__title">Welcome Back</h2>
+            <p class="panel__subtitle">Login to your Prepaid Engine account</p>
 
-        <form (ngSubmit)="submit()" autocomplete="on">
-          <label class="field">
-            <span class="field__icon"><pe-icon name="mail" [size]="15" /></span>
-            <input
-              id="username"
-              name="username"
-              type="text"
-              placeholder="Login id"
-              [(ngModel)]="username"
-              autocomplete="username"
-              required
-            />
-          </label>
+            <form (ngSubmit)="submit()" autocomplete="on">
+              <label class="field">
+                <span class="field__icon"><pe-icon name="mail" [size]="15" /></span>
+                <input id="username" name="username" type="text" placeholder="Login id" [(ngModel)]="username" autocomplete="username" required />
+              </label>
 
-          <label class="field">
-            <span class="field__icon"><pe-icon name="lock" [size]="15" /></span>
-            <input
-              id="password"
-              name="password"
-              [type]="passwordVisible() ? 'text' : 'password'"
-              placeholder="Password"
-              [(ngModel)]="password"
-              autocomplete="current-password"
-              required
-            />
-            <button
-              type="button"
-              class="field__toggle"
-              (click)="togglePasswordVisibility()"
-              [attr.aria-label]="passwordVisible() ? 'Hide password' : 'Show password'"
-            >
-              <pe-icon [name]="passwordVisible() ? 'eyeOff' : 'eye'" [size]="16" />
-            </button>
-          </label>
+              <label class="field">
+                <span class="field__icon"><pe-icon name="lock" [size]="15" /></span>
+                <input
+                  id="password"
+                  name="password"
+                  [type]="passwordVisible() ? 'text' : 'password'"
+                  placeholder="Password"
+                  [(ngModel)]="password"
+                  autocomplete="current-password"
+                  required
+                />
+                <button type="button" class="field__toggle" (click)="togglePasswordVisibility()" [attr.aria-label]="passwordVisible() ? 'Hide password' : 'Show password'">
+                  <pe-icon [name]="passwordVisible() ? 'eyeOff' : 'eye'" [size]="16" />
+                </button>
+              </label>
 
-          <div class="panel__row">
-            <span class="panel__hint">Sign in with your login id</span>
-            <span class="panel__forgot">Contact your administrator to reset your password</span>
-          </div>
+              <div class="panel__row">
+                <span class="panel__hint">Sign in with your login id</span>
+                <button type="button" class="panel__link" (click)="show('forgot')">Forgot password?</button>
+              </div>
 
-          <button type="submit" class="panel__submit" [disabled]="checking()">
-            {{ checking() ? 'Signing in…' : 'Login' }}
-            @if (!checking()) { <span aria-hidden="true">→</span> }
-          </button>
-
-          @if (errorMessage()) {
-            <p class="panel__error" role="alert">{{ errorMessage() }}</p>
+              <button type="submit" class="panel__submit" [disabled]="checking()">
+                {{ checking() ? 'Signing in…' : 'Login' }}
+                @if (!checking()) { <span aria-hidden="true">→</span> }
+              </button>
+            </form>
           }
-        </form>
+
+          @case ('forgot') {
+            <h2 class="panel__title">Forgot password?</h2>
+            <p class="panel__subtitle">Enter your login id and we will e-mail a 6-digit code to the address registered for it.</p>
+
+            <form (ngSubmit)="sendCode()">
+              <label class="field">
+                <span class="field__icon"><pe-icon name="mail" [size]="15" /></span>
+                <input id="reset-username" name="reset-username" type="text" placeholder="Login id" [(ngModel)]="username" autocomplete="username" required />
+              </label>
+
+              <button type="submit" class="panel__submit" [disabled]="checking()">{{ checking() ? 'Sending…' : 'Send code' }}</button>
+              <div class="panel__row panel__row--after">
+                <button type="button" class="panel__link" (click)="show('login')">← Back to login</button>
+              </div>
+            </form>
+          }
+
+          @case ('reset') {
+            <h2 class="panel__title">Choose a new password</h2>
+            <p class="panel__subtitle">Enter the code we e-mailed for <strong>{{ username.trim() }}</strong> and pick a new password.</p>
+
+            <form (ngSubmit)="resetPassword()" autocomplete="off">
+              <label class="field">
+                <span class="field__icon"><pe-icon name="shield" [size]="15" /></span>
+                <input id="reset-code" name="reset-code" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code" [(ngModel)]="code" autocomplete="one-time-code" required />
+              </label>
+              <label class="field">
+                <span class="field__icon"><pe-icon name="lock" [size]="15" /></span>
+                <input id="new-password" name="new-password" [type]="passwordVisible() ? 'text' : 'password'" placeholder="New password" [(ngModel)]="newPassword" autocomplete="new-password" required />
+                <button type="button" class="field__toggle" (click)="togglePasswordVisibility()" [attr.aria-label]="passwordVisible() ? 'Hide password' : 'Show password'">
+                  <pe-icon [name]="passwordVisible() ? 'eyeOff' : 'eye'" [size]="16" />
+                </button>
+              </label>
+              <label class="field">
+                <span class="field__icon"><pe-icon name="lock" [size]="15" /></span>
+                <input id="confirm-password" name="confirm-password" [type]="passwordVisible() ? 'text' : 'password'" placeholder="Confirm new password" [(ngModel)]="confirmPassword" autocomplete="new-password" required />
+              </label>
+
+              <div class="panel__row">
+                <span class="panel__hint">At least 8 characters with upper- and lower-case letters, a digit and a symbol.</span>
+              </div>
+
+              <button type="submit" class="panel__submit" [disabled]="checking()">{{ checking() ? 'Saving…' : 'Reset password' }}</button>
+              <div class="panel__row panel__row--after">
+                <button type="button" class="panel__link" (click)="sendCode()" [disabled]="checking()">Send a new code</button>
+                <button type="button" class="panel__link" (click)="show('login')">← Back to login</button>
+              </div>
+            </form>
+          }
+        }
+
+        @if (infoMessage()) {
+          <p class="panel__info" role="status">{{ infoMessage() }}</p>
+        }
+        @if (errorMessage()) {
+          <p class="panel__error" role="alert">{{ errorMessage() }}</p>
+        }
+        @if (problems().length) {
+          <ul class="panel__problems">
+            @for (p of problems(); track p) { <li>{{ p }}</li> }
+          </ul>
+        }
 
         <div class="panel__divider"></div>
         <p class="panel__note">Access is provisioned by your utility's operations team.</p>

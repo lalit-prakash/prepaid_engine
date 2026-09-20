@@ -438,5 +438,55 @@ public static class PagedListEndpoints
         })
         .WithName("MeterReplacementSummary")
         .RequireAuthorization();
+
+        // ---------------------------------------------------------------- billing holds
+        app.MapGet("/api/v1/meter-data/billing-holds/search", async (
+            string? q, bool? activeOnly, string? after, int? pageSize, PrepaidEngineDbContext db) =>
+        {
+            var size = Math.Clamp(pageSize ?? 25, 1, MaxPage);
+            var query =
+                from h in db.MeterBillingControls.AsNoTracking()
+                join c in db.Consumers.AsNoTracking() on h.ConsumerId equals c.Id
+                join m in db.Meters.AsNoTracking() on h.MeterId equals m.Id
+                select new { h, c, m };
+
+            if (activeOnly ?? true) query = query.Where(x => x.h.ActualBillingBlocked);
+            if (!string.IsNullOrWhiteSpace(q))
+            {
+                var (prefix, contains) = Terms(q);
+                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix, "\\") || EF.Functions.ILike(x.m.MeterNumber, prefix, "\\") || EF.Functions.ILike(x.c.Name, contains, "\\"));
+            }
+
+            var totalCount = await query.CountAsync();
+            if (!string.IsNullOrEmpty(after))
+            {
+                if (!TryCursor(after, out var at, out var afterId)) return Results.BadRequest(new { error = "Invalid cursor." });
+                query = query.Where(x => x.h.BlockedAt < at || (x.h.BlockedAt == at && x.h.Id.CompareTo(afterId) < 0));
+            }
+
+            var rows = await query
+                .OrderByDescending(x => x.h.BlockedAt).ThenByDescending(x => x.h.Id)
+                .Take(size + 1)
+                .Select(x => new
+                {
+                    x.h.Id, x.h.MeterId, x.c.AccountNumber, x.c.Name, x.m.MeterNumber, x.h.ActualBillingBlocked, x.h.BlockReason, x.h.BlockedAt, x.h.ClearedAt,
+                })
+                .ToListAsync();
+
+            var hasMore = rows.Count > size;
+            var items = hasMore ? rows.Take(size).ToList() : rows;
+            return Results.Ok(new { items, nextCursor = hasMore ? Cursor(items[^1].BlockedAt, items[^1].Id) : null, totalCount });
+        })
+        .WithName("SearchBillingHolds")
+        .RequireAuthorization();
+
+        app.MapGet("/api/v1/meter-data/billing-holds/summary", async (PrepaidEngineDbContext db) =>
+        {
+            var active = await db.MeterBillingControls.AsNoTracking().CountAsync(c => c.ActualBillingBlocked);
+            var total = await db.MeterBillingControls.AsNoTracking().CountAsync();
+            return Results.Ok(new { Total = total, Active = active, Cleared = total - active });
+        })
+        .WithName("BillingHoldSummary")
+        .RequireAuthorization();
     }
 }
