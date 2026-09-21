@@ -15,8 +15,7 @@ const PAGE_SIZE = 25;
 interface Filters {
   consumerNumber: string;
   meterNumber: string;
-  q: string;
-  status: string;
+  /** The conversion view chosen with the cards: Total, Completed or Failed; empty is every consumer. */
   conversion: string;
   zoneId: string;
   circleId: string;
@@ -27,14 +26,15 @@ interface Filters {
 }
 
 const EMPTY: Filters = {
-  consumerNumber: '', meterNumber: '', q: '', status: '', conversion: '', zoneId: '', circleId: '', divisionId: '', subDivisionId: '', from: '', to: '',
+  consumerNumber: '', meterNumber: '', conversion: 'Total', zoneId: '', circleId: '', divisionId: '', subDivisionId: '', from: '', to: '',
 };
 
 /**
  * Consumers. Search, filters and paging all run on the server (GET /api/v1/consumers/search, keyset-paged on account number),
- * so the browser only ever holds one page. The cards count consumers by postpaid-to-prepaid conversion state
- * (GET /consumers/summary) and narrow this list in place; nothing on this page navigates away except opening one consumer.
- * Only what the backend models is shown: a conversion date appears only for consumers with a completed conversion.
+ * so the browser only ever holds one page. The cards count postpaid-to-prepaid conversion requests (GET /consumers/summary) and
+ * choose the view in place: Total shows when each was requested, Completed when it was converted, Failed why it failed.
+ * Clicking the selected card again shows every consumer. Nothing here navigates away except opening one consumer.
+ * A failure reason is the decision note recorded on the rejected request; when none was recorded it says so.
  */
 @Component({
   selector: 'pe-consumer-list',
@@ -58,13 +58,6 @@ export class ConsumerList implements OnInit, OnDestroy {
   protected readonly downloadError = signal<string | null>(null);
   protected readonly ConnectionStatus = ConnectionStatus;
 
-  protected readonly statusOptions = [
-    { label: 'Active', value: ConnectionStatus.Active },
-    { label: 'Disconnected', value: ConnectionStatus.Disconnected },
-    { label: 'Disconnection pending', value: ConnectionStatus.DisconnectionPending },
-    { label: 'Reconnection pending', value: ConnectionStatus.ReconnectionPending },
-  ];
-
   protected readonly list = new PagedList<ConsumerListItem>(
     (after) => this.consumerService.search({ ...this.toParams(this.applied), after, pageSize: PAGE_SIZE }),
     'Could not load consumers from the API.',
@@ -81,10 +74,9 @@ export class ConsumerList implements OnInit, OnDestroy {
     // Prefills from a cross-link (the global search, or a dashboard tile).
     const params = this.route.snapshot.queryParamMap;
     const initialQuery = params.get('q');
-    if (initialQuery) this.form.q = this.applied.q = initialQuery;
-    const initialStatus = params.get('status');
-    if (initialStatus !== null && initialStatus in ConnectionStatus) {
-      this.form.status = this.applied.status = String(ConnectionStatus[initialStatus as keyof typeof ConnectionStatus]);
+    if (initialQuery) {
+      this.form.consumerNumber = this.applied.consumerNumber = initialQuery;
+      this.form.conversion = this.applied.conversion = ''; // a cross-link is a look-up of one consumer, so search every consumer
     }
 
     this.consumerService.summary().subscribe({ next: (s) => this.stats.set(s), error: () => this.statsError.set(true) });
@@ -100,8 +92,6 @@ export class ConsumerList implements OnInit, OnDestroy {
     return {
       consumerNumber: f.consumerNumber,
       meterNumber: f.meterNumber,
-      q: f.q,
-      status: f.status === '' ? null : (Number(f.status) as ConnectionStatus),
       conversion: f.conversion,
       zoneId: f.zoneId,
       circleId: f.circleId,
@@ -140,25 +130,36 @@ export class ConsumerList implements OnInit, OnDestroy {
   }
 
   protected reset(): void {
-    this.form = { ...EMPTY };
+    this.form = { ...EMPTY, conversion: this.form.conversion }; // clears the filters and keeps the chosen view
     this.circles.set([]);
     this.divisions.set([]);
     this.subDivisions.set([]);
     this.search();
   }
 
-  /** A card narrows the list to one conversion state in place, keeping the other filters. */
+  /** A card chooses the conversion view in place, keeping the other filters; the selected card again shows every consumer. */
   protected selectConversion(state: string): void {
-    this.form.conversion = state;
+    this.form.conversion = this.applied.conversion === state ? '' : state;
     this.search();
   }
 
-  protected get activeConversion(): string {
+  protected get view(): string {
     return this.applied.conversion;
   }
 
+  /** The date filter follows the view: requested time for Total and Failed, converted time for Completed. */
+  protected get dateLabel(): string {
+    return this.form.conversion === 'Completed' ? 'Converted' : 'Requested';
+  }
+
+  protected successRate(s: ConsumerSummaryStats): string {
+    const decided = s.completed + s.failed;
+    return decided === 0 ? '—' : `${((s.completed / decided) * 100).toFixed(1)}%`;
+  }
+
   protected get hasActiveFilters(): boolean {
-    return Object.values(this.applied).some((v) => !!v && String(v).trim() !== '');
+    const { conversion, ...rest } = this.applied;
+    return Object.values(rest).some((v) => !!v && String(v).trim() !== '');
   }
 
   protected download(): void {

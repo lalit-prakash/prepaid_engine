@@ -112,3 +112,6 @@ th.num, td.num { text-align: right; }
 .btn--excel { background: #16a34a; color: #fff; box-shadow: 0 2px 6px rgba(22, 163, 74, 0.3); }
 .btn--excel:hover:not(:disabled) { filter: brightness(1.08); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+
+.kpi-selected { outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: var(--radius-lg); }
+td.reason { white-space: normal; min-width: 240px; max-width: 360px; overflow-wrap: break-word; }

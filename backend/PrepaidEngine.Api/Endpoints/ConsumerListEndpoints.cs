@@ -7,18 +7,21 @@ using PrepaidEngine.Infrastructure.Persistence;
 namespace PrepaidEngine.Api.Endpoints;
 
 /// <summary>
-/// The Consumers screen: a keyset-paged search (by account number, newest-first is not needed, so it pages on the unique account
-/// number), database-side counts for the postpaid-to-prepaid conversion cards, and an Excel download of the same filtered list.
+/// The Consumers screen: a keyset-paged search (paged on the unique account number), database-side counts of postpaid-to-prepaid
+/// conversion requests, and an Excel download of the same filtered list.
 ///
-/// Conversion: a consumer has "converted" when a conversion request for them is Completed. <c>conversion</c> narrows to consumers with
-/// a request in that state: Completed, Pending (requested or approved) or Rejected. The conversion date shown is the conversion date of
-/// the latest Completed request. From/To (conversion date) keep only consumers who have a request in the chosen state (any state when none
-/// is chosen) dated in that range. The consumer number filter matches account numbers by prefix only, never names.
+/// <c>conversion</c> is the view: Total (consumers with any conversion request), Completed, or Failed (a rejected request; its decision note
+/// is the reason). Each row carries the latest matching request's requested time, the latest completed request's converted time, and the
+/// latest rejected request's reason. From/To filter on the view's own date: requested time for Total and Failed, converted time for Completed.
+/// The consumer number filter matches account numbers by prefix only, never names.
 /// </summary>
 public static class ConsumerListEndpoints
 {
     private const int MaxPage = 100;
     private const int ExportMaxRows = 100_000;
+
+    /// <summary>The last column of the download follows the view: requested time, converted time or failure reason (blank header for the plain list).</summary>
+    private static string ViewHeader(string? conversion) => conversion switch { "Completed" => "Converted Date", "Failed" => "Failure Reason", "Total" => "Requested Date", _ => "" };
 
     private static string Prefix(string term) => term.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
 
@@ -44,17 +47,16 @@ public static class ConsumerListEndpoints
         var endExclusive = to.HasValue ? DateTime.SpecifyKind(to.Value.Date.AddDays(1), DateTimeKind.Utc) : (DateTime?)null;
         if (!string.IsNullOrEmpty(conversion) || start.HasValue || endExclusive.HasValue)
         {
+            var completed = conversion == "Completed";
             query = query.Where(c => db.ConversionRequests.Any(r => r.ConsumerId == c.Id
-                && (conversion == "Completed" ? r.Status == ConversionStatus.Completed
-                    : conversion == "Pending" ? r.Status == ConversionStatus.Requested || r.Status == ConversionStatus.Approved
-                    : conversion == "Rejected" ? r.Status == ConversionStatus.Rejected
-                    : true)
-                && (start == null || r.ConversionDate >= start) && (endExclusive == null || r.ConversionDate < endExclusive)));
+                && (conversion == "Completed" ? r.Status == ConversionStatus.Completed : conversion == "Failed" ? r.Status == ConversionStatus.Rejected : true)
+                && (start == null || (completed ? r.CompletedAt >= start : r.RequestedAt >= start))
+                && (endExclusive == null || (completed ? r.CompletedAt < endExclusive : r.RequestedAt < endExclusive))));
         }
         return query;
     }
 
-    private static IQueryable<ConsumerListRow> Rows(PrepaidEngineDbContext db, IQueryable<Consumer> query) => query.Select(c => new ConsumerListRow
+    private static IQueryable<ConsumerListRow> Rows(PrepaidEngineDbContext db, IQueryable<Consumer> query, string? conversion) => query.Select(c => new ConsumerListRow
     {
         AccountNumber = c.AccountNumber,
         Name = c.Name,
@@ -62,7 +64,12 @@ public static class ConsumerListEndpoints
         ConnectionStatus = c.ConnectionStatus,
         MeterNumber = c.Meter.MeterNumber,
         WalletBalance = c.Wallet.Balance,
-        ConversionDate = db.ConversionRequests.Where(r => r.ConsumerId == c.Id && r.Status == ConversionStatus.Completed).Max(r => (DateTime?)r.ConversionDate),
+        RequestedAt = db.ConversionRequests
+            .Where(r => r.ConsumerId == c.Id && (conversion == "Completed" ? r.Status == ConversionStatus.Completed : conversion == "Failed" ? r.Status == ConversionStatus.Rejected : true))
+            .Max(r => (DateTime?)r.RequestedAt),
+        ConvertedAt = db.ConversionRequests.Where(r => r.ConsumerId == c.Id && r.Status == ConversionStatus.Completed).Max(r => r.CompletedAt),
+        FailureReason = db.ConversionRequests.Where(r => r.ConsumerId == c.Id && r.Status == ConversionStatus.Rejected)
+            .OrderByDescending(r => r.RequestedAt).Select(r => r.DecisionNote).FirstOrDefault(),
         LastRechargeAt = db.RechargeTransactions.Where(r => r.ConsumerId == c.Id && r.Status == RechargeStatus.Success).Max(r => r.CompletedAt),
         Zone = c.Dtr != null ? c.Dtr.Feeder.Substation.SubDivision.Division.Circle.Zone.Name : null,
         Circle = c.Dtr != null ? c.Dtr.Feeder.Substation.SubDivision.Division.Circle.Name : null,
@@ -83,7 +90,9 @@ public static class ConsumerListEndpoints
         public ConnectionStatus ConnectionStatus { get; set; }
         public string MeterNumber { get; set; } = "";
         public decimal WalletBalance { get; set; }
-        public DateTime? ConversionDate { get; set; }
+        public DateTime? RequestedAt { get; set; }
+        public DateTime? ConvertedAt { get; set; }
+        public string? FailureReason { get; set; }
         public DateTime? LastRechargeAt { get; set; }
         public string? Zone { get; set; }
         public string? Circle { get; set; }
@@ -107,7 +116,7 @@ public static class ConsumerListEndpoints
             var totalCount = await query.CountAsync();
             if (!string.IsNullOrEmpty(after)) query = query.Where(c => string.Compare(c.AccountNumber, after) > 0);
 
-            var rows = await Rows(db, query.OrderBy(c => c.AccountNumber).Take(size + 1)).ToListAsync();
+            var rows = await Rows(db, query.OrderBy(c => c.AccountNumber).Take(size + 1), conversion).ToListAsync();
             var hasMore = rows.Count > size;
             var items = hasMore ? rows.Take(size).ToList() : rows;
             return Results.Ok(new { items, nextCursor = hasMore ? items[^1].AccountNumber : null, totalCount });
@@ -115,15 +124,18 @@ public static class ConsumerListEndpoints
         .WithName("SearchConsumers")
         .RequireAuthorization();
 
-        // Counts for the conversion cards, over every consumer (a consumer counts once per state).
+        // Counts of conversion requests for the cards. Success rate is completed of the requests that have been decided (completed or rejected).
         app.MapGet("/api/v1/consumers/summary", async (PrepaidEngineDbContext db) =>
         {
-            var total = await db.Consumers.AsNoTracking().CountAsync();
-            var requests = db.ConversionRequests.AsNoTracking();
-            var converted = await requests.Where(r => r.Status == ConversionStatus.Completed).Select(r => r.ConsumerId).Distinct().CountAsync();
-            var pending = await requests.Where(r => r.Status == ConversionStatus.Requested || r.Status == ConversionStatus.Approved).Select(r => r.ConsumerId).Distinct().CountAsync();
-            var rejected = await requests.Where(r => r.Status == ConversionStatus.Rejected).Select(r => r.ConsumerId).Distinct().CountAsync();
-            return Results.Ok(new { Total = total, Converted = converted, Pending = pending, Rejected = rejected });
+            var byStatus = await db.ConversionRequests.AsNoTracking().GroupBy(r => r.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
+            int N(ConversionStatus st) => byStatus.FirstOrDefault(x => x.Status == st)?.Count ?? 0;
+            return Results.Ok(new
+            {
+                TotalRequests = byStatus.Sum(x => x.Count),
+                Completed = N(ConversionStatus.Completed),
+                Failed = N(ConversionStatus.Rejected),
+                Pending = N(ConversionStatus.Requested) + N(ConversionStatus.Approved),
+            });
         })
         .WithName("ConsumerSummary")
         .RequireAuthorization();
@@ -138,19 +150,19 @@ public static class ConsumerListEndpoints
             if (count == 0) return Results.BadRequest(new { error = "No consumers match these filters." });
             if (count > ExportMaxRows) return Results.BadRequest(new { error = $"{count:N0} consumers match. Narrow the filters (for example by division or subdivision) to at most {ExportMaxRows:N0} to download." });
 
-            var rows = await Rows(db, query.OrderBy(c => c.AccountNumber)).ToListAsync();
+            var rows = await Rows(db, query.OrderBy(c => c.AccountNumber), conversion).ToListAsync();
             var offset = TimeSpan.FromMinutes(Math.Clamp(tzOffsetMinutes ?? 0, -840, 840));
             static string? Text(DateTime? v, TimeSpan o, string format) => v.HasValue ? (DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) + o).ToString(format, System.Globalization.CultureInfo.InvariantCulture) : null;
             var bytes = XlsxWriter.Build("Consumers", new[]
             {
                 "Zone", "Circle", "Division", "Subdivision", "Sub Station", "Feeder", "Feeder code", "DTR", "DTR Code", "Consumer Number",
-                "Consumer Name", "Mobile", "MSN", "Connection", "Wallet Balance", "Conversion Date", "Last Recharge",
+                "Consumer Name", "Mobile", "MSN", "Connection", "Wallet Balance", "Last Recharge", ViewHeader(conversion),
             }, rows.Select(r => new string?[]
             {
                 r.Zone, r.Circle, r.Division, r.SubDivision, r.Substation, r.Feeder, r.FeederCode, r.Dtr, r.DtrCode, r.AccountNumber,
                 r.Name, r.MobileNumber, r.MeterNumber, r.ConnectionStatus.ToString(), r.WalletBalance.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture),
-                r.ConversionDate.HasValue ? r.ConversionDate.Value.ToString("dd-MM-yyyy", System.Globalization.CultureInfo.InvariantCulture) : null,
                 Text(r.LastRechargeAt, offset, "dd-MM-yyyy HH:mm:ss"),
+                conversion == "Completed" ? Text(r.ConvertedAt, offset, "dd-MM-yyyy HH:mm:ss") : conversion == "Failed" ? r.FailureReason ?? "No reason recorded" : conversion == "Total" ? Text(r.RequestedAt, offset, "dd-MM-yyyy HH:mm:ss") : null,
             }));
             return Results.File(bytes, XlsxWriter.ContentType, $"consumers-{DateTime.UtcNow:yyyyMMdd-HHmm}.xlsx");
         })

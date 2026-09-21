@@ -2,20 +2,20 @@
   <div class="page-header">
     <div>
       <h1>Consumers</h1>
-      <p class="page-header__subtitle">Prepaid consumers, wallet balance and connection state, from the zone down to the DTR.</p>
+      <p class="page-header__subtitle">Postpaid-to-prepaid conversions and prepaid consumers, from the zone down to the DTR. Click the selected card again to see every consumer.</p>
     </div>
   </div>
 
   @if (stats(); as s) {
     <section class="kpi-row" aria-label="Postpaid to prepaid conversion">
-      <pe-kpi-card [tile]="true" label="Total Consumers" [value]="s.total" tone="primary" icon="users"
-        sublabel="all consumers" [clickable]="true" (click)="selectConversion('')" />
-      <pe-kpi-card [tile]="true" label="Converted to Prepaid" [value]="s.converted" tone="success" icon="bolt"
-        sublabel="postpaid to prepaid, completed" [clickable]="true" (click)="selectConversion('Completed')" />
-      <pe-kpi-card [tile]="true" label="Conversion Pending" [value]="s.pending" tone="warning" icon="clock"
-        sublabel="requested or approved" [clickable]="true" (click)="selectConversion('Pending')" />
-      <pe-kpi-card [tile]="true" label="Conversion Rejected" [value]="s.rejected" tone="danger" icon="alert"
-        sublabel="request rejected" [clickable]="true" (click)="selectConversion('Rejected')" />
+      <pe-kpi-card [tile]="true" label="Total Conversion Requests" [value]="s.totalRequests" tone="primary" icon="users"
+        sublabel="show when requested" [clickable]="true" (click)="selectConversion('Total')" [class.kpi-selected]="view === 'Total'" />
+      <pe-kpi-card [tile]="true" label="Conversion Completed" [value]="s.completed" tone="success" icon="bolt"
+        sublabel="show converted date" [clickable]="true" (click)="selectConversion('Completed')" [class.kpi-selected]="view === 'Completed'" />
+      <pe-kpi-card [tile]="true" label="Conversion Failed" [value]="s.failed" tone="danger" icon="alert"
+        sublabel="show reason for failure" [clickable]="true" (click)="selectConversion('Failed')" [class.kpi-selected]="view === 'Failed'" />
+      <pe-kpi-card [tile]="true" label="Conversion Success Rate" [value]="successRate(s)" tone="analytic" icon="chart"
+        sublabel="of decided requests" />
     </section>
   } @else if (statsError()) {
     <div class="error-panel">Could not load the summary counts from the API.</div>
@@ -33,15 +33,6 @@
       </label>
       <label class="f">Meter number
         <input type="search" name="meterNumber" [(ngModel)]="form.meterNumber" placeholder="Meter serial (MSN)" />
-      </label>
-      <label class="f">Name or mobile
-        <input type="search" name="q" [(ngModel)]="form.q" placeholder="Consumer name or mobile" />
-      </label>
-      <label class="f">Connection
-        <select name="status" [(ngModel)]="form.status">
-          <option value="">All</option>
-          @for (o of statusOptions; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
-        </select>
       </label>
       <label class="f">Zone
         <select name="zoneId" [(ngModel)]="form.zoneId" (ngModelChange)="onZoneChange()">
@@ -67,18 +58,10 @@
           @for (d of subDivisions(); track d.id) { <option [value]="d.id">{{ d.name }}</option> }
         </select>
       </label>
-      <label class="f">Conversion
-        <select name="conversion" [(ngModel)]="form.conversion">
-          <option value="">All</option>
-          <option value="Completed">Converted to prepaid</option>
-          <option value="Pending">Conversion pending</option>
-          <option value="Rejected">Conversion rejected</option>
-        </select>
-      </label>
-      <label class="f">Conversion date from
+      <label class="f">{{ dateLabel }} date from
         <input type="date" name="from" [(ngModel)]="form.from" />
       </label>
-      <label class="f">Conversion date to
+      <label class="f">{{ dateLabel }} date to
         <input type="date" name="to" [(ngModel)]="form.to" />
       </label>
       <div class="filters__actions">
@@ -103,7 +86,7 @@
     </div>
   } @else if (list.items().length === 0) {
     <div class="empty-panel">
-      {{ hasActiveFilters ? 'No consumers match these filters.' : 'No consumers have been onboarded yet.' }}
+      {{ hasActiveFilters ? 'No consumers match these filters.' : view === 'Total' ? 'No postpaid-to-prepaid conversion requests yet.' : view === 'Completed' ? 'No conversions have completed yet.' : view === 'Failed' ? 'No conversion requests have failed.' : 'No consumers have been onboarded yet.' }}
     </div>
   } @else {
     <div class="table-wrap" [class.table-wrap--loading]="list.loading()">
@@ -125,8 +108,10 @@
             <th>Meter</th>
             <th>Connection</th>
             <th class="num">Wallet balance</th>
-            <th>Conversion date</th>
             <th>Last recharge</th>
+            @if (view === 'Total') { <th>Requested date</th> }
+            @if (view === 'Completed') { <th>Converted date</th> }
+            @if (view === 'Failed') { <th>Reason for failure</th> }
           </tr>
         </thead>
         <tbody>
@@ -154,8 +139,10 @@
                 }
               </td>
               <td class="num">₹{{ c.walletBalance | number: '1.2-2' }}</td>
-              <td>{{ c.conversionDate ? (c.conversionDate | date: 'dd-MM-yyyy') : '—' }}</td>
               <td>{{ c.lastRechargeAt ? (c.lastRechargeAt | date: 'd MMM y, HH:mm') : 'No recharge yet' }}</td>
+              @if (view === 'Total') { <td>{{ c.requestedAt ? (c.requestedAt | date: 'dd-MM-yyyy HH:mm:ss') : '—' }}</td> }
+              @if (view === 'Completed') { <td>{{ c.convertedAt ? (c.convertedAt | date: 'dd-MM-yyyy HH:mm:ss') : '—' }}</td> }
+              @if (view === 'Failed') { <td class="reason">{{ c.failureReason ?? 'No reason recorded' }}</td> }
             </tr>
           }
         </tbody>
