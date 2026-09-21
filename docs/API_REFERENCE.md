@@ -1,7 +1,7 @@
 # API reference
 
 Every HTTP endpoint the Prepaid Engine API exposes: method, path, who may call it, and its parameters.
-Generated from the running app (131 endpoints), so it matches the code. Do not edit by hand; regenerate with:
+Generated from the running app (139 endpoints), so it matches the code. Do not edit by hand; regenerate with:
 
 ```
 ASPNETCORE_ENVIRONMENT=Production Jwt__Key=<any 32+ characters> dotnet run --project backend/PrepaidEngine.Api -- dump-endpoints docs/API_REFERENCE.md
@@ -259,6 +259,19 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 |---|---|---|---|
 | GET | `/api/v1/risk-indicators` | Any signed-in user | none |
 
+## Roles
+
+| Method | Path | Access | Parameters |
+|---|---|---|---|
+| GET | `/api/v1/roles` | `ITRole` (Admin, IT) | none |
+
+## Settings
+
+| Method | Path | Access | Parameters |
+|---|---|---|---|
+| GET | `/api/v1/settings` | `ITRole` (Admin, IT) | none |
+| PUT | `/api/v1/settings` | `ITRole` (Admin, IT) | **body** `SaveSettingsRequest` { `values` Dictionary<string, string>? } |
+
 ## SLA
 
 | Method | Path | Access | Parameters |
@@ -295,4 +308,14 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | GET | `/api/v1/tariffs/{id:guid}/lineage` | Any signed-in user | path `id` guid |
 | GET | `/api/v1/tariffs/{id:guid}/versions` | Any signed-in user | path `id` guid |
 | POST | `/api/v1/tariffs/{id:guid}/versions` | `ITRole` (Admin, IT) | path `id` guid<br>**body** `TariffVersionRequest` { `fieldName` string, `oldValue` string, `newValue` string, `changeNote` string, `effectiveDate` date } |
+
+## Users
+
+| Method | Path | Access | Parameters |
+|---|---|---|---|
+| GET | `/api/v1/users` | `ITRole` (Admin, IT) | query `q` string (optional)<br>query `role` string (optional)<br>query `status` string (optional) |
+| POST | `/api/v1/users` | `ITRole` (Admin, IT) | **body** `CreateUserRequest` { `loginId` string?, `displayName` string?, `email` string?, `role` string?, `password` string? } |
+| PUT | `/api/v1/users/{id:guid}` | `ITRole` (Admin, IT) | path `id` guid<br>**body** `UpdateUserRequest` { `displayName` string?, `email` string?, `role` string?, `isActive` bool? } |
+| POST | `/api/v1/users/{id:guid}/password` | `ITRole` (Admin, IT) | path `id` guid<br>**body** `SetPasswordRequest` { `password` string? } |
+| POST | `/api/v1/users/{loginId}/unlock` | `ITRole` (Admin, IT) | path `loginId` string |
 

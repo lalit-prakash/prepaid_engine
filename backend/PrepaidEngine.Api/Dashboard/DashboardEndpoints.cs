@@ -19,7 +19,7 @@ public static class DashboardEndpoints
 
     public static void MapDashboardEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/v1/dashboard/summary", async (PrepaidEngineDbContext db, Microsoft.Extensions.Options.IOptions<PrepaidEngine.Application.Wallets.LowBalanceOptions> lowBalance) =>
+        app.MapGet("/api/v1/dashboard/summary", async (PrepaidEngineDbContext db, Microsoft.Extensions.Options.IOptionsSnapshot<PrepaidEngine.Application.Wallets.LowBalanceOptions> lowBalance) =>
         {
             decimal? threshold = lowBalance.Value.ThresholdRs; // null: below each wallet's own emergency credit limit
             // Consumers and wallets: one grouped query, no rows returned.

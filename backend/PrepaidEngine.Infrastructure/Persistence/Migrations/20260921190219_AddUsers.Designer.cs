@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PrepaidEngine.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using PrepaidEngine.Infrastructure.Persistence;
 namespace PrepaidEngine.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PrepaidEngineDbContext))]
-    partial class PrepaidEngineDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260921190219_AddUsers")]
+    partial class AddUsers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1681,30 +1684,6 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                     b.HasIndex("SubDivisionId");
 
                     b.ToTable("Substations", (string)null);
-                });
-
-            modelBuilder.Entity("PrepaidEngine.Domain.Entities.SystemSetting", b =>
-                {
-                    b.Property<string>("Key")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("UpdatedBy")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("Value")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.HasKey("Key");
-
-                    b.ToTable("SystemSettings", (string)null);
                 });
 
             modelBuilder.Entity("PrepaidEngine.Domain.Entities.Tariff", b =>
