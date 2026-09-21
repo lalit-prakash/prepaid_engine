@@ -201,10 +201,6 @@ export const routes: Routes = [
       },
       ...stubRoute('service-requests', 'Service Requests'),
       {
-        path: 'analytics',
-        loadComponent: () => import('./features/analytics/pages/analytics/analytics').then((m) => m.Analytics),
-      },
-      {
         path: 'sla-monitoring',
         loadComponent: () =>
           import('./features/sla-monitoring/pages/sla-monitoring-dashboard/sla-monitoring-dashboard').then(
@@ -212,7 +208,6 @@ export const routes: Routes = [
           ),
       },
       ...stubRoute('user-management', 'User Management'),
-      ...stubRoute('roles-permissions', 'Roles & Permissions'),
       {
         path: 'integrations',
         loadComponent: () => import('./features/system/pages/integrations/integrations').then((m) => m.Integrations),

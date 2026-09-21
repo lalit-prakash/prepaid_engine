@@ -61,42 +61,8 @@
 
   <div class="shell__main">
     <header class="header">
-      <div class="header__search">
-        <span class="header__search-icon"><pe-icon name="search" [size]="15" /></span>
-        <input
-          #searchInput
-          type="search"
-          placeholder="Search consumer, meter no., mobile no., recharge ID…"
-          aria-label="Global search"
-          (keydown.enter)="submitSearch($any($event.target).value)"
-        />
-        <kbd class="header__search-kbd">Ctrl K</kbd>
-      </div>
-
       <div class="header__context" (click)="$event.stopPropagation()">
         <span class="header__env"><pe-icon name="building" [size]="14" /> MePDCL · Demo</span>
-
-        <div class="header__menu">
-          <button type="button" class="header__quick-actions-btn" (click)="toggleQuickActions()">
-            <pe-icon name="plus" [size]="14" /> Quick Actions <pe-icon name="chevronDown" [size]="13" />
-          </button>
-          @if (quickActionsOpen()) {
-            <div class="header__dropdown">
-              @for (action of quickActions; track action.path) {
-                <a [routerLink]="action.path" class="header__dropdown-item" (click)="closeMenus()">{{ action.label }}</a>
-              }
-            </div>
-          }
-        </div>
-
-        <a routerLink="/notifications" class="header__icon-btn" title="Notifications" aria-label="Notifications">
-          <pe-icon name="bell" [size]="16" />
-          @if (pendingNotificationCount() > 0) {
-            <span class="header__badge">{{ pendingNotificationCount() }}</span>
-          }
-        </a>
-
-        <a routerLink="/system-health" class="header__icon-btn" title="Help &amp; System Status" aria-label="Help"><pe-icon name="help" [size]="16" /></a>
 
         <a routerLink="/system-settings" class="header__icon-btn" title="Settings" aria-label="Settings"><pe-icon name="gear" [size]="16" /></a>
 

@@ -177,42 +177,9 @@
   gap: var(--space-4);
 }
 
-.header__search {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 7px var(--space-3);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-default);
-  background: var(--color-neutral-50);
-  width: 460px;
-  max-width: 42vw;
-}
-.header__search:focus-within {
-  background: var(--surface-card);
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 3px var(--accent-blue-light);
-}
-.header__search-icon { color: var(--text-muted); font-size: 14px; }
-.header__search input {
-  border: none;
-  background: transparent;
-  outline: none;
-  flex: 1;
-  font-size: var(--font-size-body);
-  color: var(--text-primary);
-  min-width: 0;
-}
-.header__search-kbd {
-  font-size: 10px;
-  color: var(--text-muted);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  padding: 1px 5px;
-  font-family: inherit;
-}
 
 .header__context {
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -228,21 +195,6 @@
 
 .header__menu { position: relative; }
 
-.header__quick-actions-btn {
-  border: 1px solid var(--border-default);
-  background: var(--surface-card);
-  border-radius: var(--radius-md);
-  padding: 6px var(--space-3);
-  font-size: var(--font-size-button);
-  cursor: pointer;
-  color: var(--accent-blue-dark);
-  font-weight: var(--font-weight-medium);
-  white-space: nowrap;
-}
-.header__quick-actions-btn:hover {
-  border-color: var(--accent-blue);
-  background: var(--accent-blue-light);
-}
 
 .header__icon-btn {
   position: relative;
@@ -260,23 +212,6 @@
 .header__icon-btn:hover {
   background: var(--color-neutral-100);
   text-decoration: none;
-}
-.header__badge {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 3px;
-  border-radius: 999px;
-  background: var(--color-danger);
-  color: #fff;
-  font-size: 10px;
-  font-weight: var(--font-weight-semibold);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid var(--surface-header);
 }
 
 .header__user {

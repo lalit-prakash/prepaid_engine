@@ -1,8 +1,6 @@
-import { Component, HostListener, OnInit, signal, ViewChild, ElementRef } from '@angular/core';
+import { Component, HostListener, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
-import { NotificationService } from '../../core/services/notification.service';
-import { NotificationStatus } from '../../core/models/notification.model';
 import { Icon } from '../../shared/components/icon/icon';
 
 interface NavItem {
@@ -38,8 +36,7 @@ interface NavGroup {
   templateUrl: './shell.html',
   styleUrl: './shell.scss',
 })
-export class Shell implements OnInit {
-  @ViewChild('searchInput') searchInputRef?: ElementRef<HTMLInputElement>;
+export class Shell {
 
   protected readonly collapsed = signal(false);
 
@@ -55,8 +52,6 @@ export class Shell implements OnInit {
     return this.auth.role() ?? 'Operator';
   }
   protected readonly userMenuOpen = signal(false);
-  protected readonly quickActionsOpen = signal(false);
-  protected readonly pendingNotificationCount = signal(0);
 
   /** The sidebar: only the working day-to-day pages. Other pages (meter operations, meter data, reports, network hierarchy, integrations,
    * system health, exceptions and so on) are still routable but are not listed here. */
@@ -70,10 +65,9 @@ export class Shell implements OnInit {
       ],
     },
     {
-      label: 'Billing & Analytics',
+      label: 'Billing',
       items: [
         { label: 'Billing', path: '/billing', icon: 'receipt' },
-        { label: 'Analytics', path: '/analytics', icon: 'chart' },
         { label: 'Reconciliation', path: '/reconciliation', icon: 'calculator' },
         { label: 'Calculation Workbench', path: '/calculation-workbench', icon: 'flask' },
       ],
@@ -83,7 +77,6 @@ export class Shell implements OnInit {
       items: [
         { label: 'Tariff & Parameters', path: '/tariffs', icon: 'gear' },
         { label: 'User Management', path: '/user-management', icon: 'users', stub: true },
-        { label: 'Roles & Permissions', path: '/roles-permissions', icon: 'lock', stub: true },
       ],
     },
     {
@@ -95,46 +88,10 @@ export class Shell implements OnInit {
     },
   ];
 
-  protected readonly quickActions = [
-    { label: 'Recharge Consumer', path: '/recharge' },
-    { label: 'View Consumers', path: '/consumers' },
-    { label: 'View Meter Data', path: '/meter-data' },
-    { label: 'Meter Replacement', path: '/meter-replacements' },
-  ];
-
   constructor(
     private readonly auth: AuthService,
-    private readonly notificationService: NotificationService,
     private readonly router: Router,
   ) {
-  }
-
-  ngOnInit(): void {
-    // Real pending-notification count for the header bell badge — never a
-    // fabricated number; if the call fails, the badge simply stays at 0
-    // rather than showing something invented.
-    this.notificationService.list().subscribe({
-      next: (notifications) => {
-        this.pendingNotificationCount.set(
-          notifications.filter((n) => n.status === NotificationStatus.Pending).length,
-        );
-      },
-      error: () => this.pendingNotificationCount.set(0),
-    });
-  }
-
-  /** Reuses Consumer List's own real search (via a query param it reads on
-   * load) rather than a fabricated omniscient search endpoint — an account
-   * number pattern (e.g. "DEMO-0001") jumps straight to Consumer 360. */
-  submitSearch(term: string): void {
-    const query = term.trim();
-    if (!query) return;
-
-    if (/^[A-Za-z]+-\d+$/.test(query)) {
-      this.router.navigate(['/consumers', query.toUpperCase()]);
-    } else {
-      this.router.navigate(['/consumers'], { queryParams: { q: query } });
-    }
   }
 
   toggleCollapsed(): void {
@@ -143,25 +100,14 @@ export class Shell implements OnInit {
 
   toggleUserMenu(): void {
     this.userMenuOpen.update((v) => !v);
-    this.quickActionsOpen.set(false);
-  }
-
-  toggleQuickActions(): void {
-    this.quickActionsOpen.update((v) => !v);
-    this.userMenuOpen.set(false);
   }
 
   closeMenus(): void {
     this.userMenuOpen.set(false);
-    this.quickActionsOpen.set(false);
   }
 
   @HostListener('document:keydown', ['$event'])
   handleShortcut(event: KeyboardEvent): void {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-      event.preventDefault();
-      this.searchInputRef?.nativeElement.focus();
-    }
     if (event.key === 'Escape') {
       this.closeMenus();
     }
