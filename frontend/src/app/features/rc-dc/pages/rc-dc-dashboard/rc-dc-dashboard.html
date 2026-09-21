@@ -26,7 +26,7 @@
     <input
       #searchBox
       type="search"
-      placeholder="Search account number or name…"
+      placeholder="Search RR number or consumer name…"
       [value]="searchTerm()"
       (input)="onSearchInput($any($event.target).value)"
     />
@@ -53,42 +53,53 @@
     <div class="empty-panel">{{ hasActiveFilters ? 'No connectivity commands match these filters.' : 'No connectivity commands yet.' }}</div>
   } @else {
     <div class="table-wrap" [class.table-wrap--loading]="list.loading()">
-      <table>
+      <table class="wide">
         <thead>
           <tr>
-            <th>Created</th>
-            <th>Account</th>
-            <th>Consumer</th>
-            <th>Command</th>
-            <th>Reason</th>
-            <th class="num">Retries</th>
-            <th>Status</th>
+            <th>Zone</th>
+            <th>Circle</th>
+            <th>Division</th>
+            <th>Subdivision</th>
+            <th>Sub Station</th>
+            <th>Feeder</th>
+            <th>Feeder code</th>
+            <th>DTR</th>
+            <th>DTR Code</th>
+            <th>RRNumber</th>
+            <th>Consumer Name</th>
+            <th>MSN</th>
+            <th>Command Type</th>
+            <th>ProcessStatus</th>
+            <th>Requested Time</th>
+            <th>Processed Time</th>
           </tr>
         </thead>
         <tbody>
           @for (c of list.items(); track c.id) {
             <tr (click)="open(c.id)" (keydown.enter)="open(c.id)" tabindex="0" class="row-clickable">
-              <td>{{ c.createdAt | date: 'medium' }}</td>
-              <td>{{ c.accountNumber }}</td>
+              <td>{{ c.zone ?? '—' }}</td>
+              <td>{{ c.circle ?? '—' }}</td>
+              <td>{{ c.division ?? '—' }}</td>
+              <td>{{ c.subDivision ?? '—' }}</td>
+              <td>{{ c.substation ?? '—' }}</td>
+              <td>{{ c.feeder ?? '—' }}</td>
+              <td class="mono">{{ c.feederCode ?? '—' }}</td>
+              <td>{{ c.dtr ?? '—' }}</td>
+              <td class="mono">{{ c.dtrCode ?? '—' }}</td>
+              <td class="mono">{{ c.accountNumber }}</td>
               <td>{{ c.name }}</td>
-              <td>
-                @if (c.commandType === ConnectivityCommandType.Disconnect) {
-                  <pe-status-badge label="Disconnect" tone="danger" />
-                } @else {
-                  <pe-status-badge label="Reconnect" tone="success" />
-                }
-              </td>
-              <td class="reason">{{ c.reason }}</td>
-              <td class="num">{{ c.retryCount }}</td>
+              <td class="mono">{{ c.meterNumber }}</td>
+              <td>{{ c.commandType === ConnectivityCommandType.Disconnect ? 'Disconnection' : 'Reconnection' }}</td>
               <td>
                 @switch (c.status) {
-                  @case (ConnectivityCommandStatus.Acknowledged) { <pe-status-badge label="Acknowledged" tone="success" /> }
-                  @case (ConnectivityCommandStatus.Failed) { <pe-status-badge label="Failed" tone="danger" /> }
-                  @case (ConnectivityCommandStatus.TimedOut) { <pe-status-badge label="Timed Out" tone="danger" /> }
-                  @case (ConnectivityCommandStatus.Sent) { <pe-status-badge label="Sent" tone="warning" /> }
-                  @default { <pe-status-badge label="Queued" tone="neutral" /> }
+                  @case (ConnectivityCommandStatus.Acknowledged) { <pe-status-badge label="success" tone="success" /> }
+                  @case (ConnectivityCommandStatus.Failed) { <pe-status-badge label="fail" tone="danger" /> }
+                  @case (ConnectivityCommandStatus.TimedOut) { <pe-status-badge label="fail" tone="danger" /> }
+                  @default { <pe-status-badge label="pending" tone="warning" /> }
                 }
               </td>
+              <td>{{ c.createdAt | date: 'dd-MM-yyyy HH:mm:ss' }}</td>
+              <td>{{ c.acknowledgedAt ? (c.acknowledgedAt | date: 'dd-MM-yyyy HH:mm:ss') : '—' }}</td>
             </tr>
           }
         </tbody>

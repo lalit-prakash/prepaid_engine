@@ -140,6 +140,16 @@ public static class PagedListEndpoints
                 {
                     x.cmd.Id, x.c.AccountNumber, x.c.Name, x.cmd.CommandType, x.cmd.Reason, x.cmd.Status, x.cmd.RetryCount,
                     x.cmd.ErrorMessage, x.cmd.CreatedAt, x.cmd.SentAt, x.cmd.AcknowledgedAt,
+                    MeterNumber = x.c.Meter.MeterNumber,
+                    Zone = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.SubDivision.Division.Circle.Zone.Name : null,
+                    Circle = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.SubDivision.Division.Circle.Name : null,
+                    Division = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.SubDivision.Division.Name : null,
+                    SubDivision = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.SubDivision.Name : null,
+                    Substation = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.Name : null,
+                    Feeder = x.c.Dtr != null ? x.c.Dtr.Feeder.Name : null,
+                    FeederCode = x.c.Dtr != null ? x.c.Dtr.Feeder.Code : null,
+                    Dtr = x.c.Dtr != null ? x.c.Dtr.Name : null,
+                    DtrCode = x.c.Dtr != null ? x.c.Dtr.Code : null,
                 })
                 .ToListAsync();
 
