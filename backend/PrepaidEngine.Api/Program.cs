@@ -205,6 +205,7 @@ app.UseAuthorization();
 app.MapAuthEndpoints();
 app.MapDashboardEndpoints();
 app.MapReportEndpoints();
+app.MapLiveRcDcReport();
 app.MapReportJobEndpoints();
 app.MapNetworkEndpoints();
 app.MapPlatformEndpoints();

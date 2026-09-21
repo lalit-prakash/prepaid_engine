@@ -1,7 +1,7 @@
 # API reference
 
 Every HTTP endpoint the Prepaid Engine API exposes: method, path, who may call it, and its parameters.
-Generated from the running app (125 endpoints), so it matches the code. Do not edit by hand; regenerate with:
+Generated from the running app (126 endpoints), so it matches the code. Do not edit by hand; regenerate with:
 
 ```
 ASPNETCORE_ENVIRONMENT=Production Jwt__Key=<any 32+ characters> dotnet run --project backend/PrepaidEngine.Api -- dump-endpoints docs/API_REFERENCE.md
@@ -244,6 +244,7 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | GET | `/api/v1/reports/billing` | Any signed-in user | query `from` date (optional)<br>query `to` date (optional)<br>query `status` BillStatus (Generated|Paid|PartiallyPaid|Overdue|Cancelled) (optional)<br>query `ZoneId` guid (optional)<br>query `CircleId` guid (optional)<br>query `DivisionId` guid (optional)<br>query `SubDivisionId` guid (optional)<br>query `SubstationId` guid (optional)<br>query `FeederId` guid (optional)<br>query `DtrId` guid (optional) |
 | GET | `/api/v1/reports/day-wise-rc-dc` | Any signed-in user | query `from` date (optional)<br>query `to` date (optional)<br>query `level` string (optional)<br>query `ZoneId` guid (optional)<br>query `CircleId` guid (optional)<br>query `DivisionId` guid (optional)<br>query `SubDivisionId` guid (optional)<br>query `SubstationId` guid (optional)<br>query `FeederId` guid (optional)<br>query `DtrId` guid (optional) |
 | GET | `/api/v1/reports/day-wise-recharge` | Any signed-in user | query `from` date (optional)<br>query `to` date (optional)<br>query `level` string (optional)<br>query `ZoneId` guid (optional)<br>query `CircleId` guid (optional)<br>query `DivisionId` guid (optional)<br>query `SubDivisionId` guid (optional)<br>query `SubstationId` guid (optional)<br>query `FeederId` guid (optional)<br>query `DtrId` guid (optional) |
+| GET | `/api/v1/reports/live-rc-dc` | Any signed-in user | query `from` date (optional)<br>query `to` date (optional)<br>query `ZoneId` guid (optional)<br>query `CircleId` guid (optional)<br>query `DivisionId` guid (optional)<br>query `SubDivisionId` guid (optional)<br>query `SubstationId` guid (optional)<br>query `FeederId` guid (optional)<br>query `DtrId` guid (optional) |
 | GET | `/api/v1/reports/meter-credit-failures` | Any signed-in user | query `from` date (optional)<br>query `to` date (optional)<br>query `ZoneId` guid (optional)<br>query `CircleId` guid (optional)<br>query `DivisionId` guid (optional)<br>query `SubDivisionId` guid (optional)<br>query `SubstationId` guid (optional)<br>query `FeederId` guid (optional)<br>query `DtrId` guid (optional) |
 | GET | `/api/v1/reports/recharge-failures` | Any signed-in user | query `from` date (optional)<br>query `to` date (optional)<br>query `ZoneId` guid (optional)<br>query `CircleId` guid (optional)<br>query `DivisionId` guid (optional)<br>query `SubDivisionId` guid (optional)<br>query `SubstationId` guid (optional)<br>query `FeederId` guid (optional)<br>query `DtrId` guid (optional) |
 

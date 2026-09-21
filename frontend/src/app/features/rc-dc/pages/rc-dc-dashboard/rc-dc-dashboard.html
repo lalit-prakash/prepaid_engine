@@ -1,7 +1,8 @@
 <div class="rc-dc">
   <div class="page-header">
     <h1>RC / DC</h1>
-    <p class="page-header__subtitle">{{ (stats()?.total ?? 0) | number }} disconnect/reconnect command(s) across all consumers</p>
+    <p class="page-header__subtitle">{{ (stats()?.total ?? 0) | number }} disconnect/reconnect command(s) across all consumers ·
+      <a routerLink="/reports/view/live-rc-dc">Live RC DC Status report</a></p>
   </div>
 
   @if (stats(); as s) {
