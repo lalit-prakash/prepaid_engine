@@ -163,4 +163,45 @@ public class TariffActivationServiceTests : IDisposable
         Assert.Equal(stale.Id, result.Failed[0].ChangeRequestId);
         Assert.Equal(1, await _db.Tariffs.CountAsync(t => t.Status == TariffLifecycleStatus.Active));
     }
+
+    [Fact]
+    public async Task ActivateDue_MovesTheConsumersOfTheRetiredTariffOntoTheNewOne()
+    {
+        var old = AddActiveTariff("Domestic");
+        var other = AddActiveTariff("Other");
+        Consumer Add(string acc, Guid tariff)
+        {
+            var c = new Consumer(Guid.NewGuid(), acc, acc, "Street", new SmartMeter(Guid.NewGuid(), "M-" + acc, MeterPhase.SinglePhase), 1m);
+            c.AssignTariff(tariff);
+            _db.Consumers.Add(c);
+            return c;
+        }
+        var a = Add("A", old.Id); var b = Add("B", old.Id); var unrelated = Add("C", other.Id);
+        _db.SaveChanges();
+        AddScheduledRequest(old.Id, "Domestic", Now.AddHours(-1));
+
+        var result = await _service.ActivateDueAsync(Now);
+
+        var newId = result.Activated.Single().NewTariffId;
+        var tariffs = _db.Consumers.AsNoTracking().ToDictionary(c => c.AccountNumber, c => c.TariffId);
+        Assert.Equal(newId, tariffs["A"]);
+        Assert.Equal(newId, tariffs["B"]);
+        Assert.Equal(other.Id, tariffs["C"]);            // another tariff's consumers are untouched
+        Assert.Contains(_db.AuditEntries.AsNoTracking().ToList(), e => e.Action == "CONSUMERS_MOVED" && e.Details!.StartsWith("2 consumer(s)"));
+    }
+
+    [Fact]
+    public async Task ActivateDue_TheNewTariffKeepsTheClassificationOfTheOneItReplaces()
+    {
+        var old = new Tariff(Guid.NewGuid(), "Domestic HT", ConsumerCategory.Domestic, Slabs(), 350m, 2m, 200m,
+            scheduleCode: "DHT", voltageLevel: VoltageLevel.HT, energyUnit: EnergyUnit.Kvah, fixedChargeBasis: FixedChargeBasis.PerKva, minimumChargeableDemand: 56m);
+        _db.Tariffs.Add(old);
+        _db.SaveChanges();
+        AddScheduledRequest(old.Id, "Domestic HT", Now.AddHours(-1));
+
+        await _service.ActivateDueAsync(Now);
+
+        var fresh = _db.Tariffs.AsNoTracking().Single(t => t.Status == TariffLifecycleStatus.Active);
+        Assert.Equal(("DHT", VoltageLevel.HT, EnergyUnit.Kvah, 56m), (fresh.ScheduleCode, fresh.VoltageLevel, fresh.EnergyUnit, fresh.MinimumChargeableDemand));
+    }
 }

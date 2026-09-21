@@ -12,8 +12,8 @@ namespace PrepaidEngine.Infrastructure.Persistence.Seed;
 /// the book leaves open is stated on the row.
 ///
 /// Seeded for Development (like the other demo data); a real deployment brings the same schedules in through the tariff change workflow.
-/// Idempotent by tariff name: a schedule that already exists (for example the DLT tariff seeded earlier) is left as it is, apart from
-/// filling in the classification a tariff created before schedule codes existed.
+/// Idempotent by tariff name: a schedule that is missing is added; one that exists but differs from the book (for example the DLT tariff seeded earlier) is replaced by the
+/// book version and its consumers moved to it.
 /// </summary>
 public static class TariffCatalogue2026
 {
@@ -73,13 +73,15 @@ public static class TariffCatalogue2026
         var f = PrepaidFacilities(e.Category);
         // HT fixed charge is never billed on less than 56 kVA (§3.2); the EHT and LT schedules state no such floor.
         decimal? minDemand = e.Voltage == VoltageLevel.HT && e.Basis == FixedChargeBasis.PerKva ? TariffBookParameters.HtMinimumChargeableKva : null;
+        // Minimum recharge: the book prints ₹500 only beside the General Purpose row (§22.6), so it is a General Purpose limit; the others have none.
+        decimal? minVend = e.Category == ConsumerCategory.GeneralPurpose ? TariffBookParameters.MinimumVendAmountGeneralPurpose : null;
         return new Tariff(
             Guid.NewGuid(), e.Name, e.Category, e.Slabs,
             fixedChargePerUnitPerMonth: e.FixedCharge,
             prepaidEnergyRebatePercent: TariffBookParameters.PrepaidEnergyRebatePercent,
             emergencyCreditLimit: f.EmergencyCredit,
-            minVendAmountSinglePhase: TariffBookParameters.MinimumVendAmount, maxVendAmountSinglePhase: f.MaxVendSinglePhase,
-            minVendAmountThreePhase: TariffBookParameters.MinimumVendAmount, maxVendAmountThreePhase: f.MaxVendThreePhase,
+            minVendAmountSinglePhase: minVend, maxVendAmountSinglePhase: f.MaxVendSinglePhase,
+            minVendAmountThreePhase: minVend, maxVendAmountThreePhase: f.MaxVendThreePhase,
             touPeriods: e.Tou,
             scheduleCode: e.ScheduleCode, voltageLevel: e.Voltage, energyUnit: e.Unit, fixedChargeBasis: e.Basis,
             minimumChargeableDemand: minDemand,
@@ -100,5 +102,20 @@ public static class TariffCatalogue2026
         foreach (var t in legacy) t.InheritClassification(dlt);
 
         await db.SaveChangesAsync(cancellationToken);
+
+        // Demo tariffs seeded before the book's figures were settled (the DLT tariff's 5.70 / 5.90 slabs, a Rs. 500 minimum recharge on every schedule) are brought to the book:
+        // each is replaced by a book version and its consumers move to it. A real deployment does this through the tariff change workflow instead.
+        var active = await db.Tariffs.Include(t => t.Slabs).Include(t => t.TouPeriods).Where(t => t.Status == TariffLifecycleStatus.Active).ToListAsync(cancellationToken);
+        foreach (var row in TariffBookCheck.Run(active).Where(r => r.Status == "Differs"))
+        {
+            var old = active.Single(t => t.Id == row.TariffId);
+            var entry = Build().Single(e => e.ScheduleCode == row.ScheduleCode);
+            old.Retire();
+            await db.SaveChangesAsync(cancellationToken);
+            var replacement = ToTariff(entry);
+            db.Tariffs.Add(replacement);
+            await db.SaveChangesAsync(cancellationToken);
+            await db.Consumers.Where(c => c.TariffId == old.Id).ExecuteUpdateAsync(u => u.SetProperty(c => c.TariffId, replacement.Id), cancellationToken);
+        }
     }
 }

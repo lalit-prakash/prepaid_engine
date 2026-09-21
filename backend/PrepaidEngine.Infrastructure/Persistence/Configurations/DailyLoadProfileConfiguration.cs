@@ -17,6 +17,9 @@ public class DailyLoadProfileConfiguration : IEntityTypeConfiguration<DailyLoadP
         builder.Property(d => d.StartCumulativeKwh).HasColumnType("decimal(18,3)").IsRequired();
         builder.Property(d => d.EndCumulativeKwh).HasColumnType("decimal(18,3)").IsRequired();
         builder.Property(d => d.TotalKwh).HasColumnType("decimal(18,3)").IsRequired();
+        builder.Property(d => d.StartCumulativeKvah).HasColumnType("decimal(18,3)");
+        builder.Property(d => d.EndCumulativeKvah).HasColumnType("decimal(18,3)");
+        builder.Property(d => d.TotalKvah).HasColumnType("decimal(18,3)");
         builder.Property(d => d.Status).HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(d => d.SourceReference).HasMaxLength(100);
 

@@ -40,6 +40,9 @@ export class Workbench implements OnInit {
   protected selectedTariffId = '';
   protected consumptionKwh = 30;
   protected monthToDateKwh = 0;
+  /** kVAh, used only for schedules billed per kVAh (HT, EHT, Industrial LT); blank means the profile had no kVAh, so kWh is billed. */
+  protected dayKvah: number | null = null;
+  protected monthToDateKvah: number | null = null;
   protected load = 2;
   protected loadInHp = false;
 
@@ -141,6 +144,10 @@ export class Workbench implements OnInit {
     return this.selected()?.energyUnit === EnergyUnit.Kvah ? 'kVAh' : 'kWh';
   }
 
+  protected get isKvah(): boolean {
+    return this.selected()?.energyUnit === EnergyUnit.Kvah;
+  }
+
   protected get isHighVoltage(): boolean {
     return (this.selected()?.voltageLevel ?? VoltageLevel.LT) !== VoltageLevel.LT;
   }
@@ -173,6 +180,8 @@ export class Workbench implements OnInit {
         tariffId: this.selectedTariffId,
         consumptionKwh: this.consumptionKwh,
         monthToDateKwh: this.monthToDateKwh,
+        dayKvah: this.isKvah && this.dayKvah !== null ? this.dayKvah : undefined,
+        monthToDateKvah: this.isKvah && this.monthToDateKvah !== null ? this.monthToDateKvah : undefined,
         connectedLoadOrContractDemand: this.load,
         loadInHp: this.isAgriculture && this.loadInHp,
         meteredOnLtSide: this.meteredOnLtSide,
@@ -202,6 +211,7 @@ export class Workbench implements OnInit {
   reset(): void {
     this.consumptionKwh = 30;
     this.monthToDateKwh = 0;
+    this.dayKvah = this.monthToDateKvah = null;
     this.load = 2;
     this.loadInHp = false;
     this.meteredOnLtSide = false;

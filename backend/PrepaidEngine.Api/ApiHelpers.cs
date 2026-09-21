@@ -34,26 +34,9 @@ internal static class ApiHelpers
     // These are plain local functions (no external port needed) called from the endpoints below at
     // the specific, documented trigger points (see README.md's Audit and Reconciliation sections).
 
-    /// <summary>Minimum genuine top-up recharge amount (Rs.), per AMISP integration requirement doc
-    /// section 6. Does not apply to reconciliation adjustments — see the recharge endpoint below.</summary>
-    internal const decimal MinimumRechargeAmount = 500m;
-
-
-    /// <summary>"Happy Hours" during which a disconnect command must NEVER be dispatched — daily from
-    /// 2:00 PM to 9:00 AM IST, per spec section 5. Disconnection is only allowed in the 9:00 AM-2:00
-    /// PM IST window. The spec's hours are Meghalaya wall-clock (India Standard Time, UTC+5:30) —
-    /// every other timestamp in this codebase is stored/compared as UTC, so this converts explicitly
-    /// with a fixed offset (IST has no DST, so no OS timezone database lookup is needed) rather than
-    /// relying on <c>DateTime.Now</c>, which would silently use the server's local timezone and give
-    /// the wrong answer on any host not itself set to IST (most cloud/container deployments default
-    /// to UTC). NOTE: the spec also exempts all public holidays on the Nagaland State Govt calendar;
-    /// this project has no holiday-calendar concept, so only the daily time window is enforced here —
-    /// a real holiday calendar is a known, documented gap (see README).</summary>
-    internal static bool IsWithinDisconnectWindow(DateTime utcNow)
-    {
-        var istHour = utcNow.Add(TimeSpan.FromHours(5.5)).Hour;
-        return istHour >= 9 && istHour < 14;
-    }
+    /// <summary>Whether a disconnect may be dispatched now: only 11:00 AM to 4:00 PM IST, because the tariff book gives prepaid consumers credit hours from
+    /// 4:00 PM to 11:00 AM (and on official holidays) when supply continues whatever the balance. See <see cref="PrepaidEngine.Domain.DisconnectionWindow"/>.</summary>
+    internal static bool IsWithinDisconnectWindow(DateTime utcNow) => PrepaidEngine.Domain.DisconnectionWindow.IsOpen(utcNow);
 
 
     // Why a change request cannot proceed, or null. Checked at create, submit and approve so two requests

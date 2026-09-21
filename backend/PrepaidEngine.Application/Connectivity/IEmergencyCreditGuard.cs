@@ -15,8 +15,9 @@ namespace PrepaidEngine.Application.Connectivity;
 /// exactly this reason — auto-dispatch a Reconnect <see cref="ConnectivityCommand"/>.</description></item>
 /// </list>
 ///
-/// Deliberately does not apply the manual RC/DC endpoint's "Happy Hours" (9 AM-2 PM) dispatch
-/// window — that window exists for operator-initiated actions; a wallet crossing the emergency-
+/// Automatic disconnection only happens inside the disconnection window (11 AM to 4 PM IST; the tariff book's credit hours are 4 PM to 11 AM): outside it the
+/// consumer stays connected and <c>DeferredDisconnectionWorker</c> disconnects them once the window opens. Reconnection is never held back. This guard does not apply the manual RC/DC endpoint's
+/// dispatch window — that window exists for operator-initiated actions; a wallet crossing the emergency-
 /// credit line is a system-triggered event with no such restriction in the source requirement.
 /// Never calls <c>SaveChangesAsync</c> itself — the caller's own save covers whatever this method
 /// adds to the same <c>DbContext</c>, matching how <c>IBillingEngineService</c> already batches

@@ -59,7 +59,7 @@ public class MeterDataIngestionService : IMeterDataIngestionService
         {
             interval = new LoadSurveyInterval(
                 Guid.NewGuid(), request.ConsumerId, request.MeterId, request.IntervalStart, request.IntervalEnd,
-                request.ImportKwh, DateTime.UtcNow, request.SourceReference);
+                request.ImportKwh, DateTime.UtcNow, request.SourceReference, request.ImportKvah);
         }
         catch (ArgumentOutOfRangeException ex)
         {

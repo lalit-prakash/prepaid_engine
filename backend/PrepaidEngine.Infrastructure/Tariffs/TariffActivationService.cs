@@ -98,8 +98,19 @@ public sealed class TariffActivationService
         if (request.SupersedesTariffId.HasValue)
             _db.AuditEntries.Add(new AuditEntry(Guid.NewGuid(), nameof(Tariff), request.SupersedesTariffId.Value.ToString(), "RETIRED", "system", nowUtc));
 
-        // One save = one transaction: retire + create + status change land together or not at all.
+        // Retire + create + status change land together or not at all, and so does moving the consumers billed on the retired tariff onto the new one:
+        // the daily run bills each consumer on the tariff they are assigned, so a revision that left them on the retired row would never take effect.
+        await using var transaction = _db.Database.CurrentTransaction is null ? await _db.Database.BeginTransactionAsync(cancellationToken) : null;
         await _db.SaveChangesAsync(cancellationToken);
+        if (request.SupersedesTariffId.HasValue)
+        {
+            var oldId = request.SupersedesTariffId.Value;
+            var moved = await _db.Consumers.Where(c => c.TariffId == oldId).ExecuteUpdateAsync(s => s.SetProperty(c => c.TariffId, newTariff.Id), cancellationToken);
+            if (moved > 0)
+                _db.AuditEntries.Add(new AuditEntry(Guid.NewGuid(), nameof(Tariff), newTariff.Id.ToString(), "CONSUMERS_MOVED", "system", nowUtc, details: $"{moved} consumer(s) moved from the retired tariff {oldId} to this one."));
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         return new ActivatedTariff(request.Id, newTariff.Id, newTariff.Name);
     }
 }

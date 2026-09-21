@@ -13,7 +13,8 @@ public static class TariffBookParameters
     public const string CreditHours = "16:00 to 11:00 the next day, and on official holidays";
     public const decimal EmergencyCreditGeneralPurpose = 2000m;
     public const decimal EmergencyCreditOthers = 200m;
-    public const decimal MinimumVendAmount = 500m;
+    /// <summary>The book prints a minimum recharge of ₹500 once, beside the General Purpose row only, so it is a General Purpose limit; other categories have no minimum (§22.6).</summary>
+    public const decimal MinimumVendAmountGeneralPurpose = 500m;
 
     // ---- Billing rules
     /// <summary>1 HP = 0.746 kW (MSERC Supply Code 2026, clause 1.6 (x)); Agriculture's fixed charge is per kW or per HP.</summary>

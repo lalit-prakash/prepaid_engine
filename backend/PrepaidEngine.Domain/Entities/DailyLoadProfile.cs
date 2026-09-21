@@ -33,6 +33,12 @@ public class DailyLoadProfile
     public decimal StartCumulativeKwh { get; private set; }
     public decimal EndCumulativeKwh { get; private set; }
     public decimal TotalKwh { get; private set; }
+
+    /// <summary>Apparent energy for the day, when the meter's profile carries it. HT, EHT and Industrial LT tariffs are billed per kVAh, so the daily bill uses these;
+    /// null when the profile has no kVAh (the bill then falls back to kWh and says so).</summary>
+    public decimal? StartCumulativeKvah { get; private set; }
+    public decimal? EndCumulativeKvah { get; private set; }
+    public decimal? TotalKvah { get; private set; }
     public DailyProfileStatus Status { get; private set; }
     public bool IsProvisional { get; private set; }
     public string? SourceReference { get; private set; }
@@ -47,10 +53,16 @@ public class DailyLoadProfile
         decimal endCumulativeKwh,
         DateTime receivedAt,
         bool isProvisional = false,
-        string? sourceReference = null)
+        string? sourceReference = null,
+        decimal? startCumulativeKvah = null,
+        decimal? endCumulativeKvah = null)
     {
         if (endCumulativeKwh < startCumulativeKwh)
             throw new ArgumentOutOfRangeException(nameof(endCumulativeKwh), "End cumulative reading cannot be lower than the start reading.");
+        if (startCumulativeKvah.HasValue != endCumulativeKvah.HasValue)
+            throw new ArgumentException("Give both the start and the end kVAh reading, or neither.", nameof(endCumulativeKvah));
+        if (endCumulativeKvah < startCumulativeKvah)
+            throw new ArgumentOutOfRangeException(nameof(endCumulativeKvah), "End cumulative kVAh reading cannot be lower than the start reading.");
 
         Id = id;
         ConsumerId = consumerId;
@@ -61,6 +73,9 @@ public class DailyLoadProfile
         StartCumulativeKwh = startCumulativeKwh;
         EndCumulativeKwh = endCumulativeKwh;
         TotalKwh = endCumulativeKwh - startCumulativeKwh;
+        StartCumulativeKvah = startCumulativeKvah;
+        EndCumulativeKvah = endCumulativeKvah;
+        TotalKvah = endCumulativeKvah - startCumulativeKvah;
         Status = isProvisional ? DailyProfileStatus.Provisional : DailyProfileStatus.Received;
         IsProvisional = isProvisional;
         SourceReference = sourceReference;
@@ -70,12 +85,13 @@ public class DailyLoadProfile
     /// estimate is the average of up to the previous 7 valid DLP records) — no real meter data
     /// exists for this date yet.</summary>
     public static DailyLoadProfile CreateProvisional(
-        Guid id, Guid consumerId, Guid meterId, DateOnly profileDate, DateTime generatedAt, decimal estimatedKwh)
+        Guid id, Guid consumerId, Guid meterId, DateOnly profileDate, DateTime generatedAt, decimal estimatedKwh, decimal? estimatedKvah = null)
     {
         if (estimatedKwh < 0)
             throw new ArgumentOutOfRangeException(nameof(estimatedKwh), "Estimated consumption cannot be negative.");
 
-        return new DailyLoadProfile(id, consumerId, meterId, profileDate, generatedAt, 0m, estimatedKwh, generatedAt, isProvisional: true);
+        return new DailyLoadProfile(id, consumerId, meterId, profileDate, generatedAt, 0m, estimatedKwh, generatedAt, isProvisional: true,
+            startCumulativeKvah: estimatedKvah.HasValue ? 0m : null, endCumulativeKvah: estimatedKvah);
     }
 
     // EF Core / serialization
@@ -104,8 +120,13 @@ public class DailyLoadProfile
     /// <summary>Replaces a provisional profile's data with the actual meter profile once it
     /// arrives — the historical provisional wallet transaction is untouched; only the daily
     /// settlement calculation (run again) accounts for the corrected total.</summary>
-    public void ReplaceWithActual(decimal startCumulativeKwh, decimal endCumulativeKwh, DateTime generatedAt, DateTime receivedAt, string? sourceReference)
+    public void ReplaceWithActual(decimal startCumulativeKwh, decimal endCumulativeKwh, DateTime generatedAt, DateTime receivedAt, string? sourceReference,
+        decimal? startCumulativeKvah = null, decimal? endCumulativeKvah = null)
     {
+        if (startCumulativeKvah.HasValue != endCumulativeKvah.HasValue)
+            throw new ArgumentException("Give both the start and the end kVAh reading, or neither.", nameof(endCumulativeKvah));
+        if (endCumulativeKvah < startCumulativeKvah)
+            throw new ArgumentOutOfRangeException(nameof(endCumulativeKvah), "End cumulative kVAh reading cannot be lower than the start reading.");
         if (!IsProvisional)
             throw new InvalidOperationException("Only a provisional profile can be replaced with actual data.");
         if (endCumulativeKwh < startCumulativeKwh)
@@ -114,6 +135,9 @@ public class DailyLoadProfile
         StartCumulativeKwh = startCumulativeKwh;
         EndCumulativeKwh = endCumulativeKwh;
         TotalKwh = endCumulativeKwh - startCumulativeKwh;
+        StartCumulativeKvah = startCumulativeKvah;
+        EndCumulativeKvah = endCumulativeKvah;
+        TotalKvah = endCumulativeKvah - startCumulativeKvah;
         GeneratedAt = generatedAt;
         ReceivedAt = receivedAt;
         SourceReference = sourceReference;

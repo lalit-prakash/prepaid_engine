@@ -521,6 +521,8 @@ public static class TariffEndpoints
         {
             if (request.ConsumptionKwh < 0)
                 return Results.BadRequest(new { error = "Consumption cannot be negative." });
+            if (request.DayKvah < 0 || request.MonthToDateKvah < 0)
+                return Results.BadRequest(new { error = "kVAh cannot be negative." });
             if (request.MonthToDateKwh < 0)
                 return Results.BadRequest(new { error = "Month-to-date consumption cannot be negative." });
             if (request.ConnectedLoadOrContractDemand < 0)
@@ -551,7 +553,7 @@ public static class TariffEndpoints
                 : 0m;
 
             var bill = DailyBillCalculator.Calculate(new DailyBillInput(
-                tariff, loadKw, request.ConsumptionKwh, request.MonthToDateKwh, request.MeteredOnLtSide, request.TmcMonthly, request.CpmcMonthly, fppasShare, request.TouKvahByBand));
+                tariff, loadKw, request.ConsumptionKwh, request.MonthToDateKwh, request.MeteredOnLtSide, request.TmcMonthly, request.CpmcMonthly, fppasShare, request.TouKvahByBand, request.DayKvah, request.MonthToDateKvah));
 
             return Results.Ok(new
             {
@@ -563,7 +565,9 @@ public static class TariffEndpoints
                     IsTimeOfDay = tariff.Slabs.Count == 0 && tariff.TouPeriods.Count > 0,
                     Bands = tariff.TouPeriods.OrderBy(p => p.StartTime).Select(p => p.Label),
                 },
-                Inputs = new { request.ConsumptionKwh, request.MonthToDateKwh, LoadUsed = loadKw, request.LoadInHp, request.MeteredOnLtSide },
+                Inputs = new { request.ConsumptionKwh, request.DayKvah, request.MonthToDateKwh, request.MonthToDateKvah, LoadUsed = loadKw, request.LoadInHp, request.MeteredOnLtSide },
+                bill.BilledEnergy,
+                bill.BilledUnit,
                 bill.GrossEnergyCharge,
                 PrepaidRebatePercent = tariff.PrepaidEnergyRebatePercent,
                 RebateAmount = bill.PrepaidRebate,
@@ -601,9 +605,9 @@ public static class TariffEndpoints
                         Item("Rebate on energy charge", TariffBookParameters.PrepaidEnergyRebatePercent + "%", "All categories. Applied to the energy charge only, not to fixed charge, duty or FPPAS."),
                         Item("Load security deposit", "None", "Not levied on prepaid consumers (§22.2, §1.3.5)."),
                         Item("Emergency credit in the meter", $"{R(TariffBookParameters.EmergencyCreditGeneralPurpose)} General Purpose, {R(TariffBookParameters.EmergencyCreditOthers)} other categories"),
-                        Item("Recharge (vend) limits", $"Min {R(TariffBookParameters.MinimumVendAmount)}; max {R(15000)} single phase, {R(25000)} three phase; General Purpose {R(50000)} / {R(100000)}", "Shown per tariff below. The book prints one minimum, ₹500, read here as applying to every category."),
+                        Item("Recharge (vend) limits", $"Max {R(15000)} single phase, {R(25000)} three phase; General Purpose {R(50000)} / {R(100000)}, with a minimum of {R(TariffBookParameters.MinimumVendAmountGeneralPurpose)}", "Enforced on every recharge from the consumer's tariff. The book prints the minimum once, beside the General Purpose row, so other categories have none."),
                         Item("Initial credit on installation", $"{R(100)} single phase, {R(200)} three phase; General Purpose {R(1000)} / {R(5000)}", "Adjusted against the first vend."),
-                        Item("Consumer friendly credit hours", TariffBookParameters.CreditHours, "See the note on disconnection windows in docs/tariff-2026-27-comparison.md."),
+                        Item("Consumer friendly credit hours", TariffBookParameters.CreditHours, "Supply continues whatever the balance, so disconnection (manual or automatic) only happens 11:00 AM to 4:00 PM IST. Official holidays are not modelled."),
                         Item("Running out of credit", "Not a disconnection", "The meter cut is not a disconnection; supply resumes on recharge (§13.8), so no reconnection charge applies."),
                     } },
                     new { Title = "How the daily bill is built", Items = new[]

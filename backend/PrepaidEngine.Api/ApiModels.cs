@@ -48,12 +48,14 @@ public record RechargeRequest(decimal Amount, string? IdempotencyKey = null);
 /// <param name="PriorMonthEnergyCharge">Last month's energy charge, with <c>FppasRatePercent</c> to work out today's FPPAS share.</param>
 /// <param name="FppasRatePercent">The notified FPPAS rate in percent (negative for a decrease).</param>
 /// <param name="DaysInMonth">Days in the month the FPPAS is spread over (default 30).</param>
-/// <param name="TouKvahByBand">Consumption by Time-of-Day band, for ToD tariffs.</param>
+/// <param name="TouKvahByBand">Energy by Time-of-Day band (in the tariff's unit), for ToD tariffs.</param>
+/// <param name="DayKvah">The day's kVAh. HT, EHT and Industrial LT schedules are billed per kVAh; without it the simulation bills kWh and says so.</param>
+/// <param name="MonthToDateKvah">kVAh already billed earlier in the month (defaults to the kWh figure).</param>
 public record SimulateChargeRequest(
     Guid TariffId, decimal ConsumptionKwh, decimal ConnectedLoadOrContractDemand,
     decimal MonthToDateKwh = 0m, bool LoadInHp = false, bool MeteredOnLtSide = false, decimal TmcMonthly = 0m, decimal CpmcMonthly = 0m,
     decimal PriorMonthEnergyCharge = 0m, decimal FppasRatePercent = 0m, int DaysInMonth = 30,
-    Dictionary<string, decimal>? TouKvahByBand = null);
+    Dictionary<string, decimal>? TouKvahByBand = null, decimal? DayKvah = null, decimal? MonthToDateKvah = null);
 
 /// <param name="Reason">Required. An auditable justification for the disconnect/reconnect — never optional metadata.</param>
 /// <param name="CorrelationId">
@@ -168,7 +170,7 @@ public record CancelTariffChangeRequestBody(string Reason);
 /// <summary>POST /api/v1/meter-data/dlp request body.</summary>
 public record DailyLoadProfileIngestRequest(
     Guid ConsumerId, Guid MeterId, DateOnly ProfileDate, DateTime GeneratedAt,
-    decimal StartCumulativeKwh, decimal EndCumulativeKwh, string? SourceReference = null);
+    decimal StartCumulativeKwh, decimal EndCumulativeKwh, string? SourceReference = null, decimal? StartCumulativeKvah = null, decimal? EndCumulativeKvah = null);
 
 /// <summary>POST /api/v1/consumers/{consumerId}/meter-replacement request body.</summary>
 public record MeterReplacementApiRequest(
@@ -181,7 +183,7 @@ public record ReverseConversionApiRequest(string ConsumerNumber, string Reason, 
 // --- MDMS data foundation request DTOs (BP/LS/IP/Events/Alarms/energy-validation) -------------
 public record RegisterReadingIngestRequest(Guid ConsumerId, Guid MeterId, DateTime ReadingTimestamp, decimal CumulativeImportKwh, string? SourceReference = null);
 
-public record LoadSurveyIntervalIngestRequest(Guid ConsumerId, Guid MeterId, DateTime IntervalStart, DateTime IntervalEnd, decimal ImportKwh, string? SourceReference = null);
+public record LoadSurveyIntervalIngestRequest(Guid ConsumerId, Guid MeterId, DateTime IntervalStart, DateTime IntervalEnd, decimal ImportKwh, string? SourceReference = null, decimal? ImportKvah = null);
 
 public record InstantaneousReadingIngestRequest(
     Guid ConsumerId, Guid MeterId, DateTime Timestamp, decimal VoltageVolts, decimal CurrentAmps,

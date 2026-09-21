@@ -84,7 +84,7 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 
 | Method | Path | Access | Parameters |
 |---|---|---|---|
-| POST | `/api/v1/calculation-workbench/simulate` | `Authenticated` (any signed-in user) | **body** `SimulateChargeRequest` { `tariffId` guid, `consumptionKwh` number, `connectedLoadOrContractDemand` number, `monthToDateKwh` number?, `loadInHp` bool?, `meteredOnLtSide` bool?, `tmcMonthly` number?, `cpmcMonthly` number?, `priorMonthEnergyCharge` number?, `fppasRatePercent` number?, `daysInMonth` int?, `touKvahByBand` Dictionary<string, number>? } |
+| POST | `/api/v1/calculation-workbench/simulate` | `Authenticated` (any signed-in user) | **body** `SimulateChargeRequest` { `tariffId` guid, `consumptionKwh` number, `connectedLoadOrContractDemand` number, `monthToDateKwh` number?, `loadInHp` bool?, `meteredOnLtSide` bool?, `tmcMonthly` number?, `cpmcMonthly` number?, `priorMonthEnergyCharge` number?, `fppasRatePercent` number?, `daysInMonth` int?, `touKvahByBand` Dictionary<string, number>?, `dayKvah` number?, `monthToDateKvah` number? } |
 
 ## Connectivity commands (RC/DC)
 
@@ -171,7 +171,7 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | POST | `/api/v1/meter-data/bp` | `DataAdmin` (Admin, IT) | **body** `RegisterReadingIngestRequest` { `consumerId` guid, `meterId` guid, `readingTimestamp` date, `cumulativeImportKwh` number, `sourceReference` string? } |
 | GET | `/api/v1/meter-data/bp/search` | Any signed-in user | query `q` string (optional)<br>query `from` date (optional)<br>query `to` date (optional)<br>query `status` RegisterReadingStatus (Received|Validated|Rejected) (optional)<br>query `after` string (optional)<br>query `pageSize` int (optional) |
 | GET | `/api/v1/meter-data/dlp` | Any signed-in user | query `consumerId` guid (optional) |
-| POST | `/api/v1/meter-data/dlp` | `DataAdmin` (Admin, IT) | **body** `DailyLoadProfileIngestRequest` { `consumerId` guid, `meterId` guid, `profileDate` date, `generatedAt` date, `startCumulativeKwh` number, `endCumulativeKwh` number, `sourceReference` string? } |
+| POST | `/api/v1/meter-data/dlp` | `DataAdmin` (Admin, IT) | **body** `DailyLoadProfileIngestRequest` { `consumerId` guid, `meterId` guid, `profileDate` date, `generatedAt` date, `startCumulativeKwh` number, `endCumulativeKwh` number, `sourceReference` string?, `startCumulativeKvah` number?, `endCumulativeKvah` number? } |
 | GET | `/api/v1/meter-data/dlp-completeness` | Any signed-in user | query `date` date |
 | GET | `/api/v1/meter-data/dlp/search` | Any signed-in user | query `q` string (optional)<br>query `from` date (optional)<br>query `to` date (optional)<br>query `status` DailyProfileStatus (Received|Validated|Rejected|Billed|Provisional|Reconciled) (optional)<br>query `after` string (optional)<br>query `pageSize` int (optional) |
 | GET | `/api/v1/meter-data/energy-validation` | Any signed-in user | query `consumerId` guid (optional)<br>query `meterId` guid (optional)<br>query `status` EnergyValidationStatus (Pass|Warning|Fail|Hold|Provisional) (optional) |
@@ -182,7 +182,7 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | POST | `/api/v1/meter-data/ip` | `DataAdmin` (Admin, IT) | **body** `InstantaneousReadingIngestRequest` { `consumerId` guid, `meterId` guid, `timestamp` date, `voltageVolts` number, `currentAmps` number, `powerKw` number, `powerFactor` number, `frequencyHz` number, `relayStatus` MeterRelayStatus (Closed|Open), `sourceReference` string? } |
 | GET | `/api/v1/meter-data/ip/latest` | Any signed-in user | query `consumerId` guid (optional)<br>query `meterId` guid (optional) |
 | GET | `/api/v1/meter-data/ls` | Any signed-in user | query `consumerId` guid (optional)<br>query `meterId` guid (optional)<br>query `from` date (optional)<br>query `to` date (optional) |
-| POST | `/api/v1/meter-data/ls` | `DataAdmin` (Admin, IT) | **body** `LoadSurveyIntervalIngestRequest` { `consumerId` guid, `meterId` guid, `intervalStart` date, `intervalEnd` date, `importKwh` number, `sourceReference` string? } |
+| POST | `/api/v1/meter-data/ls` | `DataAdmin` (Admin, IT) | **body** `LoadSurveyIntervalIngestRequest` { `consumerId` guid, `meterId` guid, `intervalStart` date, `intervalEnd` date, `importKwh` number, `sourceReference` string?, `importKvah` number? } |
 | GET | `/api/v1/meter-data/ls/search` | Any signed-in user | query `q` string (optional)<br>query `from` date (optional)<br>query `to` date (optional)<br>query `after` string (optional)<br>query `pageSize` int (optional) |
 
 ## Meter replacements

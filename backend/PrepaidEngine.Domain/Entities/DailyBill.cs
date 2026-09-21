@@ -19,6 +19,10 @@ public class DailyBill
     public bool IsProvisional { get; private set; }
 
     public decimal Kwh { get; private set; }
+
+    /// <summary>The energy the energy charge was worked on, in the tariff's unit: kVAh for HT, EHT and Industrial LT (when the profile had it), otherwise kWh.</summary>
+    public decimal BilledEnergy { get; private set; }
+    public string BilledUnit { get; private set; } = "kWh";
     public decimal MonthToDateKwhBefore { get; private set; }
     public decimal GrossEnergyCharge { get; private set; }
     public decimal PrepaidRebate { get; private set; }
@@ -46,6 +50,8 @@ public class DailyBill
         Reference = reference;
         IsProvisional = isProvisional;
         Kwh = b.DayKwh;
+        BilledEnergy = b.BilledEnergy;
+        BilledUnit = b.BilledUnit;
         MonthToDateKwhBefore = b.MonthToDateKwhBefore;
         GrossEnergyCharge = b.GrossEnergyCharge;
         PrepaidRebate = b.PrepaidRebate;

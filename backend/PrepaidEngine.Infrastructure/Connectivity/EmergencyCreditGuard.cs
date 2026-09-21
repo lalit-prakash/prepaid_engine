@@ -20,11 +20,16 @@ public class EmergencyCreditGuard : IEmergencyCreditGuard
 
     private readonly PrepaidEngineDbContext _db;
     private readonly IConnectivityCommandClient _connectivityClient;
+    private readonly TimeProvider _time;
+    private readonly bool _enforceCreditHours;
 
-    public EmergencyCreditGuard(PrepaidEngineDbContext db, IConnectivityCommandClient connectivityClient)
+    /// <param name="enforceCreditHours">When true (the running API), an automatic disconnection waits for the disconnection window; tests that are not about timing leave it off.</param>
+    public EmergencyCreditGuard(PrepaidEngineDbContext db, IConnectivityCommandClient connectivityClient, TimeProvider? time = null, bool enforceCreditHours = false)
     {
         _db = db;
         _connectivityClient = connectivityClient;
+        _time = time ?? TimeProvider.System;
+        _enforceCreditHours = enforceCreditHours;
     }
 
     public async Task EvaluateAsync(Consumer consumer, CancellationToken cancellationToken = default)
@@ -34,6 +39,11 @@ public class EmergencyCreditGuard : IEmergencyCreditGuard
 
         if (consumer.ConnectionStatus == ConnectionStatus.Active && !consumer.Wallet.IsWithinEmergencyCredit)
         {
+            // Credit hours (tariff book 22.4): outside 11 AM to 4 PM the meter keeps supplying whatever the balance. The consumer stays connected and is
+            // picked up by the deferred disconnection worker when the window opens.
+            if (_enforceCreditHours && !PrepaidEngine.Domain.DisconnectionWindow.IsOpen(_time.GetUtcNow().UtcDateTime))
+                return;
+
             await DispatchAsync(consumer, ConnectivityCommandType.Disconnect, AutoDisconnectReason,
                 NotificationEventType.AutoDisconnected,
                 $"Prepaid supply for {consumer.AccountNumber} has been automatically disconnected — " +
