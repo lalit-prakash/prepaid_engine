@@ -46,6 +46,7 @@ public class PrepaidEngineDbContext : DbContext
     public DbSet<ReconciliationAdjustment> ReconciliationAdjustments => Set<ReconciliationAdjustment>();
     public DbSet<OperationalException> OperationalExceptions => Set<OperationalException>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<PasswordResetRequest> PasswordResetRequests => Set<PasswordResetRequest>();
     public DbSet<UserPasswordOverride> UserPasswordOverrides => Set<UserPasswordOverride>();
     public DbSet<TariffVersion> TariffVersions => Set<TariffVersion>();

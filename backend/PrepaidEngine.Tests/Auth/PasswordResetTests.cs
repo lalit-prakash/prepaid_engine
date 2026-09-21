@@ -50,6 +50,7 @@ public class PasswordResetServiceTests : IDisposable
     private readonly PrepaidEngineDbContext _db;
     private readonly FakeEmail _email = new();
     private readonly UserStore _users;
+    private readonly UserDirectory _directory;
     private readonly LoginThrottle _throttle = new();
     private readonly PasswordResetService _service;
 
@@ -69,7 +70,8 @@ public class PasswordResetServiceTests : IDisposable
             ["DemoAuth:Users:1:Password"] = "Original@1",
         }).Build();
         _users = new UserStore(config);
-        _service = new PasswordResetService(_db, _users, _email, _throttle, NullLogger<PasswordResetService>.Instance);
+        _directory = new UserDirectory(_db, _users);
+        _service = new PasswordResetService(_db, _directory, _email, _throttle, NullLogger<PasswordResetService>.Instance);
     }
 
     public void Dispose()

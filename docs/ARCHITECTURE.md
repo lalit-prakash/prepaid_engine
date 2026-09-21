@@ -94,7 +94,7 @@ endpoints have their own folders.
 - `/health` is open; every `/api/v1/*` endpoint requires authentication.
 
 ### 3.2 Authentication and authorization
-- JWT bearer auth (`Auth/`): `AuthEndpoints` (`POST auth/login`, `POST auth/refresh`, `POST auth/forgot-password`, `POST auth/reset-password`), `PasswordResetService`
+- JWT bearer auth (`Auth/`): `AuthEndpoints` (`POST auth/login`, `POST auth/refresh`, `POST auth/forgot-password`, `POST auth/reset-password`), `UserDirectory` (database users from User Management plus configured bootstrap users), `AccessPolicies` (roles and permissions, the source of the authorization policies), `UserEndpoints` (`/users`, `/roles`), `PasswordResetService`
   (e-mailed one-time codes, `IEmailSender` with SMTP/console/none implementations, `PasswordPolicy`), `UserStore` (users from
   `DemoAuth:Users`: login id, display name, e-mail, role, PBKDF2 `PasswordHash`; a reset password in `UserPasswordOverrides` wins), `PasswordHasher`, `TokenService`
   (HS256, claims: name, display_name, role, auth_time), and `LoginThrottle` (5 failures, 15-minute lock).

@@ -52,6 +52,9 @@ public sealed class UserStore
         }
     }
 
+    /// <summary>Every configured user, for the user list.</summary>
+    public IReadOnlyList<UserAccount> All() => _users.Select(e => new UserAccount(e.Username, e.DisplayName, e.Role, e.Email)).ToList();
+
     private Entry? Lookup(string? loginId)
         => string.IsNullOrWhiteSpace(loginId) ? null : _users.FirstOrDefault(u => string.Equals(u.Username, loginId.Trim(), StringComparison.OrdinalIgnoreCase));
 

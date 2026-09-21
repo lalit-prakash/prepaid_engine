@@ -7,6 +7,7 @@ const TOKEN_KEY = 'pe_token';
 const EXPIRY_KEY = 'pe_token_exp';
 const ROLE_KEY = 'pe_role';
 const USER_KEY = 'pe_user';
+const LOGIN_ID_KEY = 'pe_login_id';
 
 export type UserRole = 'IT' | 'Utility' | 'Admin' | 'Operator' | 'ReadOnly';
 
@@ -38,6 +39,10 @@ export class AuthService implements OnDestroy {
   /** The name to show for the signed-in user (the account's display name). */
   private readonly _username = signal<string | null>(sessionStorage.getItem(USER_KEY));
   readonly username = this._username.asReadonly();
+
+  /** The login id of the signed-in user (the display name is `username`). */
+  private readonly _loginId = signal<string | null>(sessionStorage.getItem(LOGIN_ID_KEY));
+  readonly loginId = this._loginId.asReadonly();
 
   /** Roles that may perform operational actions (recharge, disconnect/reconnect, retries, exceptions). Mirrors the API's "Operations" policy. */
   readonly canOperate = computed(() => ['Admin', 'IT', 'Operator'].includes(this._role() ?? ''));
@@ -83,7 +88,8 @@ export class AuthService implements OnDestroy {
 
   signOut(): void {
     clearTimeout(this.renewTimer);
-    [TOKEN_KEY, EXPIRY_KEY, ROLE_KEY, USER_KEY].forEach((k) => sessionStorage.removeItem(k));
+    [TOKEN_KEY, EXPIRY_KEY, ROLE_KEY, USER_KEY, LOGIN_ID_KEY].forEach((k) => sessionStorage.removeItem(k));
+    this._loginId.set(null);
     this._username.set(null);
     this._role.set(null);
     this._isAuthenticated.set(false);
@@ -103,11 +109,13 @@ export class AuthService implements OnDestroy {
     sessionStorage.setItem(TOKEN_KEY, res.accessToken);
     sessionStorage.setItem(EXPIRY_KEY, String(new Date(res.expiresAtUtc).getTime()));
     sessionStorage.setItem(USER_KEY, res.displayName || res.username);
+    sessionStorage.setItem(LOGIN_ID_KEY, res.username);
     const roles: string[] = ['IT', 'Utility', 'Admin', 'Operator', 'ReadOnly'];
     const role = roles.includes(res.role) ? (res.role as UserRole) : null;
     if (role) sessionStorage.setItem(ROLE_KEY, role);
     else sessionStorage.removeItem(ROLE_KEY);
     this._username.set(res.displayName || res.username);
+    this._loginId.set(res.username);
     this._role.set(role);
     this._isAuthenticated.set(true);
     this.scheduleRenewal();

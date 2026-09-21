@@ -14,7 +14,7 @@ public static class AuthEndpoints
 {
     public static void MapAuthEndpoints(this WebApplication app)
     {
-        app.MapPost("/api/v1/auth/login", async (LoginRequest request, HttpContext http, UserStore users, LoginThrottle throttle, TokenService tokens, PrepaidEngineDbContext db, ILogger<LoginThrottle> log) =>
+        app.MapPost("/api/v1/auth/login", async (LoginRequest request, HttpContext http, UserDirectory users, LoginThrottle throttle, TokenService tokens, PrepaidEngineDbContext db, ILogger<LoginThrottle> log) =>
         {
             var now = DateTime.UtcNow;
             if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrEmpty(request.Password))
@@ -29,10 +29,7 @@ public static class AuthEndpoints
                 return Results.Json(new { error = "Too many failed attempts. Try again later.", retryAfterSeconds = seconds }, statusCode: StatusCodes.Status429TooManyRequests);
             }
 
-            // A password chosen through "Forgot password" lives in the database and replaces the configured one.
-            var known = users.Find(request.Username)?.Username;
-            var overrideHash = known is null ? null : await db.UserPasswordOverrides.AsNoTracking().Where(o => o.LoginId == known).Select(o => o.PasswordHash).FirstOrDefaultAsync();
-            var user = users.Validate(request.Username, request.Password, overrideHash);
+            var user = await users.ValidateAsync(request.Username, request.Password);
             if (user is null)
             {
                 throttle.RecordFailure(request.Username, now);
@@ -70,7 +67,7 @@ public static class AuthEndpoints
         }).AllowAnonymous().RequireRateLimiting(PrepaidEngine.Api.Security.SecurityExtensions.ResetLimiter).WithName("ResetPassword");
 
         // Sliding renewal: a still-valid token is swapped for a fresh one until the session reaches its absolute limit.
-        app.MapPost("/api/v1/auth/refresh", (ClaimsPrincipal principal, TokenService tokens) =>
+        app.MapPost("/api/v1/auth/refresh", async (ClaimsPrincipal principal, TokenService tokens, UserDirectory users) =>
         {
             var now = DateTime.UtcNow;
             if (!tokens.CanRenew(principal, now, out var authTime)
@@ -78,7 +75,12 @@ public static class AuthEndpoints
                 || !Enum.TryParse<UserRole>(principal.FindFirstValue(ClaimTypes.Role), out var role))
                 return Results.Json(new { error = "Session expired. Sign in again." }, statusCode: StatusCodes.Status401Unauthorized);
 
-            var user = new AuthUser(name, principal.FindFirstValue(TokenService.DisplayNameClaim) ?? name, role);
+            // A renewal is where a deactivated user loses access, and a changed role takes effect.
+            var current = await users.FindAsync(name);
+            if (current is not null && !current.IsActive)
+                return Results.Json(new { error = "This account has been deactivated." }, statusCode: StatusCodes.Status401Unauthorized);
+
+            var user = new AuthUser(name, current?.DisplayName ?? principal.FindFirstValue(TokenService.DisplayNameClaim) ?? name, current?.Role ?? role);
             return Results.Ok(Response(tokens.Issue(user, authTime, now), user));
         }).RequireAuthorization("Authenticated").WithName("RefreshToken");
 

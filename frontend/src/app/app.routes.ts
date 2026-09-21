@@ -207,7 +207,10 @@ export const routes: Routes = [
             (m) => m.SlaMonitoringDashboard,
           ),
       },
-      ...stubRoute('user-management', 'User Management'),
+      {
+        path: 'user-management',
+        loadComponent: () => import('./features/users/pages/user-management/user-management').then((m) => m.UserManagement),
+      },
       {
         path: 'integrations',
         loadComponent: () => import('./features/system/pages/integrations/integrations').then((m) => m.Integrations),

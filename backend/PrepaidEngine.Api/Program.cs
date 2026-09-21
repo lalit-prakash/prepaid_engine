@@ -125,6 +125,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<PrepaidEngine.Api.Health.WorkerStatusRegistry>();
 builder.Services.AddSingleton<AuditContextInterceptor>();
 builder.Services.AddSingleton<UserStore>();
+builder.Services.AddScoped<UserDirectory>();
 builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.Configure<PrepaidEngine.Api.Auth.Email.EmailOptions>(builder.Configuration.GetSection(PrepaidEngine.Api.Auth.Email.EmailOptions.SectionName));
@@ -161,18 +162,10 @@ builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.JwtBearer
 // plain .RequireAuthorization() (no role requirement), so this is additive, not a breaking change.
 builder.Services.AddAuthorization(options =>
 {
-    // Deny by default: every write endpoint must name one of these policies (checked at startup below).
-    // Read endpoints use plain RequireAuthorization(), so any signed-in role, including ReadOnly, can read.
-    const string admin = nameof(UserRole.Admin), it = nameof(UserRole.IT), utility = nameof(UserRole.Utility), op = nameof(UserRole.Operator);
-    options.AddPolicy("Authenticated", policy => policy.RequireAuthenticatedUser());
-    // Operational actions: recharge, disconnect/reconnect, retries, conversions, reconciliation, exceptions, replacements, holds, alarms.
-    options.AddPolicy("Operations", policy => policy.RequireRole(admin, it, op));
-    // Bulk data and billing runs.
-    options.AddPolicy("DataAdmin", policy => policy.RequireRole(admin, it));
-    // Tariff governance: drafting is IT (or Admin); approving is Utility only, so no one approves their own change.
-    options.AddPolicy("ITRole", policy => policy.RequireRole(admin, it));
-    options.AddPolicy("UtilityRole", policy => policy.RequireRole(utility));
-    options.AddPolicy("TariffGovernanceRole", policy => policy.RequireRole(admin, it, utility));
+    // Deny by default: every write endpoint must name one of these policies (checked at startup below). Read endpoints use plain
+    // RequireAuthorization(), so any signed-in role, including ReadOnly, can read. The policies come from AccessPolicies, the same list
+    // the Roles & Permissions screen shows.
+    AccessPolicies.Register(options);
 });
 
 // CORS, rate limiting, request size limits and forwarded-header handling (see Security/ and docs/assumptions-and-security.md).
@@ -207,6 +200,7 @@ app.MapDashboardEndpoints();
 app.MapReportEndpoints();
 app.MapLiveRcDcReport();
 app.MapConsumerListEndpoints();
+app.MapUserEndpoints();
 app.MapDashboardAnalyticsEndpoints();
 app.MapReportJobEndpoints();
 app.MapNetworkEndpoints();

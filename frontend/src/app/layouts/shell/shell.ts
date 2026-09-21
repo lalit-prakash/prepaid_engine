@@ -76,7 +76,7 @@ export class Shell {
       label: 'Configuration',
       items: [
         { label: 'Tariff & Parameters', path: '/tariffs', icon: 'gear' },
-        { label: 'User Management', path: '/user-management', icon: 'users', stub: true },
+        { label: 'User Management', path: '/user-management', icon: 'users' },
       ],
     },
     {
