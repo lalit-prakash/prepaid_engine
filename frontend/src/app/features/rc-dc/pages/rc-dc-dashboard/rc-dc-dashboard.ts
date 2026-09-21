@@ -1,7 +1,8 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DatePipe, DecimalPipe, Location } from '@angular/common';
 import { Component, OnDestroy, OnInit, signal } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ConnectivityCommandService } from '../../../../core/services/connectivity-command.service';
 import { NetworkNode, NetworkService } from '../../../../core/services/network.service';
 import {
@@ -9,6 +10,7 @@ import {
   ConnectivityCommandSummary,
   ConnectivityCommandSummaryStats,
   ConnectivityCommandType,
+  LiveRcDcRow,
 } from '../../../../core/models/connectivity-command.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
@@ -36,6 +38,11 @@ interface Filters {
   to: string;
 }
 
+/** yyyy-mm-dd for a date input, in local time. */
+function isoDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 const EMPTY: Filters = { q: '', type: '', status: '', reason: '', balance: '', zoneId: '', circleId: '', from: '', to: '' };
 
 /**
@@ -46,7 +53,7 @@ const EMPTY: Filters = { q: '', type: '', status: '', reason: '', balance: '', z
  */
 @Component({
   selector: 'pe-rc-dc-dashboard',
-  imports: [StatusBadge, KpiCard, DatePipe, DecimalPipe, RouterLink, FormsModule],
+  imports: [StatusBadge, KpiCard, DatePipe, DecimalPipe, FormsModule],
   templateUrl: './rc-dc-dashboard.html',
   styleUrl: './rc-dc-dashboard.scss',
 })
@@ -61,6 +68,18 @@ export class RcDcDashboard implements OnInit, OnDestroy {
   protected readonly zones = signal<NetworkNode[]>([]);
   protected readonly circles = signal<NetworkNode[]>([]);
   protected readonly activeTab = signal<string | null>(null);
+
+  /** The Live RC DC Status view opens in place (?view=live), so the browser Back button returns to the operations list. */
+  protected readonly view = signal<'operations' | 'live'>('operations');
+  protected readonly live = signal<LiveRcDcRow[]>([]);
+  protected readonly liveLoading = signal(false);
+  protected readonly liveError = signal<string | null>(null);
+  protected readonly liveGeneratedAt = signal<string | null>(null);
+  protected liveFrom = isoDay(new Date(Date.now() - 6 * 86_400_000));
+  protected liveTo = isoDay(new Date());
+  protected liveZoneId = '';
+  private openedFromList = false;
+  private querySub?: Subscription;
   protected readonly ConnectivityCommandStatus = ConnectivityCommandStatus;
   protected readonly ConnectivityCommandType = ConnectivityCommandType;
 
@@ -95,6 +114,7 @@ export class RcDcDashboard implements OnInit, OnDestroy {
     private readonly network: NetworkService,
     private readonly router: Router,
     private readonly route: ActivatedRoute,
+    private readonly location: Location,
   ) {}
 
   ngOnInit(): void {
@@ -105,10 +125,53 @@ export class RcDcDashboard implements OnInit, OnDestroy {
     this.connectivityCommandService.summary().subscribe({ next: (s) => this.stats.set(s), error: () => this.statsError.set(true) });
     this.network.nodes('zone').subscribe({ next: (z) => this.zones.set(z), error: () => this.zones.set([]) });
     this.list.load();
+
+    this.querySub = this.route.queryParamMap.subscribe((params) => {
+      const wantLive = params.get('view') === 'live';
+      if (wantLive && this.view() !== 'live') this.loadLive();
+      this.view.set(wantLive ? 'live' : 'operations');
+    });
   }
 
   ngOnDestroy(): void {
+    this.querySub?.unsubscribe();
     this.list.destroy();
+  }
+
+  protected openLive(): void {
+    this.openedFromList = true;
+    this.router.navigate([], { relativeTo: this.route, queryParams: { view: 'live' } });
+  }
+
+  /** Back: the browser's own Back when this view was opened from the list, otherwise straight to the list. */
+  protected closeLive(): void {
+    if (this.openedFromList) this.location.back();
+    else this.router.navigate([], { relativeTo: this.route, queryParams: { view: null }, replaceUrl: true });
+  }
+
+  protected loadLive(): void {
+    this.liveLoading.set(true);
+    this.liveError.set(null);
+    this.connectivityCommandService.liveStatus({ from: this.liveFrom, to: this.liveTo, zoneId: this.liveZoneId }).subscribe({
+      next: (r) => {
+        this.live.set(r.rows);
+        this.liveGeneratedAt.set(r.generatedAt);
+        this.liveLoading.set(false);
+      },
+      error: (err) => {
+        this.liveError.set(err?.error?.error ?? 'Could not load the Live RC DC Status report from the API.');
+        this.liveLoading.set(false);
+      },
+    });
+  }
+
+  /** Clicking a DC count shows those disconnect commands in the operations list. */
+  protected drillDc(day: string, status: string): void {
+    const date = day.slice(0, 10);
+    this.form = { ...EMPTY, type: String(ConnectivityCommandType.Disconnect), status, from: date, to: date };
+    this.circles.set([]);
+    this.search();
+    this.router.navigate([], { relativeTo: this.route, queryParams: { view: null } });
   }
 
   protected onZoneChange(): void {

@@ -7,6 +7,7 @@ import {
   ConnectivityCommandSummary,
   ConnectivityCommandSummaryStats,
   ConnectivityCommandType,
+  LiveRcDcRow,
   RetryConnectivityCommandResult,
 } from '../models/connectivity-command.model';
 import { Page } from '../../shared/utils/paged-list';
@@ -35,6 +36,14 @@ export class ConnectivityCommandService {
     if (params.after) query['after'] = params.after;
     if (params.pageSize) query['pageSize'] = String(params.pageSize);
     return this.http.get<Page<ConnectivityCommandSummary>>(`${this.baseUrl}/search`, { params: query });
+  }
+
+  /** GET /reports/live-rc-dc: per day, DCs sent and the RCs and recharges against them. */
+  liveStatus(params: { from: string; to: string; zoneId?: string; circleId?: string }): Observable<{ rows: LiveRcDcRow[]; generatedAt: string }> {
+    const query: Record<string, string> = { from: params.from, to: params.to };
+    if (params.zoneId) query['zoneId'] = params.zoneId;
+    if (params.circleId) query['circleId'] = params.circleId;
+    return this.http.get<{ rows: LiveRcDcRow[]; generatedAt: string }>(`${environment.apiBaseUrl}/api/v1/reports/live-rc-dc`, { params: query });
   }
 
   summary(): Observable<ConnectivityCommandSummaryStats> {

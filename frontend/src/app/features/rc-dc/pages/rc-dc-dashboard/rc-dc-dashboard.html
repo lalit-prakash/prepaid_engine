@@ -6,9 +6,64 @@
         Manage consumer disconnection and reconnection commands, from the zone down to the DTR.
       </p>
     </div>
-    <a class="btn btn--primary" routerLink="/reports/view/live-rc-dc">Live RC DC Status report</a>
+    @if (view() === 'operations') {
+      <button type="button" class="btn btn--primary" (click)="openLive()">Live RC DC Status</button>
+    } @else {
+      <button type="button" class="btn btn--ghost" (click)="closeLive()">← Back to Disconnection / Reconnection</button>
+    }
   </div>
 
+  @if (view() === 'live') {
+    <section class="card live">
+      <h2 class="card__title">Live RC DC Status</h2>
+      <p class="live__note">For each day: disconnects sent, the reconnects raised against them, and those consumers' recharges with their meter-credit outcome. Click a DC count to see those commands. Eligible DC is a live count, given for today only.</p>
+      <form class="live__filters" (ngSubmit)="loadLive()">
+        <label class="f">From <input type="date" name="lf" [(ngModel)]="liveFrom" /></label>
+        <label class="f">To <input type="date" name="lt" [(ngModel)]="liveTo" /></label>
+        <label class="f">Zone
+          <select name="lz" [(ngModel)]="liveZoneId">
+            <option value="">All</option>
+            @for (z of zones(); track z.id) { <option [value]="z.id">{{ z.name }}</option> }
+          </select>
+        </label>
+        <button type="submit" class="btn btn--primary" [disabled]="liveLoading()">{{ liveLoading() ? 'Loading…' : 'Refresh' }}</button>
+      </form>
+      @if (liveError()) {
+        <div class="error-panel">{{ liveError() }}</div>
+      } @else {
+        <div class="table-wrap" [class.table-wrap--loading]="liveLoading()">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th class="num">Eligible DC</th><th class="num">DC Triggered</th><th class="num">DC Pending</th><th class="num">DC Success</th>
+                <th class="num">RC Initiated Against Today's DC</th><th class="num">RC Pending against Today's DC</th><th class="num">RC Success</th>
+                <th class="num">Recharge MDM Success</th><th class="num">Recharge Pending in MDM</th><th class="num">Recharge Success in HES</th><th class="num">Recharge Fail in HES</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (r of live(); track r.date) {
+                <tr>
+                  <td>{{ r.date | date: 'dd-MMM-yyyy' }}</td>
+                  <td class="num">{{ r.eligibleDc === null ? '—' : (r.eligibleDc | number) }}</td>
+                  <td class="num">@if (r.dcTriggered) { <button type="button" class="cell-link" (click)="drillDc(r.date, '')">{{ r.dcTriggered | number }}</button> } @else { 0 }</td>
+                  <td class="num">@if (r.dcPending) { <button type="button" class="cell-link" (click)="drillDc(r.date, 'Pending')">{{ r.dcPending | number }}</button> } @else { 0 }</td>
+                  <td class="num">@if (r.dcSuccess) { <button type="button" class="cell-link" (click)="drillDc(r.date, 'Acknowledged')">{{ r.dcSuccess | number }}</button> } @else { 0 }</td>
+                  <td class="num">{{ r.rcInitiated | number }}</td>
+                  <td class="num">{{ r.rcPending | number }}</td>
+                  <td class="num">{{ r.rcSuccess | number }}</td>
+                  <td class="num">{{ r.rechargeMdmSuccess | number }}</td>
+                  <td class="num">{{ r.rechargePendingInMdm | number }}</td>
+                  <td class="num">{{ r.rechargeSuccessInHes | number }}</td>
+                  <td class="num">{{ r.rechargeFailInHes | number }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (liveGeneratedAt()) { <p class="live__note">Generated {{ liveGeneratedAt() | date: 'dd-MM-yyyy HH:mm:ss' }}</p> }
+      }
+    </section>
+  } @else {
   @if (stats(); as s) {
     <section class="kpi-row">
       <pe-kpi-card [tile]="true" label="Disconnected Consumers" [value]="s.disconnectedConsumers" tone="danger" icon="plug"
@@ -44,6 +99,7 @@
       <label class="f">Status
         <select name="status" [(ngModel)]="form.status">
           <option value="">All</option>
+          <option value="Pending">Pending or in progress</option>
           <option value="Queued">Pending (queued)</option>
           <option value="Sent">In progress (sent)</option>
           <option value="Acknowledged">Completed</option>
@@ -174,5 +230,6 @@
         <button type="button" (click)="list.next()" [disabled]="!list.nextCursor() || list.loading()">Next</button>
       </span>
     </div>
+  }
   }
 </div>

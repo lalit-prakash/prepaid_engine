@@ -80,3 +80,19 @@ export interface RetryConnectivityCommandResult {
   errorMessage: string | null;
   consumerConnectionStatus: string;
 }
+
+/** One day of GET /api/v1/reports/live-rc-dc. `eligibleDc` is a live count, so it is null for every day but today. */
+export interface LiveRcDcRow {
+  date: string;
+  eligibleDc: number | null;
+  dcTriggered: number;
+  dcPending: number;
+  dcSuccess: number;
+  rcInitiated: number;
+  rcPending: number;
+  rcSuccess: number;
+  rechargeMdmSuccess: number;
+  rechargePendingInMdm: number;
+  rechargeSuccessInHes: number;
+  rechargeFailInHes: number;
+}
