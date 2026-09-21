@@ -37,7 +37,23 @@ public record RechargeRequest(decimal Amount, string? IdempotencyKey = null);
 /// <param name="TariffId">The tariff to simulate against — must have at least one ordinary energy slab.</param>
 /// <param name="ConsumptionKwh">Hypothetical consumption for this simulation.</param>
 /// <param name="ConnectedLoadOrContractDemand">Hypothetical connected load/contract demand.</param>
-public record SimulateChargeRequest(Guid TariffId, decimal ConsumptionKwh, decimal ConnectedLoadOrContractDemand);
+/// <summary>One day's bill to work out. Only the tariff, the day's consumption and the load are required; the rest default to "none".</summary>
+/// <param name="ConsumptionKwh">The day's consumption.</param>
+/// <param name="MonthToDateKwh">Consumption already billed earlier in the same calendar month (slabs and tiered duty continue from here).</param>
+/// <param name="ConnectedLoadOrContractDemand">kW for LT, kVA for kVA schedules; for Agriculture given in HP, set <c>LoadInHp</c>.</param>
+/// <param name="LoadInHp">True when the load is in horsepower (Agriculture); it is converted at 1 HP = 0.746 kW.</param>
+/// <param name="MeteredOnLtSide">HT consumer metered on the LT side of the transformer: adds the 3% surcharge.</param>
+/// <param name="TmcMonthly">Monthly Transformer Maintenance Charge, if the consumer opted for it.</param>
+/// <param name="CpmcMonthly">Monthly CT-PT Set Maintenance Charge, if opted for.</param>
+/// <param name="PriorMonthEnergyCharge">Last month's energy charge, with <c>FppasRatePercent</c> to work out today's FPPAS share.</param>
+/// <param name="FppasRatePercent">The notified FPPAS rate in percent (negative for a decrease).</param>
+/// <param name="DaysInMonth">Days in the month the FPPAS is spread over (default 30).</param>
+/// <param name="TouKvahByBand">Consumption by Time-of-Day band, for ToD tariffs.</param>
+public record SimulateChargeRequest(
+    Guid TariffId, decimal ConsumptionKwh, decimal ConnectedLoadOrContractDemand,
+    decimal MonthToDateKwh = 0m, bool LoadInHp = false, bool MeteredOnLtSide = false, decimal TmcMonthly = 0m, decimal CpmcMonthly = 0m,
+    decimal PriorMonthEnergyCharge = 0m, decimal FppasRatePercent = 0m, int DaysInMonth = 30,
+    Dictionary<string, decimal>? TouKvahByBand = null);
 
 /// <param name="Reason">Required. An auditable justification for the disconnect/reconnect — never optional metadata.</param>
 /// <param name="CorrelationId">

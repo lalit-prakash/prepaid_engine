@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Application.Billing;
 using PrepaidEngine.Application.Connectivity;
+using PrepaidEngine.Domain;
 using PrepaidEngine.Domain.Entities;
 using PrepaidEngine.Domain.Enums;
 using PrepaidEngine.Infrastructure.Persistence;
@@ -195,6 +196,16 @@ public class BillingEngineService : IBillingEngineService
             var tariffIds = batch.Select(c => c.TariffId!.Value).Distinct().ToList();
             var tariffs = await _db.Tariffs.Where(t => tariffIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, cancellationToken);
             var billedRefs = await LoadBilledReferencesAsync(batch, dlps, cancellationToken);
+            // Consumption already billed earlier in this calendar month, so the slabs (and Industrial's tiered duty) continue across days.
+            var monthStart = new DateOnly(billingDate.Year, billingDate.Month, 1);
+            // At most one row per consumer per day of the month so far, summed here rather than in SQL (the sum of a decimal column is not portable to every provider).
+            var monthToDate = (await _db.DailyLoadProfiles
+                    .Where(d => consumerIds.Contains(d.ConsumerId) && d.ProfileDate >= monthStart && d.ProfileDate < billingDate
+                        && (d.Status == DailyProfileStatus.Billed || d.Status == DailyProfileStatus.Provisional || d.Status == DailyProfileStatus.Reconciled))
+                    .Select(d => new { d.ConsumerId, d.TotalKwh })
+                    .ToListAsync(cancellationToken))
+                .GroupBy(x => x.ConsumerId)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.TotalKwh));
             var heldConsumers = isStage2
                 ? (await _db.MeterBillingControls.Where(c => consumerIds.Contains(c.ConsumerId) && c.ActualBillingBlocked)
                     .Select(c => c.ConsumerId).ToListAsync(cancellationToken)).ToHashSet()
@@ -214,7 +225,7 @@ public class BillingEngineService : IBillingEngineService
                         continue;
 
                     processed++;
-                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, cancellationToken) is { } r1)
+                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, monthToDate.GetValueOrDefault(consumer.Id), cancellationToken) is { } r1)
                         AddResult(results, r1);
                     continue;
                 }
@@ -238,7 +249,7 @@ public class BillingEngineService : IBillingEngineService
                 {
                     // Arrived after Stage 1's cutoff but by Stage 2's: bill it now, for real.
                     processed++;
-                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, cancellationToken) is { } r2)
+                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, monthToDate.GetValueOrDefault(consumer.Id), cancellationToken) is { } r2)
                         AddResult(results, r2);
                     continue;
                 }
@@ -272,7 +283,9 @@ public class BillingEngineService : IBillingEngineService
                 var provisional = DailyLoadProfile.CreateProvisional(Guid.NewGuid(), consumer.Id, consumer.Meter.Id, billingDate, DateTime.UtcNow, estimatedKwh);
                 _db.DailyLoadProfiles.Add(provisional);
 
-                var chargeAmount = CalculateDailyCharge(tariff, consumer, estimatedKwh);
+                var breakdown = DailyBillCalculator.Calculate(new DailyBillInput(tariff, consumer.ConnectedLoadKw, estimatedKwh, monthToDate.GetValueOrDefault(consumer.Id)));
+                var chargeAmount = breakdown.TotalRounded;
+                _db.DailyBills.Add(new DailyBill(Guid.NewGuid(), consumer.Id, tariff.Id, billingDate, $"DLP-PROV:{provisional.Id}", isProvisional: true, breakdown, DateTime.UtcNow));
                 if (chargeAmount > 0)
                 {
                     var debit = consumer.Wallet.Debit(chargeAmount, WalletTransactionType.DailyDlpCharge, $"DLP-PROV:{provisional.Id}");
@@ -367,7 +380,7 @@ public class BillingEngineService : IBillingEngineService
     /// <summary>Shared real-DLP charging logic for both stages: posts one direct debit from the DLP's own
     /// total kWh, idempotent on the DLP's own reference.</summary>
     private async Task<DailyProcessingResult?> ChargeFromDlpAsync(
-        Consumer consumer, DailyLoadProfile dlp, Tariff? tariff, HashSet<string> billedRefs, string stage, CancellationToken cancellationToken)
+        Consumer consumer, DailyLoadProfile dlp, Tariff? tariff, HashSet<string> billedRefs, string stage, decimal monthToDateKwhBefore, CancellationToken cancellationToken)
     {
         if (dlp.TotalKwh < 0)
             return new DailyProcessingResult(consumer.Id, stage, true, false, 0, true, "DLP has negative total consumption.");
@@ -379,7 +392,9 @@ public class BillingEngineService : IBillingEngineService
         if (billedRefs.Contains(reference) || dlp.Status == DailyProfileStatus.Billed)
             return new DailyProcessingResult(consumer.Id, stage, true, false, 0, true, "This DLP has already been billed.");
 
-        var chargeAmount = CalculateDailyCharge(tariff, consumer, dlp.TotalKwh);
+        var breakdown = DailyBillCalculator.Calculate(new DailyBillInput(tariff, consumer.ConnectedLoadKw, dlp.TotalKwh, monthToDateKwhBefore));
+        var chargeAmount = breakdown.TotalRounded;
+        _db.DailyBills.Add(new DailyBill(Guid.NewGuid(), consumer.Id, tariff.Id, dlp.ProfileDate, reference, isProvisional: false, breakdown, DateTime.UtcNow));
         if (chargeAmount > 0)
         {
             var debit = consumer.Wallet.Debit(chargeAmount, WalletTransactionType.DailyDlpCharge, reference);
@@ -415,15 +430,6 @@ public class BillingEngineService : IBillingEngineService
 
         await _db.SaveChangesAsync(cancellationToken);
         return assignment;
-    }
-
-    private static decimal CalculateDailyCharge(Tariff tariff, Consumer consumer, decimal consumptionKwh)
-    {
-        var grossEnergyCharge = tariff.CalculateEnergyCharge(consumptionKwh);
-        var rebate = grossEnergyCharge * (tariff.PrepaidEnergyRebatePercent / 100m);
-        var netEnergyCharge = grossEnergyCharge - rebate;
-        var dailyFixedCharge = tariff.CalculateDailyFixedCharge(consumer.ConnectedLoadKw);
-        return Math.Round(netEnergyCharge + dailyFixedCharge, 2, MidpointRounding.AwayFromZero);
     }
 
     private async Task RaiseCreditNotificationsAsync(Consumer consumer, CancellationToken cancellationToken)

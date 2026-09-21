@@ -1,5 +1,7 @@
 # Tariff validation report
 
+> Updated for the FY 2026-27 tariff book: see [tariff-2026-27-comparison.md](tariff-2026-27-comparison.md) for the full comparison with the engine, the schedule catalogue and how the daily bill is now built.
+
 Sources actually inspected in this repository:
 
 1. **Primary**: MePDCL Electricity Distribution Tariff, effective 1 April 2026 (PDF supplied by

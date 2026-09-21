@@ -68,6 +68,23 @@ public class Tariff
     public decimal? MinVendAmountThreePhase { get; private set; }
     public decimal? MaxVendAmountThreePhase { get; private set; }
 
+    /// <summary>The tariff book's schedule code (DLT, CLT, GP, IHT ...); null on a tariff drafted before schedule codes were recorded.</summary>
+    public string? ScheduleCode { get; private set; }
+
+    public VoltageLevel VoltageLevel { get; private set; } = VoltageLevel.LT;
+
+    /// <summary>The unit the energy charge is quoted in. The daily load profile carries kWh only, so a kVAh tariff is billed on kWh until kVAh readings are ingested (the daily bill says so).</summary>
+    public EnergyUnit EnergyUnit { get; private set; } = EnergyUnit.Kwh;
+
+    public FixedChargeBasis FixedChargeBasis { get; private set; } = FixedChargeBasis.PerKw;
+
+    /// <summary>Demand the fixed charge is never billed below, in the fixed charge's own unit (HT: 56 kVA, the tariff book's "50 kW or 56 kVA"); null when there is none.</summary>
+    public decimal? MinimumChargeableDemand { get; private set; }
+
+    /// <summary>Credit a new prepaid meter starts with, adjusted against the first vend (tariff book 22.7), by meter phase.</summary>
+    public decimal? InitialCreditSinglePhase { get; private set; }
+    public decimal? InitialCreditThreePhase { get; private set; }
+
     public Tariff(
         Guid id,
         string name,
@@ -80,7 +97,14 @@ public class Tariff
         decimal? maxVendAmountSinglePhase = null,
         decimal? minVendAmountThreePhase = null,
         decimal? maxVendAmountThreePhase = null,
-        IEnumerable<TouPeriod>? touPeriods = null)
+        IEnumerable<TouPeriod>? touPeriods = null,
+        string? scheduleCode = null,
+        VoltageLevel voltageLevel = VoltageLevel.LT,
+        EnergyUnit energyUnit = EnergyUnit.Kwh,
+        FixedChargeBasis fixedChargeBasis = FixedChargeBasis.PerKw,
+        decimal? minimumChargeableDemand = null,
+        decimal? initialCreditSinglePhase = null,
+        decimal? initialCreditThreePhase = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Name is required.", nameof(name));
@@ -103,6 +127,13 @@ public class Tariff
         MaxVendAmountSinglePhase = maxVendAmountSinglePhase;
         MinVendAmountThreePhase = minVendAmountThreePhase;
         MaxVendAmountThreePhase = maxVendAmountThreePhase;
+        ScheduleCode = string.IsNullOrWhiteSpace(scheduleCode) ? null : scheduleCode.Trim();
+        VoltageLevel = voltageLevel;
+        EnergyUnit = energyUnit;
+        FixedChargeBasis = fixedChargeBasis;
+        MinimumChargeableDemand = minimumChargeableDemand;
+        InitialCreditSinglePhase = initialCreditSinglePhase;
+        InitialCreditThreePhase = initialCreditThreePhase;
 
         _slabs.AddRange(slabs ?? throw new ArgumentNullException(nameof(slabs)));
         if (touPeriods is not null)
@@ -146,7 +177,24 @@ public class Tariff
         if (connectedLoadOrContractDemand < 0)
             throw new ArgumentOutOfRangeException(nameof(connectedLoadOrContractDemand));
 
-        return FixedChargePerUnitPerMonth * connectedLoadOrContractDemand;
+        // The fixed charge is never billed on less than the minimum chargeable demand (HT: 56 kVA).
+        var chargeable = MinimumChargeableDemand.HasValue ? Math.Max(connectedLoadOrContractDemand, MinimumChargeableDemand.Value) : connectedLoadOrContractDemand;
+        return FixedChargePerUnitPerMonth * chargeable;
+    }
+
+    /// <summary>
+    /// Copies the classification (schedule code, voltage, energy unit, fixed charge basis, minimum demand, initial credit) from the tariff this
+    /// one revises, so a revision keeps the identity of the schedule it replaces. Meant to be called once, right after construction.
+    /// </summary>
+    public void InheritClassification(Tariff previous)
+    {
+        ScheduleCode = previous.ScheduleCode;
+        VoltageLevel = previous.VoltageLevel;
+        EnergyUnit = previous.EnergyUnit;
+        FixedChargeBasis = previous.FixedChargeBasis;
+        MinimumChargeableDemand = previous.MinimumChargeableDemand;
+        InitialCreditSinglePhase = previous.InitialCreditSinglePhase;
+        InitialCreditThreePhase = previous.InitialCreditThreePhase;
     }
 
     /// <summary>

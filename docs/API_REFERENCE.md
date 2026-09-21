@@ -1,7 +1,7 @@
 # API reference
 
 Every HTTP endpoint the Prepaid Engine API exposes: method, path, who may call it, and its parameters.
-Generated from the running app (139 endpoints), so it matches the code. Do not edit by hand; regenerate with:
+Generated from the running app (142 endpoints), so it matches the code. Do not edit by hand; regenerate with:
 
 ```
 ASPNETCORE_ENVIRONMENT=Production Jwt__Key=<any 32+ characters> dotnet run --project backend/PrepaidEngine.Api -- dump-endpoints docs/API_REFERENCE.md
@@ -84,7 +84,7 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 
 | Method | Path | Access | Parameters |
 |---|---|---|---|
-| POST | `/api/v1/calculation-workbench/simulate` | `Authenticated` (any signed-in user) | **body** `SimulateChargeRequest` { `tariffId` guid, `consumptionKwh` number, `connectedLoadOrContractDemand` number } |
+| POST | `/api/v1/calculation-workbench/simulate` | `Authenticated` (any signed-in user) | **body** `SimulateChargeRequest` { `tariffId` guid, `consumptionKwh` number, `connectedLoadOrContractDemand` number, `monthToDateKwh` number?, `loadInHp` bool?, `meteredOnLtSide` bool?, `tmcMonthly` number?, `cpmcMonthly` number?, `priorMonthEnergyCharge` number?, `fppasRatePercent` number?, `daysInMonth` int?, `touKvahByBand` Dictionary<string, number>? } |
 
 ## Connectivity commands (RC/DC)
 
@@ -103,6 +103,7 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 |---|---|---|---|
 | GET | `/api/v1/consumers` | Any signed-in user | none |
 | GET | `/api/v1/consumers/{accountNumber}` | Any signed-in user | path `accountNumber` string |
+| GET | `/api/v1/consumers/{accountNumber}/daily-bills` | Any signed-in user | path `accountNumber` string<br>query `take` int (optional) |
 | POST | `/api/v1/consumers/{accountNumber}/disconnect` | `Operations` (Admin, IT, Operator) | path `accountNumber` string<br>**body** `ConnectivityRequest` { `reason` string, `correlationId` string? } |
 | PUT | `/api/v1/consumers/{accountNumber}/mobile` | `Operations` (Admin, IT, Operator) | path `accountNumber` string<br>**body** `UpdateMobileRequest` { `mobileNumber` string? } |
 | POST | `/api/v1/consumers/{accountNumber}/recharge` | `Operations` (Admin, IT, Operator) | path `accountNumber` string<br>**body** `RechargeRequest` { `amount` number, `idempotencyKey` string? } |
@@ -290,14 +291,20 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | Method | Path | Access | Parameters |
 |---|---|---|---|
 | GET | `/api/v1/tariff-change-requests` | Any signed-in user | query `status` TariffChangeRequestStatus (Draft|PendingApproval|Rejected|Scheduled|Activated|Cancelled) (optional) |
-| POST | `/api/v1/tariff-change-requests` | `ITRole` (Admin, IT) | **body** `CreateTariffChangeRequestBody` { `supersedesTariffId` guid?, `proposedName` string, `proposedCategory` ConsumerCategory (Domestic|NonDomestic|GeneralPurpose|PublicWaterSupply|Industrial|FerroAlloy|Agriculture|Crematorium|ElectricVehicle|KutirJyotiBpl), `proposedSlabs` IReadOnlyList<TariffSlabInput>, `proposedFixedChargePerUnitPerMonth` number, `proposedPrepaidEnergyRebatePercent` number, `proposedEmergencyCreditLimit` number, `proposedMinVendAmountSinglePhase` number?, `proposedMaxVendAmountSinglePhase` number?, `proposedMinVendAmountThreePhase` number?, `proposedMaxVendAmountThreePhase` number?, `proposedTouPeriods` IReadOnlyList<TouPeriodInput>? } |
+| POST | `/api/v1/tariff-change-requests` | `ITRole` (Admin, IT) | **body** `CreateTariffChangeRequestBody` { `supersedesTariffId` guid?, `proposedName` string, `proposedCategory` ConsumerCategory (Domestic|NonDomestic|GeneralPurpose|PublicWaterSupply|Industrial|FerroAlloy|Agriculture|Crematorium|ElectricVehicle|KutirJyotiBpl|PublicLighting), `proposedSlabs` IReadOnlyList<TariffSlabInput>, `proposedFixedChargePerUnitPerMonth` number, `proposedPrepaidEnergyRebatePercent` number, `proposedEmergencyCreditLimit` number, `proposedMinVendAmountSinglePhase` number?, `proposedMaxVendAmountSinglePhase` number?, `proposedMinVendAmountThreePhase` number?, `proposedMaxVendAmountThreePhase` number?, `proposedTouPeriods` IReadOnlyList<TouPeriodInput>? } |
 | GET | `/api/v1/tariff-change-requests/{id:guid}` | Any signed-in user | path `id` guid |
 | POST | `/api/v1/tariff-change-requests/{id:guid}/approve` | `UtilityRole` (Utility) | path `id` guid<br>**body** `ApproveTariffChangeRequestBody` { `commencementDate` date } |
 | POST | `/api/v1/tariff-change-requests/{id:guid}/cancel` | `TariffGovernanceRole` (Admin, IT, Utility) | path `id` guid<br>**body** `CancelTariffChangeRequestBody` { `reason` string } |
-| PUT | `/api/v1/tariff-change-requests/{id:guid}/draft` | `ITRole` (Admin, IT) | path `id` guid<br>**body** `UpdateTariffChangeRequestBody` { `proposedName` string, `proposedCategory` ConsumerCategory (Domestic|NonDomestic|GeneralPurpose|PublicWaterSupply|Industrial|FerroAlloy|Agriculture|Crematorium|ElectricVehicle|KutirJyotiBpl), `proposedSlabs` IReadOnlyList<TariffSlabInput>, `proposedFixedChargePerUnitPerMonth` number, `proposedPrepaidEnergyRebatePercent` number, `proposedEmergencyCreditLimit` number, `proposedMinVendAmountSinglePhase` number?, `proposedMaxVendAmountSinglePhase` number?, `proposedMinVendAmountThreePhase` number?, `proposedMaxVendAmountThreePhase` number?, `proposedTouPeriods` IReadOnlyList<TouPeriodInput>? } |
+| PUT | `/api/v1/tariff-change-requests/{id:guid}/draft` | `ITRole` (Admin, IT) | path `id` guid<br>**body** `UpdateTariffChangeRequestBody` { `proposedName` string, `proposedCategory` ConsumerCategory (Domestic|NonDomestic|GeneralPurpose|PublicWaterSupply|Industrial|FerroAlloy|Agriculture|Crematorium|ElectricVehicle|KutirJyotiBpl|PublicLighting), `proposedSlabs` IReadOnlyList<TariffSlabInput>, `proposedFixedChargePerUnitPerMonth` number, `proposedPrepaidEnergyRebatePercent` number, `proposedEmergencyCreditLimit` number, `proposedMinVendAmountSinglePhase` number?, `proposedMaxVendAmountSinglePhase` number?, `proposedMinVendAmountThreePhase` number?, `proposedMaxVendAmountThreePhase` number?, `proposedTouPeriods` IReadOnlyList<TouPeriodInput>? } |
 | POST | `/api/v1/tariff-change-requests/{id:guid}/reject` | `UtilityRole` (Utility) | path `id` guid<br>**body** `RejectTariffChangeRequestBody` { `rejectionReason` string } |
 | POST | `/api/v1/tariff-change-requests/{id:guid}/submit` | `ITRole` (Admin, IT) | path `id` guid<br>**body** `SubmitTariffChangeRequestBody` { `changeReason` string } |
 | POST | `/api/v1/tariff-change-requests/activate-due` | `UtilityRole` (Utility) | none |
+
+## Tariff parameters
+
+| Method | Path | Access | Parameters |
+|---|---|---|---|
+| GET | `/api/v1/tariff-parameters` | Any signed-in user | none |
 
 ## Tariffs
 
@@ -308,6 +315,7 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | GET | `/api/v1/tariffs/{id:guid}/lineage` | Any signed-in user | path `id` guid |
 | GET | `/api/v1/tariffs/{id:guid}/versions` | Any signed-in user | path `id` guid |
 | POST | `/api/v1/tariffs/{id:guid}/versions` | `ITRole` (Admin, IT) | path `id` guid<br>**body** `TariffVersionRequest` { `fieldName` string, `oldValue` string, `newValue` string, `changeNote` string, `effectiveDate` date } |
+| GET | `/api/v1/tariffs/book-check` | Any signed-in user | none |
 
 ## Users
 

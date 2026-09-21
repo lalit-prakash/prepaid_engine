@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using PrepaidEngine.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using PrepaidEngine.Infrastructure.Persistence;
 namespace PrepaidEngine.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(PrepaidEngineDbContext))]
-    partial class PrepaidEngineDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260921192653_AddTariffClassification")]
+    partial class AddTariffClassification
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -485,79 +488,6 @@ namespace PrepaidEngine.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("ConversionRequests", (string)null);
-                });
-
-            modelBuilder.Entity("PrepaidEngine.Domain.Entities.DailyBill", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateOnly>("BillDate")
-                        .HasColumnType("date");
-
-                    b.Property<Guid>("ConsumerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("Cpmc")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<decimal>("ElectricityDuty")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<decimal>("FixedCharge")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<decimal>("FppasShare")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<decimal>("GrossEnergyCharge")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<bool>("IsProvisional")
-                        .HasColumnType("boolean");
-
-                    b.Property<decimal>("Kwh")
-                        .HasColumnType("decimal(18,3)");
-
-                    b.Property<decimal>("LtSideMeteringSurcharge")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<decimal>("MonthToDateKwhBefore")
-                        .HasColumnType("decimal(18,3)");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(600)
-                        .HasColumnType("character varying(600)");
-
-                    b.Property<decimal>("PrepaidRebate")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<string>("Reference")
-                        .IsRequired()
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
-
-                    b.Property<Guid>("TariffId")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("Tmc")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<decimal>("Total")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Reference")
-                        .IsUnique();
-
-                    b.HasIndex("ConsumerId", "BillDate");
-
-                    b.ToTable("DailyBills", (string)null);
                 });
 
             modelBuilder.Entity("PrepaidEngine.Domain.Entities.DailyLoadProfile", b =>

@@ -192,6 +192,7 @@ if (app.Environment.IsDevelopment())
     await DbSeeder.SeedAsync(db);
     await DbSeeder.SeedExtraConsumersAsync(db);
     await DbSeeder.SeedDemoNetworkAsync(db);
+    await TariffCatalogue2026.SeedAsync(db);
 
 }
 

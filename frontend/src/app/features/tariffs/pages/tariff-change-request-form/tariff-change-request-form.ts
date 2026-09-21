@@ -10,7 +10,7 @@ import {
 } from '../../../../core/models/tariff-change-request.model';
 import { TariffChangeRequestService } from '../../../../core/services/tariff-change-request.service';
 import { TariffService } from '../../../../core/services/tariff.service';
-import { categoryLabel } from '../../../../shared/utils/category-label';
+import { categoryLabel, ALL_CATEGORIES } from '../../../../shared/utils/category-label';
 import { HasUnsavedChanges } from '../../../../core/guards/unsaved-changes.guard';
 
 /**
@@ -45,12 +45,7 @@ export class TariffChangeRequestForm implements OnInit, HasUnsavedChanges {
     if (button && /Add|Remove/.test(button.textContent ?? '')) this.markDirty();
   }
 
-  protected readonly categories = [
-    ConsumerCategory.Domestic,
-    ConsumerCategory.Bpl,
-    ConsumerCategory.Industrial,
-    ConsumerCategory.Commercial,
-  ];
+  protected readonly categories = ALL_CATEGORIES;
   protected readonly categoryLabel = categoryLabel;
 
   protected readonly loading = signal(false);

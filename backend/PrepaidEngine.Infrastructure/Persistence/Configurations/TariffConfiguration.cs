@@ -40,6 +40,13 @@ public class TariffConfiguration : IEntityTypeConfiguration<Tariff>
         builder.Property(t => t.MaxVendAmountSinglePhase).HasColumnType("decimal(18,2)");
         builder.Property(t => t.MinVendAmountThreePhase).HasColumnType("decimal(18,2)");
         builder.Property(t => t.MaxVendAmountThreePhase).HasColumnType("decimal(18,2)");
+        builder.Property(t => t.ScheduleCode).HasMaxLength(10);
+        builder.Property(t => t.VoltageLevel).HasConversion<string>().HasMaxLength(5).IsRequired().HasDefaultValue(PrepaidEngine.Domain.Enums.VoltageLevel.LT);
+        builder.Property(t => t.EnergyUnit).HasConversion<string>().HasMaxLength(5).IsRequired().HasDefaultValue(PrepaidEngine.Domain.Enums.EnergyUnit.Kwh);
+        builder.Property(t => t.FixedChargeBasis).HasConversion<string>().HasMaxLength(12).IsRequired().HasDefaultValue(PrepaidEngine.Domain.Enums.FixedChargeBasis.PerKw);
+        builder.Property(t => t.MinimumChargeableDemand).HasColumnType("decimal(18,3)");
+        builder.Property(t => t.InitialCreditSinglePhase).HasColumnType("decimal(18,2)");
+        builder.Property(t => t.InitialCreditThreePhase).HasColumnType("decimal(18,2)");
 
         // TariffSlab has no identity of its own; it is a value object owned by Tariff and
         // persisted in its own table keyed by (TariffId, a shadow slab index).

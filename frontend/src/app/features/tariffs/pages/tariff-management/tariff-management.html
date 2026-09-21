@@ -1,10 +1,10 @@
 <div class="tariffs">
   <div class="page-header">
     <div>
-      <h1>Tariffs &amp; Governance</h1>
+      <h1>Tariffs &amp; Parameters</h1>
       <p class="page-header__subtitle">
-        {{ tariffs().length }} active tariff(s). Changes go through IT draft → submit → Utility approval before
-        they ever take effect — see the Change Requests tabs below.
+        The active tariffs for FY 2026-27, how each compares with the tariff book, and the book's fixed figures. Changes go through IT draft, submit,
+        then Utility approval before they take effect.
       </p>
     </div>
     @if (isIt()) {
@@ -15,15 +15,16 @@
   </div>
 
   <section class="kpi-row">
-    <pe-kpi-card label="Active Tariffs" [value]="tariffs().length" tone="primary" />
-    <pe-kpi-card label="Pending Approval" [value]="pendingCount()" tone="warning" [clickable]="true" (click)="selectTab('pending')" />
-    <pe-kpi-card label="Drafts" [value]="draftCount()" tone="neutral" [clickable]="true" (click)="selectTab('drafts')" />
-    <pe-kpi-card label="Scheduled" [value]="scheduledCount()" tone="info" [clickable]="true" (click)="selectTab('scheduled')" />
-    <pe-kpi-card label="Rejected" [value]="rejectedCount()" tone="danger" [clickable]="true" (click)="selectTab('rejected')" />
+    <pe-kpi-card label="Active Tariffs" [value]="tariffs().length" tone="primary" [clickable]="true" (click)="selectTab('active-tariffs')" />
+    <pe-kpi-card label="Match the Book" [value]="bookCheck()?.matches ?? '—'" [sublabel]="'of ' + (bookCheck() ? bookCheck()!.matches + bookCheck()!.differs + bookCheck()!.missing : '…') + ' schedules'" tone="success" [clickable]="true" (click)="selectTab('book')" />
+    <pe-kpi-card label="Differ / Missing" [value]="bookCheck() ? bookCheck()!.differs + bookCheck()!.missing : '—'" tone="warning" [clickable]="true" (click)="selectTab('book')" />
+    <pe-kpi-card label="Pending Approval" [value]="pendingCount()" tone="info" [clickable]="true" (click)="selectTab('pending')" />
+    <pe-kpi-card label="Scheduled" [value]="scheduledCount()" tone="neutral" [clickable]="true" (click)="selectTab('scheduled')" />
   </section>
 
   <div class="tabs">
     <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'active-tariffs'" (click)="selectTab('active-tariffs')">Active Tariffs</button>
+    <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'book'" (click)="selectTab('book')">Tariff Book &amp; Parameters</button>
     <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'pending'" (click)="selectTab('pending')">Pending Approval ({{ pendingCount() }})</button>
     <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'drafts'" (click)="selectTab('drafts')">Drafts ({{ draftCount() }})</button>
     <button type="button" class="tabs__item" [class.tabs__item--active]="activeTab() === 'scheduled'" (click)="selectTab('scheduled')">Scheduled ({{ scheduledCount() }})</button>
@@ -32,46 +33,122 @@
   </div>
 
   @if (activeTab() === 'active-tariffs') {
+    <div class="filters">
+      <div class="chips" role="group" aria-label="Filter by supply voltage">
+        <button type="button" class="chip" [class.chip--active]="voltageFilter() === 'all'" (click)="voltageFilter.set('all')">All</button>
+        <button type="button" class="chip" [class.chip--active]="voltageFilter() === VoltageLevel.LT" (click)="voltageFilter.set(VoltageLevel.LT)">Low Tension</button>
+        <button type="button" class="chip" [class.chip--active]="voltageFilter() === VoltageLevel.HT" (click)="voltageFilter.set(VoltageLevel.HT)">High Tension</button>
+        <button type="button" class="chip" [class.chip--active]="voltageFilter() === VoltageLevel.EHT" (click)="voltageFilter.set(VoltageLevel.EHT)">Extra High Tension</button>
+      </div>
+      <form class="search" (ngSubmit)="applySearch()">
+        <input type="search" name="search" [(ngModel)]="search" (ngModelChange)="applySearch()" placeholder="Search name, schedule code or category…" />
+      </form>
+    </div>
+
     @if (loading()) {
       <div class="skeleton-row">
         @for (i of [1,2,3]; track i) { <div class="skeleton-card"></div> }
       </div>
     } @else if (error()) {
       <div class="error-panel">{{ error() }}</div>
-    } @else if (tariffs().length === 0) {
-      <div class="empty-panel">No tariffs are configured.</div>
+    } @else if (visibleTariffs().length === 0) {
+      <div class="empty-panel">No tariffs match.</div>
     } @else {
       <div class="table-wrap">
-        <table>
+        <table class="tariff-table">
           <thead>
             <tr>
-              <th>Name</th>
+              <th>Schedule</th>
+              <th>Tariff</th>
               <th>Category</th>
-              <th class="num">Fixed Charge</th>
-              <th class="num">Prepaid Rebate</th>
-              <th class="num">Emergency Credit</th>
-              <th class="num">Slabs</th>
-              <th class="num">ToD Periods</th>
+              <th>Energy charge</th>
+              <th>Fixed charge</th>
+              <th class="num">Rebate</th>
+              <th class="num">Emergency credit</th>
+              <th>FY 2026-27 book</th>
               @if (isIt()) { <th></th> }
             </tr>
           </thead>
           <tbody>
-            @for (t of tariffs(); track t.id) {
-              <tr class="row-clickable">
-                <td (click)="open(t.id)">{{ t.name }}</td>
-                <td (click)="open(t.id)">{{ categoryLabel(t.category) }}</td>
-                <td class="num" (click)="open(t.id)">₹{{ t.fixedChargePerUnitPerMonth | number: '1.2-2' }} / unit / month</td>
-                <td class="num" (click)="open(t.id)">{{ t.prepaidEnergyRebatePercent }}%</td>
-                <td class="num" (click)="open(t.id)">₹{{ t.emergencyCreditLimit | number: '1.2-2' }}</td>
-                <td class="num" (click)="open(t.id)">{{ t.slabCount }}</td>
-                <td class="num" (click)="open(t.id)">{{ t.touPeriodCount }}</td>
+            @for (t of visibleTariffs(); track t.id) {
+              <tr class="row-clickable" (click)="open(t.id)" (keydown.enter)="open(t.id)" tabindex="0">
+                <td>
+                  @if (t.scheduleCode) { <span class="code" [attr.data-v]="voltageLabel(t.voltageLevel)">{{ t.scheduleCode }}</span> } @else { <span class="muted">—</span> }
+                  <span class="volt">{{ voltageLabel(t.voltageLevel) }}</span>
+                </td>
+                <td class="name">{{ t.name }}</td>
+                <td>{{ categoryLabel(t.category) }}</td>
+                <td>{{ energyRate(t) }}</td>
+                <td>{{ fixedCharge(t) }}</td>
+                <td class="num">{{ t.prepaidEnergyRebatePercent }}%</td>
+                <td class="num">₹{{ t.emergencyCreditLimit | number: '1.0-0' }}</td>
+                <td>
+                  @if (bookStatus(t); as b) {
+                    @if (b.status === 'Matches') { <pe-status-badge label="Matches" tone="success" /> }
+                    @else { <span [title]="differenceText(t)"><pe-status-badge label="Differs" tone="warning" /></span> }
+                  } @else if (bookError()) { <span class="muted">—</span> } @else { <span class="muted" title="Not one of the book's schedules">Not in book</span> }
+                </td>
                 @if (isIt()) {
-                  <td><button type="button" class="btn-sm" (click)="reviseTariff(t.id)">Revise</button></td>
+                  <td (click)="$event.stopPropagation()"><button type="button" class="btn-sm" (click)="reviseTariff(t.id)">Revise</button></td>
                 }
               </tr>
             }
           </tbody>
         </table>
+      </div>
+      <p class="hint">{{ visibleTariffs().length }} of {{ tariffs().length }} tariff(s). Energy rates are per kWh, or per kVAh for HT, EHT and Industrial LT (billed on kWh until kVAh readings are ingested). Hover "Differs" to see what differs.</p>
+    }
+  } @else if (activeTab() === 'book') {
+    @if (bookError()) { <div class="error-panel">{{ bookError() }}</div> }
+
+    @if (bookCheck(); as b) {
+      <section class="card">
+        <h2 class="card__title">Tariffs compared with the book</h2>
+        <p class="hint">{{ b.book }}. {{ b.matches }} match, {{ b.differs }} differ, {{ b.missing }} missing.</p>
+        @if (attentionRows().length === 0) {
+          <p class="ok">Every schedule in the book has a tariff in force that matches it.</p>
+        } @else {
+          <ul class="diffs">
+            @for (r of attentionRows(); track r.scheduleCode) {
+              <li>
+                <div class="diffs__head">
+                  <span class="code">{{ r.scheduleCode }}</span>
+                  <strong>{{ r.name }}</strong>
+                  @if (r.status === 'Missing') { <pe-status-badge label="Missing" tone="danger" /> } @else { <pe-status-badge label="Differs" tone="warning" /> }
+                  @if (r.tariffId) { <a class="link" (click)="open(r.tariffId)" tabindex="0" (keydown.enter)="open(r.tariffId)">Open</a> }
+                  @if (r.tariffId && isIt()) { <button type="button" class="btn-sm" (click)="reviseTariff(r.tariffId)">Revise to match the book</button> }
+                </div>
+                @if (r.status === 'Missing') {
+                  <p class="muted">No active tariff carries this schedule. Draft one from the book's figures.</p>
+                } @else {
+                  <table class="diff-table">
+                    <thead><tr><th>Field</th><th>Book</th><th>In force</th></tr></thead>
+                    <tbody>@for (d of r.differences; track d.field) { <tr><td>{{ d.field }}</td><td>{{ d.book }}</td><td class="cur">{{ d.current }}</td></tr> }</tbody>
+                  </table>
+                }
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+
+    @if (parameters(); as p) {
+      <p class="hint">{{ p.source }}</p>
+      <div class="param-grid">
+        @for (s of p.sections; track s.title) {
+          <section class="card">
+            <h2 class="card__title">{{ s.title }}</h2>
+            <dl class="params">
+              @for (i of s.items; track i.label) {
+                <div>
+                  <dt>{{ i.label }}</dt>
+                  <dd>{{ i.value }}@if (i.note) { <small>{{ i.note }}</small> }</dd>
+                </div>
+              }
+            </dl>
+          </section>
+        }
       </div>
     }
   } @else {
@@ -122,7 +199,7 @@
               <tr class="row-clickable" (click)="open(t.id)">
                 <td>{{ t.name }}</td>
                 <td>{{ categoryLabel(t.category) }}</td>
-                <td class="num">₹{{ t.fixedChargePerUnitPerMonth | number: '1.2-2' }} / unit / month</td>
+                <td class="num">{{ fixedCharge(t) }}</td>
                 <td class="num">{{ t.prepaidEnergyRebatePercent }}%</td>
                 <td><pe-status-badge label="Retired" tone="neutral" /></td>
               </tr>

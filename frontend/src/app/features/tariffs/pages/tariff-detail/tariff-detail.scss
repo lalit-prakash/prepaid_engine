@@ -106,3 +106,5 @@
 .open-changes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .open-changes li { display: flex; align-items: center; gap: var(--space-3); }
 .open-changes__meta { color: var(--text-muted); font-size: var(--font-size-meta); }
+
+.code { display: inline-block; font-weight: 700; font-size: 12px; padding: 3px 9px; border-radius: 8px; background: var(--color-primary-lighter); color: var(--color-primary); }

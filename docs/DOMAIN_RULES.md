@@ -392,9 +392,15 @@ Report once one is built.
     `ConsumerId + MeterId + ProfileDate` — it waits for a real corrected re-ingest instead.
   - `DailyLoadProfile.ReceivedAt` (server-set at ingest, distinct from the meter/head-end's own
     `GeneratedAt`) is what the two stages actually bucket by.
-- **Daily charge**: `ChargeAmount = tariff.CalculateEnergyCharge(DLP total kWh) − prepaid rebate +
-  daily fixed charge`, debited once as a `WalletTransactionType.DailyDlpCharge` (reference
-  `DLP:<profile-id>`, or `DLP-PROV:<profile-id>` for a provisional estimate).
+- **Daily charge** (`DailyBillCalculator`, used by the run and the Calculation Workbench): `(energy charge −
+  prepaid rebate) + daily fixed charge + electricity duty + LT-side metering surcharge + TMC + CPMC + FPPAS
+  share`. The energy charge and the duty are worked on the **month-to-date** consumption (slab charge including
+  today less the same for the days before, read from the days already billed in the same calendar month), so slabs
+  continue across days and restart on the 1st. The fixed charge never uses less than the tariff's minimum
+  chargeable demand (HT 56 kVA). The total is rounded to paise and debited once as a
+  `WalletTransactionType.DailyDlpCharge` (reference `DLP:<profile-id>`, or `DLP-PROV:<profile-id>` for a
+  provisional estimate), and a `DailyBill` row records every component. Before FY 2026-27 the slabs restarted each
+  day and duty was left out; see [tariff-2026-27-comparison.md](tariff-2026-27-comparison.md).
 - `MeterAssignment` records a physical meter replacement (old/new meter id, closing/opening
   readings, reason) — the point of this audit trail is that an old meter's cumulative reading is
   **never** compared against a new meter's cumulative reading (they're different physical

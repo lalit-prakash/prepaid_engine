@@ -2,9 +2,9 @@
   <div class="page-header">
     <h1>Calculation Workbench</h1>
     <p class="page-header__subtitle">
-      <span class="simulation-flag">SIMULATION ONLY</span>
-      — never affects a real consumer, bill, or wallet. Every figure is computed by the real
-      backend domain methods, not re-derived here.
+      <span class="simulation-flag">Simulation only</span>
+      Works out one day's prepaid bill the way the daily billing run does, for any tariff. Nothing here touches a real consumer, bill or wallet, and every
+      figure comes from the same calculation billing uses.
     </p>
   </div>
 
@@ -15,85 +15,176 @@
   } @else if (tariffs().length === 0) {
     <div class="empty-panel">No tariffs are configured to simulate against.</div>
   } @else {
+    <div class="scenarios" role="group" aria-label="Example days">
+      <span class="scenarios__label">Try:</span>
+      @for (s of scenarios; track s.label) {
+        <button type="button" class="scenario" [title]="s.hint" (click)="applyScenario(s)">{{ s.label }}</button>
+      }
+    </div>
+
     <div class="workbench-grid">
       <section class="panel">
         <h2>Inputs</h2>
         <form (ngSubmit)="runSimulation()">
           <label>
             Tariff
-            <select name="tariff" [(ngModel)]="selectedTariffId">
-              @for (t of tariffs(); track t.id) {
-                <option [value]="t.id">{{ t.name }} ({{ categoryLabel(t.category) }})</option>
+            <select name="tariff" [(ngModel)]="selectedTariffId" (ngModelChange)="onTariffChange()">
+              @for (g of grouped(); track g.name) {
+                <optgroup [label]="g.name">
+                  @for (t of g.tariffs; track t.id) {
+                    <option [value]="t.id">{{ t.scheduleCode ? t.scheduleCode + ' · ' : '' }}{{ t.name }}</option>
+                  }
+                </optgroup>
               }
             </select>
-          </label>
-          <label>
-            Consumption (kWh)
-            <input type="number" min="0" step="1" name="consumption" [(ngModel)]="consumptionKwh" />
-          </label>
-          <label>
-            Connected Load / Contract Demand
-            <input type="number" min="0" step="0.5" name="load" [(ngModel)]="connectedLoadOrContractDemand" />
+            @if (selected(); as t) {
+              <span class="tariff-meta">{{ categoryLabel(t.category) }} · energy in {{ energyUnitLabel }}@if (isTimeOfDay) { · Time-of-Day }</span>
+            }
           </label>
 
+          <div class="row">
+            <label>
+              Today's consumption (kWh)
+              <input type="number" min="0" step="0.5" name="consumption" [(ngModel)]="consumptionKwh" />
+            </label>
+            <label>
+              Already this month (kWh)
+              <input type="number" min="0" step="1" name="mtd" [(ngModel)]="monthToDateKwh" />
+              <span class="field-hint">Before today. The slabs continue from here.</span>
+            </label>
+          </div>
+
+          <label>
+            Connected load / contract demand ({{ loadUnit }})
+            <input type="number" min="0" step="0.5" name="load" [(ngModel)]="load" />
+            @if (isAgriculture) {
+              <span class="check"><input type="checkbox" name="hp" [(ngModel)]="loadInHp" /> Enter in HP (1 HP = 0.746 kW)</span>
+            }
+          </label>
+
+          @if (isTimeOfDay) {
+            <fieldset class="options">
+              <legend>Consumption by Time-of-Day band ({{ energyUnitLabel }})</legend>
+              <div class="row row--three">
+                @for (b of bandLabels(); track b) {
+                  <label>{{ b }}<input type="number" min="0" step="1" [name]="'band-' + b" [(ngModel)]="bandKvah[b]" /></label>
+                }
+              </div>
+              <span class="field-hint">Leave empty and the whole day is priced at the Normal rate, which the result will say.</span>
+            </fieldset>
+          }
+
+          <button type="button" class="disclosure" (click)="optionsOpen.set(!optionsOpen())" [attr.aria-expanded]="optionsOpen()">
+            {{ optionsOpen() ? '▾' : '▸' }} Optional charges
+          </button>
+          @if (optionsOpen()) {
+            <fieldset class="options">
+              @if (isHighVoltage) {
+                <span class="check"><input type="checkbox" name="lt" [(ngModel)]="meteredOnLtSide" /> Metered on the LT side of the transformer (adds 3% of the energy charge)</span>
+              }
+              <div class="row">
+                <label>Transformer maintenance, per month (₹)<input type="number" min="0" step="1" name="tmc" [(ngModel)]="tmcMonthly" /></label>
+                <label>CT-PT maintenance, per month (₹)<input type="number" min="0" step="1" name="cpmc" [(ngModel)]="cpmcMonthly" /></label>
+              </div>
+              <div class="row">
+                <label>Last month's energy charge (₹)<input type="number" min="0" step="1" name="prior" [(ngModel)]="priorMonthEnergyCharge" /></label>
+                <label>FPPAS rate (%)<input type="number" step="0.01" name="fppas" [(ngModel)]="fppasRatePercent" /><span class="field-hint">Negative for a decrease.</span></label>
+              </div>
+            </fieldset>
+          }
+
           <div class="actions">
-            <button type="submit" [disabled]="simulating()">
-              {{ simulating() ? 'Calculating…' : 'Run Simulation' }}
-            </button>
+            <button type="submit" [disabled]="simulating()">{{ simulating() ? 'Calculating…' : 'Work out the day' }}</button>
             <button type="button" class="secondary" (click)="reset()">Reset</button>
           </div>
 
           @if (simulationError()) {
-            <p class="form-error">{{ simulationError() }}</p>
+            <p class="form-error" role="alert">{{ simulationError() }}</p>
           }
         </form>
       </section>
 
       <section class="panel">
-        <h2>Result</h2>
+        <h2>The day's bill</h2>
         @if (!result()) {
-          <p class="empty-note">Run a simulation to see the calculated charge breakdown.</p>
+          <p class="empty-note">Choose a tariff and press "Work out the day", or start from one of the example days above.</p>
         } @else {
           @let r = result()!;
+          <div class="headline">
+            <div>
+              <span class="headline__label">Debited from the wallet</span>
+              <span class="headline__value">₹{{ r.totalDebited | number: '1.2-2' }}</span>
+            </div>
+            <div class="headline__meta">{{ r.tariff.scheduleCode }} · {{ r.inputs.consumptionKwh | number: '1.0-2' }} {{ energyUnitLabel }} today, {{ r.inputs.monthToDateKwh | number: '1.0-2' }} before</div>
+          </div>
+
+          @if (segments().length > 0) {
+            <div class="stack" role="img" aria-label="Share of each charge in the day's bill">
+              @for (s of segments(); track s.label) { <span class="stack__seg" [style.flex-grow]="s.value" [style.background]="s.colour" [title]="s.label + ': ₹' + (s.value | number: '1.2-2')"></span> }
+            </div>
+            <ul class="legend">
+              @for (s of segments(); track s.label) { <li><span class="swatch" [style.background]="s.colour"></span>{{ s.label }} <b>{{ pctOfTotal(s.value) | number: '1.0-0' }}%</b></li> }
+            </ul>
+          }
+
           <ol class="trace">
             <li>
-              <div class="trace__label">Tariff</div>
-              <div class="trace__value">{{ r.tariff.name }}</div>
-            </li>
-            <li>
-              <div class="trace__label">Consumption</div>
-              <div class="trace__value num">{{ r.inputs.consumptionKwh | number: '1.0-2' }} kWh</div>
-            </li>
-            <li>
-              <div class="trace__label">Gross Energy Charge</div>
+              <div class="trace__label">Energy charge</div>
               <div class="trace__value num">₹{{ r.grossEnergyCharge | number: '1.2-2' }}</div>
+              <div class="trace__note">Slabs continued from {{ r.inputs.monthToDateKwh | number: '1.0-2' }} {{ energyUnitLabel }} already this month</div>
             </li>
             <li>
-              <div class="trace__label">Prepaid Rebate ({{ r.prepaidRebatePercent }}%)</div>
-              <div class="trace__value num trace__value--negative">-₹{{ r.rebateAmount | number: '1.2-2' }}</div>
+              <div class="trace__label">Prepaid rebate ({{ r.prepaidRebatePercent }}%)</div>
+              <div class="trace__value num trace__value--negative">−₹{{ r.rebateAmount | number: '1.2-2' }}</div>
             </li>
             <li class="trace--subtotal">
-              <div class="trace__label">Net Energy Charge</div>
+              <div class="trace__label">Net energy charge</div>
               <div class="trace__value num">₹{{ r.netEnergyCharge | number: '1.2-2' }}</div>
             </li>
             <li>
-              <div class="trace__label">Fixed Charge (Monthly)</div>
-              <div class="trace__value num">₹{{ r.fixedChargeMonthly | number: '1.2-2' }}</div>
-              <div class="trace__note">Daily-prorated: ₹{{ r.fixedChargeDaily | number: '1.4-4' }}</div>
+              <div class="trace__label">Fixed charge, today's share</div>
+              <div class="trace__value num">₹{{ r.fixedChargeDaily | number: '1.2-2' }}</div>
+              <div class="trace__note">₹{{ r.fixedChargeMonthly | number: '1.2-2' }} a month × 12 ÷ 365@if (r.tariff.minimumChargeableDemand) {, on at least {{ r.tariff.minimumChargeableDemand }} kVA }</div>
             </li>
             <li>
-              <div class="trace__label">Electricity Duty</div>
+              <div class="trace__label">Electricity duty</div>
               <div class="trace__value num">₹{{ r.electricityDuty | number: '1.2-2' }}</div>
             </li>
+            @if (r.ltSideMeteringSurcharge > 0) {
+              <li>
+                <div class="trace__label">LT-side metering surcharge (3%)</div>
+                <div class="trace__value num">₹{{ r.ltSideMeteringSurcharge | number: '1.2-2' }}</div>
+              </li>
+            }
+            @if (r.tmc > 0) {
+              <li>
+                <div class="trace__label">Transformer maintenance</div>
+                <div class="trace__value num">₹{{ r.tmc | number: '1.2-2' }}</div>
+              </li>
+            }
+            @if (r.cpmc > 0) {
+              <li>
+                <div class="trace__label">CT-PT maintenance</div>
+                <div class="trace__value num">₹{{ r.cpmc | number: '1.2-2' }}</div>
+              </li>
+            }
+            @if (r.fppasShare !== 0) {
+              <li>
+                <div class="trace__label">FPPAS, today's share</div>
+                <div class="trace__value num" [class.trace__value--negative]="r.fppasShare < 0">{{ r.fppasShare < 0 ? '−' : '' }}₹{{ (r.fppasShare < 0 ? -r.fppasShare : r.fppasShare) | number: '1.2-2' }}</div>
+              </li>
+            }
             <li class="trace--total">
-              <div class="trace__label">Total Monthly Charge</div>
-              <div class="trace__value num">₹{{ r.totalMonthlyCharge | number: '1.2-2' }}</div>
+              <div class="trace__label">Total for the day</div>
+              <div class="trace__value num">₹{{ r.total | number: '1.2-4' }}</div>
+              <div class="trace__note">Debited as ₹{{ r.totalDebited | number: '1.2-2' }}, rounded to paise</div>
             </li>
           </ol>
-          <p class="scope-note">
-            Excludes FPPAS, TMC, CPMC, and arrears — those require a real bill/consumer context
-            this simulator does not model.
-          </p>
+
+          @for (n of r.notes; track n) {
+            <p class="callout">{{ n }}</p>
+          }
+          <p class="scope-note">Not included: arrears (they need a real consumer's unpaid bills).</p>
         }
       </section>
     </div>

@@ -16,5 +16,7 @@ public enum ConsumerCategory
     Agriculture,
     Crematorium,
     ElectricVehicle,
-    KutirJyotiBpl
+    KutirJyotiBpl,
+    /// <summary>Metered public street lighting (tariff schedule PL).</summary>
+    PublicLighting
 }

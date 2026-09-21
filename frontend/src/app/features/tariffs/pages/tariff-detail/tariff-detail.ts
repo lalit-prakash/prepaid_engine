@@ -4,7 +4,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { TariffService } from '../../../../core/services/tariff.service';
 import { TariffVersionService } from '../../../../core/services/tariff-version.service';
 import { AuthService } from '../../../../core/services/auth.service';
-import { TariffDetail as TariffDetailModel, TariffLineage } from '../../../../core/models/tariff.model';
+import { FixedChargeBasis, TariffDetail as TariffDetailModel, TariffLineage, VoltageLevel } from '../../../../core/models/tariff.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 import { changeRequestStatusLabel, changeRequestStatusTone } from '../../../../shared/utils/tariff-change-request-status';
 import { TariffVersionSummary } from '../../../../core/models/tariff-version.model';
@@ -25,6 +25,19 @@ export class TariffDetail implements OnInit {
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
   protected readonly categoryLabel = categoryLabel;
+
+  protected voltageName(t: TariffDetailModel): string {
+    return t.voltageLevel === VoltageLevel.LT ? 'Low Tension' : t.voltageLevel === VoltageLevel.HT ? 'High Tension' : 'Extra High Tension';
+  }
+
+  protected fixedBasis(t: TariffDetailModel): string {
+    switch (t.fixedChargeBasis) {
+      case FixedChargeBasis.PerKva: return 'per kVA per month';
+      case FixedChargeBasis.PerKwOrHp: return 'per kW or HP per month';
+      case FixedChargeBasis.None: return 'no fixed charge';
+      default: return 'per kW per month';
+    }
+  }
 
   protected readonly lineage = signal<TariffLineage | null>(null);
   protected readonly lineageLoading = signal(true);

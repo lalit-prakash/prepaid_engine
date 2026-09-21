@@ -52,6 +52,12 @@ public static class TariffEndpoints
                     t.FixedChargePerUnitPerMonth,
                     t.PrepaidEnergyRebatePercent,
                     t.EmergencyCreditLimit,
+                    t.ScheduleCode,
+                    t.VoltageLevel,
+                    t.EnergyUnit,
+                    t.FixedChargeBasis,
+                    FirstSlabRate = t.Slabs.OrderBy(sl => sl.FromKwh).Select(sl => (decimal?)sl.RatePerKwh).FirstOrDefault(),
+                    NormalTouRate = t.TouPeriods.Where(p => p.Label == "Normal").Select(p => (decimal?)p.RatePerKvah).FirstOrDefault(),
                     SlabCount = t.Slabs.Count,
                     TouPeriodCount = t.TouPeriods.Count,
                 })
@@ -60,6 +66,24 @@ public static class TariffEndpoints
             return Results.Ok(tariffs);
         })
         .WithName("ListTariffs")
+        .RequireAuthorization();
+
+
+        // Each FY 2026-27 book schedule against the tariff in force for it: Matches, Differs (with the fields) or Missing. Read-only.
+        app.MapGet("/api/v1/tariffs/book-check", async (PrepaidEngineDbContext db) =>
+        {
+            var active = await db.Tariffs.AsNoTracking().Include(t => t.Slabs).Include(t => t.TouPeriods).Where(t => t.Status == PrepaidEngine.Domain.Enums.TariffLifecycleStatus.Active).ToListAsync();
+            var rows = PrepaidEngine.Infrastructure.Persistence.Seed.TariffBookCheck.Run(active);
+            return Results.Ok(new
+            {
+                Book = "MePDCL Electricity Distribution Tariff FY 2026-27, effective 1 April 2026",
+                Matches = rows.Count(r => r.Status == "Matches"),
+                Differs = rows.Count(r => r.Status == "Differs"),
+                Missing = rows.Count(r => r.Status == "Missing"),
+                Rows = rows,
+            });
+        })
+        .WithName("TariffBookCheck")
         .RequireAuthorization();
 
 
@@ -86,6 +110,13 @@ public static class TariffEndpoints
                 tariff.MaxVendAmountSinglePhase,
                 tariff.MinVendAmountThreePhase,
                 tariff.MaxVendAmountThreePhase,
+                tariff.ScheduleCode,
+                tariff.VoltageLevel,
+                tariff.EnergyUnit,
+                tariff.FixedChargeBasis,
+                tariff.MinimumChargeableDemand,
+                tariff.InitialCreditSinglePhase,
+                tariff.InitialCreditThreePhase,
                 Slabs = tariff.Slabs
                     .OrderBy(s => s.FromKwh)
                     .Select(s => new { s.Id, s.FromKwh, s.UpToKwh, s.RatePerKwh }),
@@ -482,59 +513,125 @@ public static class TariffEndpoints
         .RequireAuthorization("TariffGovernanceRole");
 
 
-        // Calculation Workbench — a SIMULATION-ONLY preview of a charge calculation for an arbitrary
-        // (tariff, consumption, load) combination, not tied to any real consumer/bill. Delegates every
-        // figure to the same domain methods (Tariff.CalculateEnergyCharge/CalculateFixedCharge/
-        // CalculateDailyFixedCharge, ElectricityDuty.Calculate) that production billing uses — the
-        // frontend must not duplicate this arithmetic itself (see docs/ARCHITECTURE.md's frontend
-        // calculation rule), it only renders whatever this endpoint returns.
+        // Calculation Workbench — a SIMULATION-ONLY preview of one day's prepaid bill for an arbitrary (tariff, consumption,
+        // load) combination, not tied to any real consumer, bill or wallet. It calls the same DailyBillCalculator the daily billing
+        // run debits from, so what it shows is what a real day would be charged — the frontend must not repeat this arithmetic
+        // (see docs/ARCHITECTURE.md's frontend calculation rule); it only renders what this endpoint returns.
         app.MapPost("/api/v1/calculation-workbench/simulate", async (SimulateChargeRequest request, PrepaidEngineDbContext db) =>
         {
             if (request.ConsumptionKwh < 0)
                 return Results.BadRequest(new { error = "Consumption cannot be negative." });
+            if (request.MonthToDateKwh < 0)
+                return Results.BadRequest(new { error = "Month-to-date consumption cannot be negative." });
             if (request.ConnectedLoadOrContractDemand < 0)
                 return Results.BadRequest(new { error = "Connected load / contract demand cannot be negative." });
+            if (request.TmcMonthly < 0 || request.CpmcMonthly < 0)
+                return Results.BadRequest(new { error = "Maintenance charges cannot be negative." });
+            if (request.DaysInMonth is < 28 or > 31)
+                return Results.BadRequest(new { error = "Days in the month must be from 28 to 31." });
 
-            var tariff = await db.Tariffs.Include(t => t.Slabs).FirstOrDefaultAsync(t => t.Id == request.TariffId);
+            var tariff = await db.Tariffs.Include(t => t.Slabs).Include(t => t.TouPeriods).FirstOrDefaultAsync(t => t.Id == request.TariffId);
             if (tariff is null)
                 return Results.NotFound(new { error = $"No tariff found with id '{request.TariffId}'." });
 
-            if (tariff.Slabs.Count == 0)
+            if (request.TouKvahByBand is { Count: > 0 })
             {
-                // Pure-ToD tariffs (IHT/IEHT) have no ordinary kWh slabs — CalculateEnergyCharge would
-                // silently return 0 for them, which would misrepresent a real charge as zero rather
-                // than reporting that this simulator doesn't support ToD-only tariffs yet.
-                return Results.BadRequest(new
-                {
-                    error = $"Tariff '{tariff.Name}' has no ordinary energy slabs (it is ToD-only) — this simulator does not yet support ToD-based simulation.",
-                });
+                if (tariff.TouPeriods.Count == 0)
+                    return Results.BadRequest(new { error = $"Tariff '{tariff.Name}' has no Time-of-Day bands." });
+                var known = tariff.TouPeriods.Select(p => p.Label).ToHashSet();
+                if (request.TouKvahByBand.Keys.FirstOrDefault(k => !known.Contains(k)) is { } unknown)
+                    return Results.BadRequest(new { error = $"'{unknown}' is not a Time-of-Day band on this tariff (bands: {string.Join(", ", known)})." });
+                if (request.TouKvahByBand.Values.Any(v => v < 0))
+                    return Results.BadRequest(new { error = "Band consumption cannot be negative." });
             }
 
-            var grossEnergyCharge = tariff.CalculateEnergyCharge(request.ConsumptionKwh);
-            var rebateAmount = grossEnergyCharge * (tariff.PrepaidEnergyRebatePercent / 100m);
-            var netEnergyCharge = grossEnergyCharge - rebateAmount;
-            var fixedChargeMonthly = tariff.CalculateFixedCharge(request.ConnectedLoadOrContractDemand);
-            var fixedChargeDaily = tariff.CalculateDailyFixedCharge(request.ConnectedLoadOrContractDemand);
-            var electricityDuty = ElectricityDuty.Calculate(tariff.Category, request.ConsumptionKwh);
-            var totalMonthlyCharge = netEnergyCharge + fixedChargeMonthly + electricityDuty;
+            var loadKw = request.LoadInHp ? TariffBookParameters.HpToKw(request.ConnectedLoadOrContractDemand) : request.ConnectedLoadOrContractDemand;
+            var fppasShare = request.PriorMonthEnergyCharge > 0 && request.FppasRatePercent != 0
+                ? new FppasCharge(Guid.NewGuid(), request.PriorMonthEnergyCharge, request.FppasRatePercent / 100m, DateTime.UtcNow).AllocateAcrossDaysRoundedToCents(request.DaysInMonth)[0]
+                : 0m;
+
+            var bill = DailyBillCalculator.Calculate(new DailyBillInput(
+                tariff, loadKw, request.ConsumptionKwh, request.MonthToDateKwh, request.MeteredOnLtSide, request.TmcMonthly, request.CpmcMonthly, fppasShare, request.TouKvahByBand));
 
             return Results.Ok(new
             {
                 Simulation = true,
-                Tariff = new { tariff.Id, tariff.Name, tariff.Category },
-                Inputs = new { request.ConsumptionKwh, request.ConnectedLoadOrContractDemand },
-                GrossEnergyCharge = grossEnergyCharge,
+                Tariff = new
+                {
+                    tariff.Id, tariff.Name, tariff.Category, tariff.ScheduleCode, tariff.VoltageLevel, tariff.EnergyUnit, tariff.FixedChargeBasis,
+                    tariff.FixedChargePerUnitPerMonth, tariff.PrepaidEnergyRebatePercent, tariff.MinimumChargeableDemand,
+                    IsTimeOfDay = tariff.Slabs.Count == 0 && tariff.TouPeriods.Count > 0,
+                    Bands = tariff.TouPeriods.OrderBy(p => p.StartTime).Select(p => p.Label),
+                },
+                Inputs = new { request.ConsumptionKwh, request.MonthToDateKwh, LoadUsed = loadKw, request.LoadInHp, request.MeteredOnLtSide },
+                bill.GrossEnergyCharge,
                 PrepaidRebatePercent = tariff.PrepaidEnergyRebatePercent,
-                RebateAmount = rebateAmount,
-                NetEnergyCharge = netEnergyCharge,
-                FixedChargeMonthly = fixedChargeMonthly,
-                FixedChargeDaily = fixedChargeDaily,
-                ElectricityDuty = electricityDuty,
-                TotalMonthlyCharge = totalMonthlyCharge,
+                RebateAmount = bill.PrepaidRebate,
+                bill.NetEnergyCharge,
+                FixedChargeDaily = bill.FixedCharge,
+                FixedChargeMonthly = tariff.CalculateFixedCharge(loadKw),
+                ElectricityDuty = bill.ElectricityDuty,
+                LtSideMeteringSurcharge = bill.LtSideMeteringSurcharge,
+                Tmc = bill.Tmc,
+                Cpmc = bill.Cpmc,
+                FppasShare = bill.FppasShare,
+                Total = bill.Total,
+                TotalDebited = bill.TotalRounded,
+                bill.Notes,
             });
         })
         .WithName("SimulateCharge")
         .RequireAuthorization("Authenticated");
+
+        // The tariff book's fixed figures (prepaid facilities, duty, maintenance, reconnection, surcharge): one source for what the
+        // Tariff & Parameters screen shows and what billing uses.
+        app.MapGet("/api/v1/tariff-parameters", () =>
+        {
+            static object Item(string label, string value, string? note = null) => new { Label = label, Value = value, Note = note };
+            string R(decimal v) => "₹" + v.ToString("#,##0.##", System.Globalization.CultureInfo.InvariantCulture);
+            string P(decimal v) => (v * 100m).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+            return Results.Ok(new
+            {
+                Source = "MePDCL Electricity Distribution Tariff FY 2026-27, effective 1 April 2026 (MSERC Order on Case No. 11 of 2025)",
+                Sections = new object[]
+                {
+                    new { Title = "Prepaid meter facilities (§22)", Items = new[]
+                    {
+                        Item("Rebate on energy charge", TariffBookParameters.PrepaidEnergyRebatePercent + "%", "All categories. Applied to the energy charge only, not to fixed charge, duty or FPPAS."),
+                        Item("Load security deposit", "None", "Not levied on prepaid consumers (§22.2, §1.3.5)."),
+                        Item("Emergency credit in the meter", $"{R(TariffBookParameters.EmergencyCreditGeneralPurpose)} General Purpose, {R(TariffBookParameters.EmergencyCreditOthers)} other categories"),
+                        Item("Recharge (vend) limits", $"Min {R(TariffBookParameters.MinimumVendAmount)}; max {R(15000)} single phase, {R(25000)} three phase; General Purpose {R(50000)} / {R(100000)}", "Shown per tariff below. The book prints one minimum, ₹500, read here as applying to every category."),
+                        Item("Initial credit on installation", $"{R(100)} single phase, {R(200)} three phase; General Purpose {R(1000)} / {R(5000)}", "Adjusted against the first vend."),
+                        Item("Consumer friendly credit hours", TariffBookParameters.CreditHours, "See the note on disconnection windows in docs/tariff-2026-27-comparison.md."),
+                        Item("Running out of credit", "Not a disconnection", "The meter cut is not a disconnection; supply resumes on recharge (§13.8), so no reconnection charge applies."),
+                    } },
+                    new { Title = "How the daily bill is built", Items = new[]
+                    {
+                        Item("Energy charge", "Slab charge on month-to-date consumption, less the same for the days before", "Slabs continue across the calendar month, so a day that crosses 100 kWh is priced part at each slab."),
+                        Item("Fixed charge", "Monthly rate × demand × 12 / 365, every day", "Also on days with no consumption. HT is never billed on less than 56 kVA."),
+                        Item("Electricity duty", $"{R(0.05m)} Domestic & BPL; {R(0.06m)} others; Industrial {R(0.05m)} first 15,000 units, {R(0.045m)} next 25,000, {R(0.03m)} after", "Per unit, on consumption, added to each day's bill."),
+                        Item("Agriculture load", $"1 HP = {TariffBookParameters.KwPerHp} kW", "Fixed charge is per kW or per HP."),
+                        Item("LT-side metering surcharge", P(TariffBookParameters.LtSideMeteringSurchargeRate) + " of energy charges", "Where an HT consumer is metered on the LT side of the transformer, or supplied at a lower voltage than classified."),
+                        Item("Time-of-Day (IHT, IEHT)", "Normal 06:00-17:00, Peak 17:00-23:00 (+20%), Off-peak 23:00-06:00 (-15%)", "Needs consumption per band; without it the day is priced at the Normal rate and the bill says so."),
+                    } },
+                    new { Title = "Maintenance charges (§4, §5), only if opted for", Items = new[]
+                    {
+                        Item("Transformer (TMC)", $"{R(TransformerMaintenanceCharge.RatePerKvaPerMonth_11kVor33kV)} per kVA per month at 11 kV and 33 kV; {R(TransformerMaintenanceCharge.RatePerKvaPerMonth_132kV)} at 132 kV"),
+                        Item("CT-PT set (CPMC)", $"{R(800)} 11 kV 3-wire; {R(1000)} 11 kV 4-wire; {R(1500)} 33 kV 3-wire; {R(1900)} 33 kV 4-wire, per month"),
+                    } },
+                    new { Title = "Disconnection, reconnection and late payment (§12-§14)", Items = new[]
+                    {
+                        Item("Reconnection after non-payment", $"{R(TariffBookParameters.ReconnectionChargeSinglePhaseLt)} single phase LT; {R(TariffBookParameters.ReconnectionChargeThreePhaseLtBelow50Kw)} three phase LT below 50 kW; {R(TariffBookParameters.ReconnectionChargeHt)} HT", "Not charged if the bill is paid within one month of disconnection."),
+                        Item("Disconnection / reconnection for other reasons", R(TariffBookParameters.DisconnectReconnectFeeOtherThanNonPayment) + " each"),
+                        Item("Delayed payment charge", P(TariffBookParameters.DelayedPaymentChargeRatePer30Days) + " per 30 days on the outstanding amount, excluding duty", "Postpaid bills, due 15 days from billing. Not applied to prepaid daily bills."),
+                        Item("Interest after disconnection for non-payment", P(TariffBookParameters.DisconnectionInterestRatePerYear) + " a year, simple interest, until reconnection"),
+                    } },
+                },
+            });
+        })
+        .WithName("TariffBookParameters")
+        .RequireAuthorization();
 
 
         // --- Tariff version history: append-only record of parameter changes, enabling a Tariff -------

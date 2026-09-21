@@ -10,7 +10,10 @@
       <div>
         <h1>{{ t.name }}</h1>
         <div class="detail-header__meta">
+          @if (t.scheduleCode) { <span class="code">{{ t.scheduleCode }}</span> }
           <span>{{ categoryLabel(t.category) }}</span>
+          <span>·</span>
+          <span>{{ voltageName(t) }}</span>
           <span>·</span>
           @if (t.status === 0) { <pe-status-badge label="Active" tone="success" /> }
           @else { <pe-status-badge label="Retired" tone="neutral" /> }
@@ -25,7 +28,7 @@
       <div class="summary-tile">
         <div class="summary-tile__label">Fixed Charge</div>
         <div class="summary-tile__value num">₹{{ t.fixedChargePerUnitPerMonth | number: '1.2-2' }}</div>
-        <div class="summary-tile__note">per unit (kW/kVA) per month</div>
+        <div class="summary-tile__note">{{ fixedBasis(t) }}@if (t.minimumChargeableDemand) { · never on less than {{ t.minimumChargeableDemand }} kVA }</div>
       </div>
       <div class="summary-tile">
         <div class="summary-tile__label">Prepaid Rebate</div>
@@ -36,6 +39,13 @@
         <div class="summary-tile__label">Emergency Credit Limit</div>
         <div class="summary-tile__value num">₹{{ t.emergencyCreditLimit | number: '1.2-2' }}</div>
       </div>
+      @if (t.initialCreditSinglePhase !== null || t.initialCreditThreePhase !== null) {
+        <div class="summary-tile">
+          <div class="summary-tile__label">Initial Credit</div>
+          <div class="summary-tile__value num">₹{{ t.initialCreditSinglePhase | number: '1.0-0' }} / ₹{{ t.initialCreditThreePhase | number: '1.0-0' }}</div>
+          <div class="summary-tile__note">single / three phase, adjusted on the first recharge</div>
+        </div>
+      }
     </section>
 
     <div class="detail-grid">
