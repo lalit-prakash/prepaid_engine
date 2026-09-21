@@ -29,7 +29,7 @@ public static class ReportExports
 
     public static readonly string[] Keys = { Billing, RechargeFailures, MeterCreditFailures };
 
-    private static readonly string[] HierarchyHeaders = { "Zone", "Circle", "Division", "Sub-division", "Substation", "Feeder", "DTR" };
+    private static readonly string[] HierarchyHeaders = { "Zone", "Circle", "Division", "Subdivision", "Sub Station", "Feeder", "Feeder code", "DTR", "DTR Code" };
 
     public static string[] Headers(string key) => key switch
     {
@@ -82,7 +82,9 @@ public static class ReportExports
                 SubDivision = x.c.Dtr!.Feeder.Substation.SubDivision.Name,
                 Substation = x.c.Dtr!.Feeder.Substation.Name,
                 Feeder = x.c.Dtr!.Feeder.Name,
+                FeederCode = x.c.Dtr!.Feeder.Code,
                 Dtr = x.c.Dtr!.Name,
+                DtrCode = x.c.Dtr!.Code,
                 x.t.Category, TariffName = x.t.Name,
                 Net = x.b.EnergyChargeGross - x.b.PrepaidRebateAmount,
                 x.b.FixedCharge, x.b.ElectricityDutyAmount, x.b.FppasAmount, x.b.Amount, x.b.AmountPaid, x.b.Status,
@@ -91,7 +93,7 @@ public static class ReportExports
 
         return rows.Select(r => new ExportRow(r.GeneratedAt, r.Id, new string?[]
         {
-            When(r.GeneratedAt), r.AccountNumber, r.Name, r.Zone, r.Circle, r.Division, r.SubDivision, r.Substation, r.Feeder, r.Dtr,
+            When(r.GeneratedAt), r.AccountNumber, r.Name, r.Zone, r.Circle, r.Division, r.SubDivision, r.Substation, r.Feeder, r.FeederCode, r.Dtr, r.DtrCode,
             r.Category.ToString(), r.TariffName, Money(r.Net), Money(r.FixedCharge), Money(r.ElectricityDutyAmount), Money(r.FppasAmount),
             Money(r.Amount), Money(r.AmountPaid), r.Status.ToString(),
         })).ToList();
@@ -119,14 +121,16 @@ public static class ReportExports
                 SubDivision = x.c.Dtr!.Feeder.Substation.SubDivision.Name,
                 Substation = x.c.Dtr!.Feeder.Substation.Name,
                 Feeder = x.c.Dtr!.Feeder.Name,
+                FeederCode = x.c.Dtr!.Feeder.Code,
                 Dtr = x.c.Dtr!.Name,
+                DtrCode = x.c.Dtr!.Code,
                 x.r.Amount, x.r.RmsReferenceId, x.r.Status,
             })
             .ToListAsync(ct);
 
         return rows.Select(r => new ExportRow(r.InitiatedAt, r.Id, new string?[]
         {
-            When(r.InitiatedAt), r.AccountNumber, r.Name, r.Zone, r.Circle, r.Division, r.SubDivision, r.Substation, r.Feeder, r.Dtr,
+            When(r.InitiatedAt), r.AccountNumber, r.Name, r.Zone, r.Circle, r.Division, r.SubDivision, r.Substation, r.Feeder, r.FeederCode, r.Dtr, r.DtrCode,
             Money(r.Amount), r.RmsReferenceId, r.Status.ToString(),
         })).ToList();
     }
@@ -153,14 +157,16 @@ public static class ReportExports
                 SubDivision = x.c.Dtr!.Feeder.Substation.SubDivision.Name,
                 Substation = x.c.Dtr!.Feeder.Substation.Name,
                 Feeder = x.c.Dtr!.Feeder.Name,
+                FeederCode = x.c.Dtr!.Feeder.Code,
                 Dtr = x.c.Dtr!.Name,
+                DtrCode = x.c.Dtr!.Code,
                 x.m.CreditAmount, x.m.Status, x.m.RetryCount, x.m.ResponseCode, x.m.ErrorMessage,
             })
             .ToListAsync(ct);
 
         return rows.Select(r => new ExportRow(r.CreatedAt, r.Id, new string?[]
         {
-            When(r.CreatedAt), r.AccountNumber, r.Name, r.Zone, r.Circle, r.Division, r.SubDivision, r.Substation, r.Feeder, r.Dtr,
+            When(r.CreatedAt), r.AccountNumber, r.Name, r.Zone, r.Circle, r.Division, r.SubDivision, r.Substation, r.Feeder, r.FeederCode, r.Dtr, r.DtrCode,
             Money(r.CreditAmount), r.Status.ToString(), r.RetryCount.ToString(CultureInfo.InvariantCulture), r.ResponseCode, r.ErrorMessage,
         })).ToList();
     }

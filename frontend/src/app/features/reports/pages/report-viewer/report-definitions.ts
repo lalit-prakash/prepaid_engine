@@ -35,10 +35,12 @@ const HIERARCHY_COLUMNS: ReportColumn[] = [
   { key: 'zone', label: 'Zone', type: 'text' },
   { key: 'circle', label: 'Circle', type: 'text' },
   { key: 'division', label: 'Division', type: 'text' },
-  { key: 'subDivision', label: 'Sub-division', type: 'text' },
-  { key: 'substation', label: 'Substation', type: 'text' },
+  { key: 'subDivision', label: 'Subdivision', type: 'text' },
+  { key: 'substation', label: 'Sub Station', type: 'text' },
   { key: 'feeder', label: 'Feeder', type: 'text' },
+  { key: 'feederCode', label: 'Feeder code', type: 'text' },
   { key: 'dtr', label: 'DTR', type: 'text' },
+  { key: 'dtrCode', label: 'DTR Code', type: 'text' },
 ];
 const GROUP_COLUMN: ReportColumn = { key: 'group', label: 'Network group', type: 'text', groupedOnly: true };
 

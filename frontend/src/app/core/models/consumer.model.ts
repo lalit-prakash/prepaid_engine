@@ -96,7 +96,9 @@ export interface ConsumerNetwork {
   subDivision: string | null;
   substation: string | null;
   feeder: string | null;
+  feederCode: string | null;
   dtr: string | null;
+  dtrCode: string | null;
 }
 
 export interface ConsumerDetail {

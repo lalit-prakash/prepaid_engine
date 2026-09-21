@@ -180,7 +180,9 @@ public static class ConsumerEndpoints
                     SubDivision = c.Dtr!.Feeder.Substation.SubDivision.Name,
                     Substation = c.Dtr!.Feeder.Substation.Name,
                     Feeder = c.Dtr!.Feeder.Name,
+                    FeederCode = c.Dtr!.Feeder.Code,
                     Dtr = c.Dtr!.Name,
+                    DtrCode = c.Dtr!.Code,
                 })
                 .FirstAsync();
 

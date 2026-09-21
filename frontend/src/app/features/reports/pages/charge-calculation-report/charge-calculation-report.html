@@ -34,7 +34,7 @@
       <p class="network-line">
         <strong>Network:</strong>
         {{ n.zone ?? 'Not mapped' }} › {{ n.circle ?? '—' }} › {{ n.division ?? '—' }} › {{ n.subDivision ?? '—' }} ›
-        {{ n.substation ?? '—' }} › {{ n.feeder ?? '—' }} › {{ n.dtr ?? '—' }}
+        {{ n.substation ?? '—' }} › {{ n.feeder ?? '—' }}@if (n.feederCode) { ({{ n.feederCode }}) } › {{ n.dtr ?? '—' }}@if (n.dtrCode) { ({{ n.dtrCode }}) }
       </p>
     }
     @if (billLoadError()) {
