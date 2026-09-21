@@ -1,7 +1,7 @@
 # API reference
 
 Every HTTP endpoint the Prepaid Engine API exposes: method, path, who may call it, and its parameters.
-Generated from the running app (137 endpoints), so it matches the code. Do not edit by hand; regenerate with:
+Generated from the running app (139 endpoints), so it matches the code. Do not edit by hand; regenerate with:
 
 ```
 ASPNETCORE_ENVIRONMENT=Production Jwt__Key=<any 32+ characters> dotnet run --project backend/PrepaidEngine.Api -- dump-endpoints docs/API_REFERENCE.md
@@ -264,6 +264,13 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | Method | Path | Access | Parameters |
 |---|---|---|---|
 | GET | `/api/v1/roles` | `ITRole` (Admin, IT) | none |
+
+## Settings
+
+| Method | Path | Access | Parameters |
+|---|---|---|---|
+| GET | `/api/v1/settings` | `ITRole` (Admin, IT) | none |
+| PUT | `/api/v1/settings` | `ITRole` (Admin, IT) | **body** `SaveSettingsRequest` { `values` Dictionary<string, string>? } |
 
 ## SLA
 

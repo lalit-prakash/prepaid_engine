@@ -37,6 +37,10 @@ if (args.Length == 2 && args[0] == "hash-password")
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Values saved in System Settings override appsettings for the settings the engine declares editable (see Settings/).
+((Microsoft.Extensions.Configuration.IConfigurationBuilder)builder.Configuration).Add(new PrepaidEngine.Api.Settings.DbSettingsConfigurationSource(builder.Configuration.GetConnectionString("PrepaidEngine")));
+builder.Services.AddSingleton<PrepaidEngine.Api.Settings.SettingsReloader>();
+
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
@@ -77,7 +81,8 @@ builder.Services.AddScoped<IEmergencyCreditGuard, EmergencyCreditGuard>();
 builder.Services.Configure<PrepaidEngine.Application.Wallets.LowBalanceOptions>(builder.Configuration.GetSection(PrepaidEngine.Application.Wallets.LowBalanceOptions.SectionName));
 if (!(builder.Configuration.GetSection(PrepaidEngine.Application.Wallets.LowBalanceOptions.SectionName).Get<PrepaidEngine.Application.Wallets.LowBalanceOptions>() ?? new()).IsValid)
     throw new InvalidOperationException("LowBalance:ThresholdRs must be zero or more.");
-builder.Services.AddScoped<IBillingEngineService, BillingEngineService>();
+// Services that read editable settings get the per-request options snapshot, so a saved change applies without a restart.
+builder.Services.AddScoped<IBillingEngineService>(sp => Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<BillingEngineService>(sp, sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsSnapshot<PrepaidEngine.Application.Wallets.LowBalanceOptions>>()));
 
 // Full report exports built in the background (see Reports/ReportJobs).
 builder.Services.Configure<PrepaidEngine.Api.Reports.ReportJobs.ReportJobOptions>(builder.Configuration.GetSection(PrepaidEngine.Api.Reports.ReportJobs.ReportJobOptions.SectionName));
@@ -85,18 +90,18 @@ builder.Services.AddScoped<PrepaidEngine.Api.Reports.ReportJobs.ReportJobRunner>
 builder.Services.AddHostedService<PrepaidEngine.Api.Reports.ReportJobs.ReportJobWorker>();
 
 // Daily wallet totals for the balance-history chart (see DailyWalletStat).
-builder.Services.AddScoped<PrepaidEngine.Infrastructure.Wallets.WalletStatsService>();
+builder.Services.AddScoped<PrepaidEngine.Infrastructure.Wallets.WalletStatsService>(sp => Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<PrepaidEngine.Infrastructure.Wallets.WalletStatsService>(sp, sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsSnapshot<PrepaidEngine.Application.Wallets.LowBalanceOptions>>()));
 builder.Services.AddHostedService<PrepaidEngine.Api.Wallets.WalletStatsWorker>();
 
 // BP/LS/IP/Events ingestion + cross-source energy validation — see IMeterDataIngestionService's
 // doc comment. Never bills anything; DLP billing stays entirely in IBillingEngineService above.
 builder.Services.Configure<EnergyValidationOptions>(builder.Configuration.GetSection(EnergyValidationOptions.SectionName));
-builder.Services.AddScoped<IMeterDataIngestionService, MeterDataIngestionService>();
+builder.Services.AddScoped<IMeterDataIngestionService>(sp => Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<MeterDataIngestionService>(sp, sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsSnapshot<EnergyValidationOptions>>()));
 
 // Real SLA performance for DLP ingestion/billing/recharge/meter-credit/RC-DC — see
 // ISlaMonitoringService's doc comment. Targets configurable via appsettings.json.
 builder.Services.Configure<SlaMonitoringOptions>(builder.Configuration.GetSection(SlaMonitoringOptions.SectionName));
-builder.Services.AddScoped<ISlaMonitoringService, SlaMonitoringService>();
+builder.Services.AddScoped<ISlaMonitoringService>(sp => Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<SlaMonitoringService>(sp, sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsSnapshot<SlaMonitoringOptions>>()));
 
 // Local/demo background processing for the daily billing cycle — see the worker's own doc
 // comment for why this is intentionally simple.
@@ -201,6 +206,7 @@ app.MapReportEndpoints();
 app.MapLiveRcDcReport();
 app.MapConsumerListEndpoints();
 app.MapUserEndpoints();
+PrepaidEngine.Api.Settings.SettingsEndpoints.MapSettingsEndpoints(app);
 app.MapDashboardAnalyticsEndpoints();
 app.MapReportJobEndpoints();
 app.MapNetworkEndpoints();
