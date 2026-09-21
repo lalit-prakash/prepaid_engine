@@ -1,68 +1,150 @@
 <div class="consumer-list">
   <div class="page-header">
-    <h1>Consumers</h1>
-    <p class="page-header__subtitle">Prepaid consumers, wallet balance and connection state.</p>
-  </div>
-
-  <div class="toolbar">
-    <input
-      #searchBox
-      type="search"
-      aria-label="Search consumers"
-      placeholder="Search account, meter or mobile number, or name…"
-      [value]="searchTerm()"
-      (input)="onSearchInput($any($event.target).value)"
-    />
-    <select aria-label="Filter by connection status" (change)="onStatusChange($any($event.target).value)">
-      <option value="" [selected]="statusFilter() === null">All statuses</option>
-      @for (o of statusOptions; track o.value) {
-        <option [value]="o.value" [selected]="statusFilter() === o.value">{{ o.label }}</option>
-      }
-    </select>
-    <label class="toolbar__check">
-      <input type="checkbox" [checked]="lowBalanceOnly()" (change)="onLowBalanceChange($any($event.target).checked)" />
-      Low balance only
-    </label>
-    @if (hasActiveFilters) {
-      <button type="button" class="toolbar__clear" (click)="clearFilters()">Clear filters</button>
-    }
-  </div>
-
-  @if (loading() && items().length === 0) {
-    <div class="table-skeleton" aria-busy="true">
-      @for (i of [1,2,3]; track i) { <div class="table-skeleton__row"></div> }
+    <div>
+      <h1>Consumers</h1>
+      <p class="page-header__subtitle">Prepaid consumers, wallet balance and connection state, from the zone down to the DTR.</p>
     </div>
-  } @else if (error()) {
+  </div>
+
+  @if (stats(); as s) {
+    <section class="kpi-row" aria-label="Postpaid to prepaid conversion">
+      <pe-kpi-card [tile]="true" label="Total Consumers" [value]="s.total" tone="primary" icon="users"
+        sublabel="all consumers" [clickable]="true" (click)="selectConversion('')" />
+      <pe-kpi-card [tile]="true" label="Converted to Prepaid" [value]="s.converted" tone="success" icon="bolt"
+        sublabel="postpaid to prepaid, completed" [clickable]="true" (click)="selectConversion('Completed')" />
+      <pe-kpi-card [tile]="true" label="Conversion Pending" [value]="s.pending" tone="warning" icon="clock"
+        sublabel="requested or approved" [clickable]="true" (click)="selectConversion('Pending')" />
+      <pe-kpi-card [tile]="true" label="Conversion Rejected" [value]="s.rejected" tone="danger" icon="alert"
+        sublabel="request rejected" [clickable]="true" (click)="selectConversion('Rejected')" />
+    </section>
+  } @else if (statsError()) {
+    <div class="error-panel">Could not load the summary counts from the API.</div>
+  } @else {
+    <div class="skeleton-row">
+      @for (i of [1,2,3,4]; track i) { <div class="skeleton-card"></div> }
+    </div>
+  }
+
+  <section class="card filters" aria-label="Search and filter">
+    <h2 class="card__title">Search &amp; Filter</h2>
+    <form class="filters__grid" (ngSubmit)="search()">
+      <label class="f">Consumer number
+        <input type="search" name="consumerNumber" [(ngModel)]="form.consumerNumber" placeholder="RR / consumer number" />
+      </label>
+      <label class="f">Meter number
+        <input type="search" name="meterNumber" [(ngModel)]="form.meterNumber" placeholder="Meter serial (MSN)" />
+      </label>
+      <label class="f">Name or mobile
+        <input type="search" name="q" [(ngModel)]="form.q" placeholder="Consumer name or mobile" />
+      </label>
+      <label class="f">Connection
+        <select name="status" [(ngModel)]="form.status">
+          <option value="">All</option>
+          @for (o of statusOptions; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
+        </select>
+      </label>
+      <label class="f">Zone
+        <select name="zoneId" [(ngModel)]="form.zoneId" (ngModelChange)="onZoneChange()">
+          <option value="">All</option>
+          @for (z of zones(); track z.id) { <option [value]="z.id">{{ z.name }}</option> }
+        </select>
+      </label>
+      <label class="f">Circle
+        <select name="circleId" [(ngModel)]="form.circleId" (ngModelChange)="onCircleChange()" [disabled]="!form.zoneId">
+          <option value="">All</option>
+          @for (c of circles(); track c.id) { <option [value]="c.id">{{ c.name }}</option> }
+        </select>
+      </label>
+      <label class="f">Division
+        <select name="divisionId" [(ngModel)]="form.divisionId" (ngModelChange)="onDivisionChange()" [disabled]="!form.circleId">
+          <option value="">All</option>
+          @for (d of divisions(); track d.id) { <option [value]="d.id">{{ d.name }}</option> }
+        </select>
+      </label>
+      <label class="f">Subdivision
+        <select name="subDivisionId" [(ngModel)]="form.subDivisionId" [disabled]="!form.divisionId">
+          <option value="">All</option>
+          @for (d of subDivisions(); track d.id) { <option [value]="d.id">{{ d.name }}</option> }
+        </select>
+      </label>
+      <label class="f">Conversion
+        <select name="conversion" [(ngModel)]="form.conversion">
+          <option value="">All</option>
+          <option value="Completed">Converted to prepaid</option>
+          <option value="Pending">Conversion pending</option>
+          <option value="Rejected">Conversion rejected</option>
+        </select>
+      </label>
+      <label class="f">Conversion date from
+        <input type="date" name="from" [(ngModel)]="form.from" />
+      </label>
+      <label class="f">Conversion date to
+        <input type="date" name="to" [(ngModel)]="form.to" />
+      </label>
+      <div class="filters__actions">
+        <button type="button" class="btn btn--ghost" (click)="reset()">Reset</button>
+        <button type="submit" class="btn btn--primary">Search</button>
+        <button type="button" class="btn btn--excel" (click)="download()" [disabled]="downloading()" title="Download the filtered list as an Excel file">
+          {{ downloading() ? 'Preparing…' : 'Download Excel' }}
+        </button>
+      </div>
+      <p class="filters__hint" [class.filters__hint--warn]="!!downloadError()">
+        {{ downloadError() ?? 'Download exports the filtered list (up to 100,000 consumers; narrow by division or subdivision for more).' }}
+      </p>
+    </form>
+  </section>
+
+  @if (list.loading() && list.items().length === 0) {
+    <div class="skeleton-row"><div class="skeleton-card"></div></div>
+  } @else if (list.error()) {
     <div class="error-panel">
-      {{ error() }}
-      <button type="button" class="toolbar__clear" (click)="retry()">Retry</button>
+      {{ list.error() }}
+      <button type="button" class="toolbar__clear" (click)="list.load()">Retry</button>
     </div>
-  } @else if (items().length === 0) {
+  } @else if (list.items().length === 0) {
     <div class="empty-panel">
       {{ hasActiveFilters ? 'No consumers match these filters.' : 'No consumers have been onboarded yet.' }}
     </div>
   } @else {
-    <div class="table-wrap" [class.table-wrap--loading]="loading()">
-      <table>
+    <div class="table-wrap" [class.table-wrap--loading]="list.loading()">
+      <table class="wide">
         <thead>
           <tr>
+            <th>Zone</th>
+            <th>Circle</th>
+            <th>Division</th>
+            <th>Subdivision</th>
+            <th>Sub Station</th>
+            <th>Feeder</th>
+            <th>Feeder code</th>
+            <th>DTR</th>
+            <th>DTR Code</th>
             <th>Account</th>
             <th>Name</th>
             <th>Mobile</th>
             <th>Meter</th>
             <th>Connection</th>
             <th class="num">Wallet balance</th>
-            <th>Balance status</th>
+            <th>Conversion date</th>
             <th>Last recharge</th>
           </tr>
         </thead>
         <tbody>
-          @for (c of items(); track c.accountNumber) {
+          @for (c of list.items(); track c.accountNumber) {
             <tr (click)="open(c.accountNumber)" (keydown.enter)="open(c.accountNumber)" tabindex="0" class="row-clickable">
-              <td>{{ c.accountNumber }}</td>
+              <td>{{ c.zone ?? '—' }}</td>
+              <td>{{ c.circle ?? '—' }}</td>
+              <td>{{ c.division ?? '—' }}</td>
+              <td>{{ c.subDivision ?? '—' }}</td>
+              <td>{{ c.substation ?? '—' }}</td>
+              <td>{{ c.feeder ?? '—' }}</td>
+              <td class="mono">{{ c.feederCode ?? '—' }}</td>
+              <td>{{ c.dtr ?? '—' }}</td>
+              <td class="mono">{{ c.dtrCode ?? '—' }}</td>
+              <td class="mono">{{ c.accountNumber }}</td>
               <td>{{ c.name }}</td>
               <td>{{ c.mobileNumber ?? '—' }}</td>
-              <td>{{ c.meterNumber }}</td>
+              <td class="mono">{{ c.meterNumber }}</td>
               <td>
                 @switch (c.connectionStatus) {
                   @case (ConnectionStatus.Active) { <pe-status-badge label="Active" tone="success" /> }
@@ -72,10 +154,7 @@
                 }
               </td>
               <td class="num">₹{{ c.walletBalance | number: '1.2-2' }}</td>
-              <td>
-                @if (c.lowBalance) { <pe-status-badge label="Low balance" tone="warning" /> }
-                @else { <pe-status-badge label="OK" tone="success" /> }
-              </td>
+              <td>{{ c.conversionDate ? (c.conversionDate | date: 'dd-MM-yyyy') : '—' }}</td>
               <td>{{ c.lastRechargeAt ? (c.lastRechargeAt | date: 'd MMM y, HH:mm') : 'No recharge yet' }}</td>
             </tr>
           }
@@ -84,10 +163,10 @@
     </div>
 
     <div class="pager">
-      <span>{{ totalCount() }} consumer(s){{ hasActiveFilters ? ' match' : '' }} · page {{ pageIndex() + 1 }}</span>
+      <span>{{ list.totalCount() | number }} consumer(s){{ hasActiveFilters ? ' match' : '' }} · page {{ list.pageIndex() + 1 }}</span>
       <span class="pager__buttons">
-        <button type="button" (click)="previousPage()" [disabled]="pageIndex() === 0 || loading()">Previous</button>
-        <button type="button" (click)="nextPage()" [disabled]="!nextCursor() || loading()">Next</button>
+        <button type="button" (click)="list.previous()" [disabled]="list.pageIndex() === 0 || list.loading()">Previous</button>
+        <button type="button" (click)="list.next()" [disabled]="!list.nextCursor() || list.loading()">Next</button>
       </span>
     </div>
   }

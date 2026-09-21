@@ -150,9 +150,27 @@ export interface ConsumerListItem {
   connectionStatus: ConnectionStatus;
   meterNumber: string;
   walletBalance: number;
-  emergencyCreditLimit: number;
-  lowBalance: boolean;
+  /** Conversion date of the consumer's latest completed postpaid-to-prepaid conversion; null when they have none. */
+  conversionDate: string | null;
   lastRechargeAt: string | null;
+  /** Network position of the consumer's DTR; all null when not mapped to a DTR yet. */
+  zone: string | null;
+  circle: string | null;
+  division: string | null;
+  subDivision: string | null;
+  substation: string | null;
+  feeder: string | null;
+  feederCode: string | null;
+  dtr: string | null;
+  dtrCode: string | null;
+}
+
+/** GET /api/v1/consumers/summary: counts of consumers by postpaid-to-prepaid conversion state, computed by the database. */
+export interface ConsumerSummaryStats {
+  total: number;
+  converted: number;
+  pending: number;
+  rejected: number;
 }
 
 export interface ConsumerSearchPage {

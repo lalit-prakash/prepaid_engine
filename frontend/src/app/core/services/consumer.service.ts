@@ -8,6 +8,7 @@ import {
   ConnectivityResult,
   ConsumerDetail,
   ConsumerSearchPage,
+  ConsumerSummaryStats,
   ConsumerSummary,
   RechargeRequest,
   RechargeResult,
@@ -20,6 +21,32 @@ import {
  * backend remains the sole source of billing/wallet truth (see
  * core/models/consumer.model.ts's Wallet doc comment).
  */
+/** The Consumers list filters, as the search and export endpoints take them. `consumerNumber` matches account numbers only. */
+export interface ConsumerFilters {
+  consumerNumber?: string;
+  meterNumber?: string;
+  q?: string;
+  status?: ConnectionStatus | null;
+  /** Completed, Pending or Rejected: consumers with a conversion request in that state. */
+  conversion?: string;
+  from?: string;
+  to?: string;
+  zoneId?: string;
+  circleId?: string;
+  divisionId?: string;
+  subDivisionId?: string;
+}
+
+function filterParams(p: ConsumerFilters): Record<string, string> {
+  const query: Record<string, string> = {};
+  if (p.status !== null && p.status !== undefined) query['status'] = ConnectionStatus[p.status];
+  for (const k of ['consumerNumber', 'meterNumber', 'q', 'conversion', 'from', 'to', 'zoneId', 'circleId', 'divisionId', 'subDivisionId'] as const) {
+    const v = p[k]?.trim();
+    if (v) query[k] = v;
+  }
+  return query;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ConsumerService {
   private readonly baseUrl = `${environment.apiBaseUrl}/api/v1/consumers`;
@@ -30,14 +57,23 @@ export class ConsumerService {
     return this.http.get<ConsumerSummary[]>(this.baseUrl);
   }
 
-  search(params: { q?: string; status?: ConnectionStatus | null; lowBalance?: boolean; after?: string | null; pageSize?: number }): Observable<ConsumerSearchPage> {
-    const query: Record<string, string> = {};
-    if (params.q?.trim()) query['q'] = params.q.trim();
-    if (params.status !== null && params.status !== undefined) query['status'] = ConnectionStatus[params.status];
-    if (params.lowBalance) query['lowBalance'] = 'true';
+  search(params: ConsumerFilters & { after?: string | null; pageSize?: number }): Observable<ConsumerSearchPage> {
+    const query = filterParams(params);
     if (params.after) query['after'] = params.after;
     if (params.pageSize) query['pageSize'] = String(params.pageSize);
     return this.http.get<ConsumerSearchPage>(`${this.baseUrl}/search`, { params: query });
+  }
+
+  /** GET /consumers/summary: consumer counts by conversion state. */
+  summary(): Observable<ConsumerSummaryStats> {
+    return this.http.get<ConsumerSummaryStats>(`${this.baseUrl}/summary`);
+  }
+
+  /** GET /consumers/export: the filtered list as an Excel file (the API refuses more than 100,000 rows). */
+  exportExcel(params: ConsumerFilters): Observable<Blob> {
+    const query = filterParams(params);
+    query['tzOffsetMinutes'] = String(-new Date().getTimezoneOffset());
+    return this.http.get(`${this.baseUrl}/export`, { params: query, responseType: 'blob' });
   }
 
   /** PUT /api/v1/consumers/{account}/mobile: the API normalises the number and answers 400 with a message if it is not valid. */
