@@ -276,10 +276,9 @@ consumer's meter, and is now wired into two real endpoints:
 - Says nothing about the transport (STS/DLMS/COSEM/vendor API) — no such integration exists
   yet; a future real `IConnectivityCommandClient` adapter would plug in the same way a real
   `IMeterCommandClient` adapter would for meter credit.
-- **"Happy Hours" window (spec-required):** `POST /api/v1/consumers/{accountNumber}/disconnect`
-  and the retry endpoint (when retrying a `Disconnect` command) both reject with `400` outside
-  9:00 AM-2:00 PM IST (a fixed UTC+5:30 offset, not the server's own timezone). The spec (see below) also exempts public holidays on the Nagaland
-  State Govt calendar — this project has no holiday-calendar concept, so only the daily window is
+- **Disconnection window (tariff book §22.4):** prepaid consumers have credit hours from 4:00 PM to 11:00 AM, so `POST /api/v1/consumers/{accountNumber}/disconnect`
+  and the retry endpoint (when retrying a `Disconnect` command) reject with `400` outside 11:00 AM-4:00 PM IST (a fixed UTC+5:30 offset, not the server's own
+  timezone; `DisconnectionWindow`). This replaces the earlier 9 AM-2 PM "Happy Hours" window. The book also has credit hours on official holidays — this project has no holiday-calendar concept, so only the daily window is
   enforced; the holiday gap is a known, documented limitation, not silently ignored.
 
 ### Prepaid conversion, billing reconciliation, and the AMISP integration requirement doc
@@ -340,8 +339,8 @@ first-bill generation):
   calculation is entirely outside this system and is not modeled here.
 - `GET /api/v1/reconciliation-adjustments` and `.../{id}` expose the applied-adjustment history.
 
-**Minimum recharge (spec section 6):** `POST /api/v1/consumers/{accountNumber}/recharge` now
-rejects amounts under Rs. 500 with `400`. This floor applies only to genuine top-ups — a
+**Minimum recharge (tariff book §22.6):** `POST /api/v1/consumers/{accountNumber}/recharge` enforces the consumer's tariff's vend limits with `400`: a Rs. 500
+minimum for General Purpose only, and the per-phase maximum (Rs. 15,000 / 25,000; General Purpose Rs. 50,000 / 1,00,000). These apply only to genuine top-ups — a
 reconciliation adjustment (above) is a separate endpoint and is never subject to it, matching the
 spec's own distinction between a recharge and a reconciliation-mode entry.
 
@@ -566,9 +565,8 @@ the daily DLP charge:
 - Balance becomes positive again while the consumer is Disconnected **for exactly that reason** →
   auto-dispatch a Reconnect `ConnectivityCommand` and queue an `AutoReconnected` notification.
 
-Deliberately does not apply the manual RC/DC endpoint's "Happy Hours" (9 AM-2 PM) dispatch window
-— that window exists for operator-initiated actions, and a wallet crossing the emergency-credit
-line is a system-triggered event with no such restriction in the source requirement.
+The disconnect half honours the disconnection window (11 AM-4 PM IST, book §22.4): outside it the consumer stays connected and `DeferredDisconnectionWorker`
+(every 5 minutes) disconnects those still past the emergency-credit line once the window opens. Reconnection is never held back.
 - **Explicitly out of scope for this phase** (per the spec's own "known limitations" section,
   and this project's discipline of never building a fake version of something real):
   a formal VEE (validation/estimation/editing) service with configurable thresholds, a real SMS

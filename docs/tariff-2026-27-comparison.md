@@ -38,10 +38,10 @@ computed · **Open** needs a decision or data the system does not have.
 |---|---|---|---|---|
 | Emergency credit | ₹2,000 General Purpose, ₹200 others | Per tariff, only DLT (₹200) | Set per tariff in the catalogue (GP and BS ₹2,000) | Fixed |
 | Vend limits | Max ₹15,000 single phase, ₹25,000 three phase; General Purpose ₹50,000 / ₹1,00,000 | Per tariff, only DLT | Set per tariff | Fixed |
-| Minimum vend | ₹500 printed once beside the General Purpose row | ₹500 on DLT | ₹500 on every schedule. *The table's layout makes it unclear whether ₹500 applies to General Purpose only or to every category; read here as every category* | Open (please confirm) |
+| Minimum vend | ₹500 printed once beside the General Purpose row | ₹500 on DLT | ₹500 on General Purpose only; every other schedule has no minimum. The recharge endpoint no longer applies a blanket ₹500: it enforces the consumer's own tariff's minimum and maximum (the tariff limits were previously not enforced at all) | Fixed (decided: as the book) |
 | Initial credit | ₹100 / ₹200 (single / three phase); General Purpose ₹1,000 / ₹5,000, adjusted in the first vend | Not stored | Stored on each tariff and shown. **Not applied to a wallet**: nothing installs a meter or vends first in this system yet | Recorded |
 | No load security deposit | §22.2, §1.3.5 | Not charged | Same | Same |
-| Credit hours | "From 4:00 PM to 11:00 AM and official holidays" | The RC/DC screen and API allow a manual disconnect between **9:00 AM and 2:00 PM** ("Happy Hours", from the AMISP integration document) | **Unchanged**: the book's credit hours would mean disconnection only between 11:00 and 16:00. The two sources disagree, and the project rule is that the tariff book wins, but changing it alters the disconnect window and the dashboard tile | **Open (needs a decision)** |
+| Credit hours | "From 4:00 PM to 11:00 AM and official holidays" | The RC/DC screen and API allow a manual disconnect between **9:00 AM and 2:00 PM** ("Happy Hours", from the AMISP integration document) | **Disconnection is allowed only between 11:00 AM and 4:00 PM IST.** The 9 AM to 2 PM window is gone. Manual disconnects outside it are refused. The automatic disconnect when the balance passes the emergency credit is held until the window opens: a background worker (every 5 minutes) disconnects then those still over the limit. Reconnection is never held back. Official holidays are not modelled (no holiday calendar) and are stated as such | Fixed (decided: as the book) |
 | Running out of credit | Not a disconnection (§13.8) | No reconnection charge is levied | Same, and stated on the parameters screen | Same |
 
 ## 3. How the daily prepaid bill is generated
@@ -56,8 +56,8 @@ This is where the engine differed most from the book.
 | Electricity duty | **Left out of the debit** | Added each day; Industrial tiers run across the month |
 | LT-side metering surcharge, TMC, CPMC, FPPAS share | Left out | In the calculation. The daily run passes zero for them because the system does not yet record per consumer whether they apply (metering side, opted-in maintenance, a notified FPPAS rate). The Calculation Workbench previews them |
 | Record of the bill | Only a wallet debit for one number | A `DailyBill` row per day with every component, the month-to-date it started from, the tariff, and any assumption made |
-| Time-of-Day (IHT, IEHT) | Priced as zero energy (no slabs) | Priced by band when band consumption is given; otherwise all at the Normal rate, and the bill says so. The daily load profile carries no per-band data |
-| kVAh schedules (HT, EHT, ILT) | Billed on kWh, silently | Still billed on kWh, and the bill says so. The daily load profile carries kWh only |
+| Time-of-Day (IHT, IEHT) | Priced as zero energy (no slabs) | Split into bands from the load survey intervals MDM sends every 15 or 30 minutes (each interval goes to the band its IST start time falls in). Energy the intervals do not cover, or a day with no intervals, is priced at the Normal rate and the bill says so |
+| kVAh schedules (HT, EHT, ILT) | Billed on kWh, silently | Billed on the daily load profile's kVAh. Electricity duty stays on kWh units. A day whose profile has no kVAh falls back to kWh and the bill says so. The bill records the energy and unit it was worked on |
 
 The daily run and the Calculation Workbench call the same `DailyBillCalculator`, so what the workbench shows is what a real day is debited.
 
@@ -72,14 +72,15 @@ The daily run and the Calculation Workbench call the same `DailyBillCalculator`,
 
 ## 5. Things found that need your decision
 
-1. **Credit hours (4 PM to 11 AM) against the 9 AM to 2 PM disconnect window.** See section 2.
-2. **The active DLT tariff in the development database is not the book's.** It reads ₹105 fixed, 3% rebate and slabs from 5.70, from earlier
-   testing through the change workflow. The book check shows exactly how it differs, and "Revise to match the book" starts a change request.
-   Nothing was changed automatically.
-3. **Minimum vend.** See section 2.
-4. **kVAh and per-band data.** HT, EHT and Time-of-Day billing is only exact once the daily load profile carries kVAh and per-band
-   consumption.
-5. **Per-consumer facts** (LT-side metering, opted-in TMC and CPMC, a notified FPPAS rate) need somewhere to be recorded before the daily run can
+Decided, and done: credit hours (disconnection 11 AM to 4 PM only), the development DLT tariff (the demo seed now replaces any seeded tariff that
+differs from the book with the book version and moves its consumers, so the book check reads 19 of 19; a real deployment uses the change workflow),
+minimum recharge (General Purpose only), kVAh and Time-of-Day billing (from the daily load profile's kVAh and the load survey intervals). Also
+fixed on the way: activating a tariff revision now moves the tariff's consumers to the new version (they used to stay on the retired one, so a
+revision never reached billing).
+
+Still open:
+
+1. **Per-consumer facts** (LT-side metering, opted-in TMC and CPMC, a notified FPPAS rate) need somewhere to be recorded before the daily run can
    apply them.
 
 ## 6. Not applicable to prepaid daily billing (kept as reference)

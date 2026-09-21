@@ -23,6 +23,9 @@ public class LoadSurveyInterval
     public DateTime IntervalStart { get; private set; }
     public DateTime IntervalEnd { get; private set; }
     public decimal ImportKwh { get; private set; }
+
+    /// <summary>Apparent energy in the interval, when the meter reports it. Used, with the interval's time, to split a Time-of-Day consumer's day into bands.</summary>
+    public decimal? ImportKvah { get; private set; }
     public DateTime ReceivedAt { get; private set; }
     public string? SourceReference { get; private set; }
 
@@ -34,8 +37,11 @@ public class LoadSurveyInterval
         DateTime intervalEnd,
         decimal importKwh,
         DateTime receivedAt,
-        string? sourceReference = null)
+        string? sourceReference = null,
+        decimal? importKvah = null)
     {
+        if (importKvah < 0)
+            throw new ArgumentOutOfRangeException(nameof(importKvah), "Interval consumption cannot be negative.");
         if (intervalEnd <= intervalStart)
             throw new ArgumentOutOfRangeException(nameof(intervalEnd), "Interval end must be after interval start.");
         if (importKwh < 0)
@@ -47,6 +53,7 @@ public class LoadSurveyInterval
         IntervalStart = intervalStart;
         IntervalEnd = intervalEnd;
         ImportKwh = importKwh;
+        ImportKvah = importKvah;
         ReceivedAt = receivedAt;
         SourceReference = sourceReference;
     }

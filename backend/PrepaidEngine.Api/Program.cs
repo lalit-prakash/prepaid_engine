@@ -74,7 +74,9 @@ builder.Services.AddSingleton<IPaymentModeChangeClient, MockPaymentModeChangeCli
 
 // Central emergency-credit disconnect/reconnect policy — see IEmergencyCreditGuard's doc comment.
 // Scoped since it holds a scoped PrepaidEngineDbContext.
-builder.Services.AddScoped<IEmergencyCreditGuard, EmergencyCreditGuard>();
+builder.Services.AddScoped<IEmergencyCreditGuard>(sp => new EmergencyCreditGuard(sp.GetRequiredService<PrepaidEngineDbContext>(), sp.GetRequiredService<IConnectivityCommandClient>(), TimeProvider.System, enforceCreditHours: true));
+builder.Services.AddScoped<PrepaidEngine.Infrastructure.Connectivity.DeferredDisconnectionService>();
+builder.Services.AddHostedService<PrepaidEngine.Api.Connectivity.DeferredDisconnectionWorker>();
 
 // The DLP billing pipeline service — see IBillingEngineService's doc comment. Scoped (not
 // singleton) since it holds a scoped PrepaidEngineDbContext.

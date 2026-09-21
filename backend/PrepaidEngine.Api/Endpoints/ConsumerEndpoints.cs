@@ -181,10 +181,10 @@ public static class ConsumerEndpoints
                 return Results.Conflict(new { error = $"Cannot disconnect a consumer whose connection status is {consumer.ConnectionStatus}." });
             }
 
-            // "Happy Hours" — disconnection may only be dispatched 9:00 AM-2:00 PM (spec section 5).
+            // Disconnection may only be dispatched 11:00 AM-4:00 PM IST (tariff book 22.4: credit hours 4 PM to 11 AM).
             if (!IsWithinDisconnectWindow(DateTime.UtcNow))
             {
-                return Results.BadRequest(new { error = "Disconnection can only be dispatched between 9:00 AM and 2:00 PM (Happy Hours)." });
+                return Results.BadRequest(new { error = "Disconnection can only be dispatched between 11:00 AM and 4:00 PM IST: prepaid consumers have credit hours from 4:00 PM to 11:00 AM." });
             }
 
             consumer.RequestDisconnection();
@@ -319,13 +319,9 @@ public static class ConsumerEndpoints
             if (request.Amount <= 0)
                 return Results.BadRequest(new { error = "Amount must be positive." });
 
-            // Rs. 500 minimum recharge (AMISP integration requirement doc section 6). This endpoint is
-            // for genuine top-ups only — an RMS-driven reconciliation adjustment (which can be small or
-            // negative by design, per the same spec section) goes through
-            // POST /api/v1/consumers/{accountNumber}/reconciliation-adjustments instead, so no exemption
-            // is needed here.
-            if (request.Amount < MinimumRechargeAmount)
-                return Results.BadRequest(new { error = $"Minimum recharge amount is Rs. {MinimumRechargeAmount}." });
+            // The recharge (vend) limits are the consumer's tariff's, as the tariff book gives them (22.6): a maximum per meter phase, and a minimum
+            // only for General Purpose. This endpoint is for genuine top-ups only; an RMS-driven reconciliation adjustment (small or negative by design)
+            // goes through POST /api/v1/consumers/{accountNumber}/reconciliation-adjustments instead.
 
             // The idempotency key must come from the caller and stay stable across their own retries
             // of this logical request — a server-generated key would defeat the whole guarantee, since
@@ -334,10 +330,17 @@ public static class ConsumerEndpoints
                 return Results.BadRequest(new { error = "IdempotencyKey is required and must be stable across retries of the same recharge attempt." });
 
             var consumer = await db.Consumers
+                .Include(c => c.Meter)
                 .Include(c => c.Wallet).ThenInclude(w => w.Transactions)
                 .FirstOrDefaultAsync(c => c.AccountNumber == accountNumber);
             if (consumer is null)
                 return Results.NotFound();
+
+            if (consumer.TariffId is { } assignedTariff && await db.Tariffs.AsNoTracking().FirstOrDefaultAsync(t => t.Id == assignedTariff) is { } vendTariff)
+            {
+                try { vendTariff.ValidateVendAmount(request.Amount, consumer.Meter.Phase); }
+                catch (ArgumentOutOfRangeException ex) { return Results.BadRequest(new { error = ex.Message.Split(" (Parameter")[0] }); }
+            }
 
             var idempotencyKey = request.IdempotencyKey;
             var correlationId = Guid.NewGuid().ToString("N");

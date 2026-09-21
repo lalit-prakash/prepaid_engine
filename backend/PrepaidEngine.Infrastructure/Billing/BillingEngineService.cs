@@ -85,9 +85,10 @@ public class BillingEngineService : IBillingEngineService
             {
                 rejected = new DailyLoadProfile(
                     Guid.NewGuid(), request.ConsumerId, request.MeterId, request.ProfileDate, request.GeneratedAt,
-                    request.StartCumulativeKwh, request.EndCumulativeKwh, receivedAt, isProvisional: false, request.SourceReference);
+                    request.StartCumulativeKwh, request.EndCumulativeKwh, receivedAt, isProvisional: false, request.SourceReference,
+                    request.StartCumulativeKvah, request.EndCumulativeKvah);
             }
-            catch (ArgumentOutOfRangeException ex)
+            catch (ArgumentException ex)
             {
                 // Also internally inconsistent (end < start) — report that instead, it's the more
                 // specific problem.
@@ -110,9 +111,10 @@ public class BillingEngineService : IBillingEngineService
 
             try
             {
-                existing.ReplaceWithActual(request.StartCumulativeKwh, request.EndCumulativeKwh, request.GeneratedAt, receivedAt, request.SourceReference);
+                existing.ReplaceWithActual(request.StartCumulativeKwh, request.EndCumulativeKwh, request.GeneratedAt, receivedAt, request.SourceReference,
+                    request.StartCumulativeKvah, request.EndCumulativeKvah);
             }
-            catch (ArgumentOutOfRangeException ex)
+            catch (ArgumentException ex)
             {
                 return new DailyLoadProfileIngestResult(existing.Id, existing.Status.ToString(), false, ex.Message);
             }
@@ -126,9 +128,10 @@ public class BillingEngineService : IBillingEngineService
         {
             profile = new DailyLoadProfile(
                 Guid.NewGuid(), request.ConsumerId, request.MeterId, request.ProfileDate, request.GeneratedAt,
-                request.StartCumulativeKwh, request.EndCumulativeKwh, receivedAt, isProvisional: false, request.SourceReference);
+                request.StartCumulativeKwh, request.EndCumulativeKwh, receivedAt, isProvisional: false, request.SourceReference,
+                    request.StartCumulativeKvah, request.EndCumulativeKvah);
         }
-        catch (ArgumentOutOfRangeException ex)
+        catch (ArgumentException ex)
         {
             return new DailyLoadProfileIngestResult(Guid.Empty, "Rejected", false, ex.Message);
         }
@@ -202,10 +205,22 @@ public class BillingEngineService : IBillingEngineService
             var monthToDate = (await _db.DailyLoadProfiles
                     .Where(d => consumerIds.Contains(d.ConsumerId) && d.ProfileDate >= monthStart && d.ProfileDate < billingDate
                         && (d.Status == DailyProfileStatus.Billed || d.Status == DailyProfileStatus.Provisional || d.Status == DailyProfileStatus.Reconciled))
-                    .Select(d => new { d.ConsumerId, d.TotalKwh })
+                    .Select(d => new { d.ConsumerId, d.TotalKwh, d.TotalKvah })
                     .ToListAsync(cancellationToken))
                 .GroupBy(x => x.ConsumerId)
-                .ToDictionary(g => g.Key, g => g.Sum(x => x.TotalKwh));
+                .ToDictionary(g => g.Key, g => new MonthToDate(g.Sum(x => x.TotalKwh), g.Sum(x => x.TotalKvah ?? x.TotalKwh)));
+
+            // Time-of-Day tariffs (IHT, IEHT) bill each band at its own rate, so their day is split using the load survey intervals MDM sends every 15 or 30 minutes.
+            var dayStartUtc = DateTime.SpecifyKind(billingDate.ToDateTime(TimeOnly.MinValue) - DisconnectionWindow.IstOffset, DateTimeKind.Utc);
+            var todConsumerIds = batch.Where(c => tariffs.TryGetValue(c.TariffId!.Value, out var tt) && tt.Slabs.Count == 0 && tt.TouPeriods.Count > 0).Select(c => c.Id).ToList();
+            var surveyByConsumer = todConsumerIds.Count == 0
+                ? new Dictionary<Guid, List<SurveyInterval>>()
+                : (await _db.LoadSurveyIntervals
+                        .Where(l => todConsumerIds.Contains(l.ConsumerId) && l.IntervalStart >= dayStartUtc && l.IntervalStart < dayStartUtc.AddDays(1))
+                        .Select(l => new { l.ConsumerId, l.IntervalStart, l.ImportKwh, l.ImportKvah })
+                        .ToListAsync(cancellationToken))
+                    .GroupBy(l => l.ConsumerId)
+                    .ToDictionary(g => g.Key, g => g.Select(l => new SurveyInterval(DateTime.SpecifyKind(l.IntervalStart, DateTimeKind.Utc), l.ImportKwh, l.ImportKvah)).ToList());
             var heldConsumers = isStage2
                 ? (await _db.MeterBillingControls.Where(c => consumerIds.Contains(c.ConsumerId) && c.ActualBillingBlocked)
                     .Select(c => c.ConsumerId).ToListAsync(cancellationToken)).ToHashSet()
@@ -225,7 +240,7 @@ public class BillingEngineService : IBillingEngineService
                         continue;
 
                     processed++;
-                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, monthToDate.GetValueOrDefault(consumer.Id), cancellationToken) is { } r1)
+                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, monthToDate.GetValueOrDefault(consumer.Id), surveyByConsumer.GetValueOrDefault(consumer.Id), cancellationToken) is { } r1)
                         AddResult(results, r1);
                     continue;
                 }
@@ -249,7 +264,7 @@ public class BillingEngineService : IBillingEngineService
                 {
                     // Arrived after Stage 1's cutoff but by Stage 2's: bill it now, for real.
                     processed++;
-                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, monthToDate.GetValueOrDefault(consumer.Id), cancellationToken) is { } r2)
+                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, monthToDate.GetValueOrDefault(consumer.Id), surveyByConsumer.GetValueOrDefault(consumer.Id), cancellationToken) is { } r2)
                         AddResult(results, r2);
                     continue;
                 }
@@ -279,11 +294,13 @@ public class BillingEngineService : IBillingEngineService
                     .Take(ProvisionalEstimationWindow)
                     .ToListAsync(cancellationToken);
                 var estimatedKwh = recentValid.Count > 0 ? recentValid.Average(d => d.TotalKwh) : 0m;
+                // An estimate has a kVAh figure only when every recent day it was averaged from did.
+                decimal? estimatedKvah = recentValid.Count > 0 && recentValid.All(d => d.TotalKvah.HasValue) ? recentValid.Average(d => d.TotalKvah!.Value) : null;
 
-                var provisional = DailyLoadProfile.CreateProvisional(Guid.NewGuid(), consumer.Id, consumer.Meter.Id, billingDate, DateTime.UtcNow, estimatedKwh);
+                var provisional = DailyLoadProfile.CreateProvisional(Guid.NewGuid(), consumer.Id, consumer.Meter.Id, billingDate, DateTime.UtcNow, estimatedKwh, estimatedKvah);
                 _db.DailyLoadProfiles.Add(provisional);
 
-                var breakdown = DailyBillCalculator.Calculate(new DailyBillInput(tariff, consumer.ConnectedLoadKw, estimatedKwh, monthToDate.GetValueOrDefault(consumer.Id)));
+                var breakdown = BuildBill(tariff, consumer, estimatedKwh, estimatedKvah, monthToDate.GetValueOrDefault(consumer.Id), surveyByConsumer.GetValueOrDefault(consumer.Id));
                 var chargeAmount = breakdown.TotalRounded;
                 _db.DailyBills.Add(new DailyBill(Guid.NewGuid(), consumer.Id, tariff.Id, billingDate, $"DLP-PROV:{provisional.Id}", isProvisional: true, breakdown, DateTime.UtcNow));
                 if (chargeAmount > 0)
@@ -380,7 +397,7 @@ public class BillingEngineService : IBillingEngineService
     /// <summary>Shared real-DLP charging logic for both stages: posts one direct debit from the DLP's own
     /// total kWh, idempotent on the DLP's own reference.</summary>
     private async Task<DailyProcessingResult?> ChargeFromDlpAsync(
-        Consumer consumer, DailyLoadProfile dlp, Tariff? tariff, HashSet<string> billedRefs, string stage, decimal monthToDateKwhBefore, CancellationToken cancellationToken)
+        Consumer consumer, DailyLoadProfile dlp, Tariff? tariff, HashSet<string> billedRefs, string stage, MonthToDate monthToDate, List<SurveyInterval>? survey, CancellationToken cancellationToken)
     {
         if (dlp.TotalKwh < 0)
             return new DailyProcessingResult(consumer.Id, stage, true, false, 0, true, "DLP has negative total consumption.");
@@ -392,7 +409,7 @@ public class BillingEngineService : IBillingEngineService
         if (billedRefs.Contains(reference) || dlp.Status == DailyProfileStatus.Billed)
             return new DailyProcessingResult(consumer.Id, stage, true, false, 0, true, "This DLP has already been billed.");
 
-        var breakdown = DailyBillCalculator.Calculate(new DailyBillInput(tariff, consumer.ConnectedLoadKw, dlp.TotalKwh, monthToDateKwhBefore));
+        var breakdown = BuildBill(tariff, consumer, dlp.TotalKwh, dlp.TotalKvah, monthToDate, survey);
         var chargeAmount = breakdown.TotalRounded;
         _db.DailyBills.Add(new DailyBill(Guid.NewGuid(), consumer.Id, tariff.Id, dlp.ProfileDate, reference, isProvisional: false, breakdown, DateTime.UtcNow));
         if (chargeAmount > 0)
@@ -430,6 +447,27 @@ public class BillingEngineService : IBillingEngineService
 
         await _db.SaveChangesAsync(cancellationToken);
         return assignment;
+    }
+
+    /// <summary>Consumption already billed earlier in the calendar month, in kWh and in kVAh (a day without a kVAh reading counts its kWh).</summary>
+    private readonly record struct MonthToDate(decimal Kwh, decimal Kvah);
+
+    /// <summary>One day's bill: the calculator's, with the day's kVAh and, for a Time-of-Day tariff, its bands from the load survey.</summary>
+    private static DailyBillBreakdown BuildBill(Tariff tariff, Consumer consumer, decimal dayKwh, decimal? dayKvah, MonthToDate monthToDate, List<SurveyInterval>? survey)
+    {
+        IReadOnlyDictionary<string, decimal>? bands = null;
+        string? bandNote = null;
+        if (tariff.Slabs.Count == 0 && tariff.TouPeriods.Count > 0 && survey is { Count: > 0 })
+        {
+            var billedInKvah = tariff.EnergyUnit == EnergyUnit.Kvah && dayKvah.HasValue;
+            var split = TimeOfDaySplit.Split(tariff, survey, billedInKvah ? dayKvah!.Value : dayKwh, billedInKvah);
+            bands = split?.ByBand;
+            bandNote = split?.Note;
+        }
+
+        var bill = DailyBillCalculator.Calculate(new DailyBillInput(
+            tariff, consumer.ConnectedLoadKw, dayKwh, monthToDate.Kwh, TouKvahByBand: bands, DayKvah: dayKvah, MonthToDateKvahBefore: monthToDate.Kvah));
+        return bandNote is null ? bill : bill with { Notes = bill.Notes.Append(bandNote).ToList() };
     }
 
     private async Task RaiseCreditNotificationsAsync(Consumer consumer, CancellationToken cancellationToken)

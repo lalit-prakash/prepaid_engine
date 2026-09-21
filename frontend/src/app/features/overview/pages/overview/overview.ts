@@ -165,10 +165,10 @@ export class Overview implements OnInit, OnDestroy {
     return this.summary()?.consumers.disconnected ?? 0;
   }
 
-  /** Whether the daily Happy Hours window (9 AM-2 PM IST, when manual disconnects are allowed) is open right now. Public holidays are not modelled. */
+  /** Whether the disconnection window (11 AM-4 PM IST; the tariff book's credit hours are 4 PM to 11 AM) is open right now. Official holidays are not modelled. */
   protected readonly happyHourOpen = computed(() => {
     const istHour = new Date(this.now().getTime() + 5.5 * 3_600_000).getUTCHours();
-    return istHour >= 9 && istHour < 14;
+    return istHour >= 11 && istHour < 16;
   });
 
   protected get totalWalletBalance(): number {

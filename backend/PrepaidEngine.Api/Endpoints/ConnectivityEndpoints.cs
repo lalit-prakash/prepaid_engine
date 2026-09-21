@@ -132,12 +132,12 @@ public static class ConnectivityEndpoints
                 return Results.BadRequest(new { error = "Cannot retry a reconnect for a consumer with a zero or negative wallet balance." });
             }
 
-            // "Happy Hours" — a disconnect retry must be re-checked against the current time just like
-            // the original dispatch (spec section 5); a Failed/TimedOut disconnect can sit around for a
+            // Disconnection hours — a disconnect retry must be re-checked against the current time just like
+            // the original dispatch (tariff book 22.4); a Failed/TimedOut disconnect can sit around for a
             // while before someone clicks Retry.
             if (command.CommandType == ConnectivityCommandType.Disconnect && !IsWithinDisconnectWindow(DateTime.UtcNow))
             {
-                return Results.BadRequest(new { error = "Disconnection can only be dispatched between 9:00 AM and 2:00 PM (Happy Hours)." });
+                return Results.BadRequest(new { error = "Disconnection can only be dispatched between 11:00 AM and 4:00 PM IST: prepaid consumers have credit hours from 4:00 PM to 11:00 AM." });
             }
 
             try

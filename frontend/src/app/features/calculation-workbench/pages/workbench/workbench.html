@@ -50,9 +50,23 @@
             <label>
               Already this month (kWh)
               <input type="number" min="0" step="1" name="mtd" [(ngModel)]="monthToDateKwh" />
-              <span class="field-hint">Before today. The slabs continue from here.</span>
+              <span class="field-hint">Before today. Duty (and the slabs of a kWh schedule) continue from here.</span>
             </label>
           </div>
+          @if (isKvah) {
+            <div class="row">
+              <label>
+                Today's kVAh
+                <input type="number" min="0" step="0.5" name="kvah" [(ngModel)]="dayKvah" />
+                <span class="field-hint">This schedule is billed per kVAh. Leave blank if the daily load profile has none: kWh is then billed, and the result says so.</span>
+              </label>
+              <label>
+                Already this month (kVAh)
+                <input type="number" min="0" step="1" name="mtdkvah" [(ngModel)]="monthToDateKvah" />
+                <span class="field-hint">Blank uses the kWh figure.</span>
+              </label>
+            </div>
+          }
 
           <label>
             Connected load / contract demand ({{ loadUnit }})
@@ -115,7 +129,7 @@
               <span class="headline__label">Debited from the wallet</span>
               <span class="headline__value">₹{{ r.totalDebited | number: '1.2-2' }}</span>
             </div>
-            <div class="headline__meta">{{ r.tariff.scheduleCode }} · {{ r.inputs.consumptionKwh | number: '1.0-2' }} {{ energyUnitLabel }} today, {{ r.inputs.monthToDateKwh | number: '1.0-2' }} before</div>
+            <div class="headline__meta">{{ r.tariff.scheduleCode }} · {{ r.billedEnergy | number: '1.0-2' }} {{ r.billedUnit }} billed today</div>
           </div>
 
           @if (segments().length > 0) {
@@ -131,7 +145,7 @@
             <li>
               <div class="trace__label">Energy charge</div>
               <div class="trace__value num">₹{{ r.grossEnergyCharge | number: '1.2-2' }}</div>
-              <div class="trace__note">Slabs continued from {{ r.inputs.monthToDateKwh | number: '1.0-2' }} {{ energyUnitLabel }} already this month</div>
+              <div class="trace__note">Worked on {{ r.billedEnergy | number: '1.0-2' }} {{ r.billedUnit }}@if (r.tariff.isTimeOfDay) { by Time-of-Day band } @else { (slabs continued from earlier this month) }</div>
             </li>
             <li>
               <div class="trace__label">Prepaid rebate ({{ r.prepaidRebatePercent }}%)</div>

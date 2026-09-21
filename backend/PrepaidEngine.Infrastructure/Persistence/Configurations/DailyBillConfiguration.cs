@@ -21,6 +21,8 @@ public class DailyBillConfiguration : IEntityTypeConfiguration<DailyBill>
             nameof(DailyBill.LtSideMeteringSurcharge), nameof(DailyBill.Tmc), nameof(DailyBill.Cpmc), nameof(DailyBill.FppasShare),
         })
             b.Property(p).HasColumnType("decimal(18,4)");
+        b.Property(x => x.BilledEnergy).HasColumnType("decimal(18,3)");
+        b.Property(x => x.BilledUnit).IsRequired().HasMaxLength(5).HasDefaultValue("kWh");
         b.Property(x => x.Total).HasColumnType("decimal(18,2)");
         b.Property(x => x.Notes).HasMaxLength(600);
     }

@@ -14,6 +14,8 @@ export interface SimulateChargeRequest {
   fppasRatePercent?: number;
   daysInMonth?: number;
   touKvahByBand?: Record<string, number>;
+  dayKvah?: number;
+  monthToDateKvah?: number;
 }
 
 /**
@@ -36,7 +38,10 @@ export interface SimulateChargeResult {
     isTimeOfDay: boolean;
     bands: string[];
   };
-  inputs: { consumptionKwh: number; monthToDateKwh: number; loadUsed: number; loadInHp: boolean; meteredOnLtSide: boolean };
+  inputs: { consumptionKwh: number; dayKvah: number | null; monthToDateKwh: number; monthToDateKvah: number | null; loadUsed: number; loadInHp: boolean; meteredOnLtSide: boolean };
+  /** The energy the charge was worked on, and its unit (kVAh for HT/EHT/Industrial LT when kVAh was given, otherwise kWh). */
+  billedEnergy: number;
+  billedUnit: 'kWh' | 'kVAh';
   grossEnergyCharge: number;
   prepaidRebatePercent: number;
   rebateAmount: number;

@@ -14,6 +14,7 @@ public class LoadSurveyIntervalConfiguration : IEntityTypeConfiguration<LoadSurv
         builder.Property(l => l.IntervalStart).IsRequired();
         builder.Property(l => l.IntervalEnd).IsRequired();
         builder.Property(l => l.ImportKwh).HasColumnType("decimal(18,3)").IsRequired();
+        builder.Property(l => l.ImportKvah).HasColumnType("decimal(18,3)");
         builder.Property(l => l.ReceivedAt).IsRequired();
         builder.Property(l => l.SourceReference).HasMaxLength(100);
 

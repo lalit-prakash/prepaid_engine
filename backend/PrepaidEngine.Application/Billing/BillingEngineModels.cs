@@ -8,7 +8,9 @@ public record DailyLoadProfileRequest(
     DateTime GeneratedAt,
     decimal StartCumulativeKwh,
     decimal EndCumulativeKwh,
-    string? SourceReference = null);
+    string? SourceReference = null,
+    decimal? StartCumulativeKvah = null,
+    decimal? EndCumulativeKvah = null);
 
 /// <summary>Result of ingesting one DLP. <paramref name="Message"/> carries the rejection reason
 /// when <paramref name="Status"/> is "Rejected" — e.g. its starting reading is lower than the

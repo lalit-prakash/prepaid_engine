@@ -8,10 +8,10 @@ public record RegisterReadingRequest(
 
 public record RegisterReadingIngestResult(Guid ReadingId, string Status, string? Message);
 
-/// <summary>An incoming Load Survey (LS) interval — consumption intelligence only, never a
-/// billing input (see <see cref="Domain.Entities.LoadSurveyInterval"/>).</summary>
+/// <summary>An incoming Load Survey (LS) interval (MDM sends one every 15 or 30 minutes). It does not drive ordinary billing (the daily load profile does), but for a
+/// Time-of-Day tariff the intervals split the day's consumption into its bands (see <see cref="Domain.Entities.LoadSurveyInterval"/>).</summary>
 public record LoadSurveyIntervalRequest(
-    Guid ConsumerId, Guid MeterId, DateTime IntervalStart, DateTime IntervalEnd, decimal ImportKwh, string? SourceReference = null);
+    Guid ConsumerId, Guid MeterId, DateTime IntervalStart, DateTime IntervalEnd, decimal ImportKwh, string? SourceReference = null, decimal? ImportKvah = null);
 
 public record LoadSurveyIntervalIngestResult(Guid IntervalId, string Status, string? Message);
 

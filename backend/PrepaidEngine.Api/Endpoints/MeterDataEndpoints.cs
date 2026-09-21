@@ -40,7 +40,7 @@ public static class MeterDataEndpoints
         {
             var result = await billingEngine.IngestDailyLoadProfileAsync(
                 new DailyLoadProfileRequest(request.ConsumerId, request.MeterId, request.ProfileDate, request.GeneratedAt,
-                    request.StartCumulativeKwh, request.EndCumulativeKwh, request.SourceReference));
+                    request.StartCumulativeKwh, request.EndCumulativeKwh, request.SourceReference, request.StartCumulativeKvah, request.EndCumulativeKvah));
 
             return Results.Ok(result);
         })
@@ -341,7 +341,7 @@ public static class MeterDataEndpoints
         app.MapPost("/api/v1/meter-data/ls", async (LoadSurveyIntervalIngestRequest request, IMeterDataIngestionService meterData) =>
         {
             var result = await meterData.IngestLoadSurveyIntervalAsync(
-                new LoadSurveyIntervalRequest(request.ConsumerId, request.MeterId, request.IntervalStart, request.IntervalEnd, request.ImportKwh, request.SourceReference));
+                new LoadSurveyIntervalRequest(request.ConsumerId, request.MeterId, request.IntervalStart, request.IntervalEnd, request.ImportKwh, request.SourceReference, request.ImportKvah));
             return Results.Ok(result);
         })
         .WithName("IngestLoadSurveyInterval")
