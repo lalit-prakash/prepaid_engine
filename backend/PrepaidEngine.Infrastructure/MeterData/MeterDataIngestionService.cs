@@ -21,6 +21,7 @@ public class MeterDataIngestionService : IMeterDataIngestionService
 
     public async Task<RegisterReadingIngestResult> IngestRegisterReadingAsync(RegisterReadingRequest request, CancellationToken cancellationToken = default)
     {
+        await MeterCommunication.TouchAsync(_db, request.MeterId, DateTime.UtcNow, cancellationToken);
         var existing = await _db.RegisterReadings.FirstOrDefaultAsync(
             r => r.ConsumerId == request.ConsumerId && r.MeterId == request.MeterId && r.ReadingTimestamp == request.ReadingTimestamp,
             cancellationToken);
@@ -46,6 +47,7 @@ public class MeterDataIngestionService : IMeterDataIngestionService
 
     public async Task<LoadSurveyIntervalIngestResult> IngestLoadSurveyIntervalAsync(LoadSurveyIntervalRequest request, CancellationToken cancellationToken = default)
     {
+        await MeterCommunication.TouchAsync(_db, request.MeterId, DateTime.UtcNow, cancellationToken);
         var existing = await _db.LoadSurveyIntervals.FirstOrDefaultAsync(
             l => l.ConsumerId == request.ConsumerId && l.MeterId == request.MeterId && l.IntervalStart == request.IntervalStart,
             cancellationToken);
@@ -71,6 +73,7 @@ public class MeterDataIngestionService : IMeterDataIngestionService
 
     public async Task<InstantaneousReadingIngestResult> IngestInstantaneousReadingAsync(InstantaneousReadingRequest request, CancellationToken cancellationToken = default)
     {
+        await MeterCommunication.TouchAsync(_db, request.MeterId, DateTime.UtcNow, cancellationToken);
         var existing = await _db.InstantaneousReadings.FirstOrDefaultAsync(
             i => i.MeterId == request.MeterId && i.Timestamp == request.Timestamp, cancellationToken);
         if (existing is not null)
@@ -96,6 +99,7 @@ public class MeterDataIngestionService : IMeterDataIngestionService
 
     public async Task<MeterEventIngestResult> IngestMeterEventAsync(MeterEventRequest request, CancellationToken cancellationToken = default)
     {
+        await MeterCommunication.TouchAsync(_db, request.MeterId, DateTime.UtcNow, cancellationToken);
         var existing = await _db.MeterEvents.FirstOrDefaultAsync(
             e => e.MeterId == request.MeterId && e.EventCode == request.EventCode && e.EventTimestamp == request.EventTimestamp,
             cancellationToken);
@@ -113,6 +117,7 @@ public class MeterDataIngestionService : IMeterDataIngestionService
 
     public async Task<MeterAlarmIngestResult> IngestMeterAlarmAsync(MeterAlarmRequest request, CancellationToken cancellationToken = default)
     {
+        await MeterCommunication.TouchAsync(_db, request.MeterId, DateTime.UtcNow, cancellationToken);
         var existing = await _db.MeterAlarms.FirstOrDefaultAsync(
             a => a.MeterId == request.MeterId && a.AlarmCode == request.AlarmCode && a.RaisedAt == request.RaisedAt,
             cancellationToken);

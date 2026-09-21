@@ -39,6 +39,7 @@ public class BillingEngineService : IBillingEngineService
         DailyLoadProfileRequest request, CancellationToken cancellationToken = default)
     {
         var receivedAt = DateTime.UtcNow;
+        await PrepaidEngine.Infrastructure.MeterData.MeterCommunication.TouchAsync(_db, request.MeterId, receivedAt, cancellationToken); // the meter has talked, whatever the profile turns out to be
 
         var existing = await _db.DailyLoadProfiles.FirstOrDefaultAsync(
             d => d.ConsumerId == request.ConsumerId && d.MeterId == request.MeterId && d.ProfileDate == request.ProfileDate,

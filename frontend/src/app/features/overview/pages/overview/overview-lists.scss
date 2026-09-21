@@ -1,44 +1,4 @@
 /* Lists, tables and states for the lower dashboard rows (split from overview.scss to stay under the style budget). */
-/* ---------------------------------------------------------------- network health */
-.donut-row { display: flex; align-items: center; gap: var(--space-5); flex: 1; }
-.donut { width: 132px; height: 132px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.donut__hole { width: 88px; height: 88px; border-radius: 50%; background: var(--surface-card); display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.donut__hole strong { font-size: 22px; line-height: 1.1; }
-.donut__hole span { font-size: 12px; color: var(--text-secondary); }
-.legend { list-style: none; margin: 0; padding: 0; flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.legend li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
-.legend b { margin-left: auto; color: var(--text-primary); }
-.legend__pct { color: var(--text-muted); font-size: 12px; min-width: 34px; text-align: right; }
-.swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; background: var(--color-neutral-300); }
-.swatch--success { background: var(--color-success); }
-.swatch--warning { background: var(--color-warning); }
-.swatch--danger { background: var(--color-danger); }
-
-/* ---------------------------------------------------------------- attention */
-.attention { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; flex: 1; }
-.attention li { display: flex; align-items: flex-start; gap: 10px; padding: 6px 6px; border-radius: var(--radius-md); cursor: pointer; }
-.attention li + li { border-top: 1px solid var(--border-subtle); }
-.attention li:hover { background: var(--color-primary-lighter); }
-.attention li:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
-.attention__icon { width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--color-warning-light); color: var(--color-warning-dark); flex-shrink: 0; }
-.attention__icon--critical { background: var(--color-danger-light); color: var(--color-danger-dark); }
-.attention__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.attention__body strong { font-size: 13px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
-.attention__body span { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.attention__time { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
-
-/* ---------------------------------------------------------------- revenue protection */
-.shield { display: flex; align-items: center; gap: var(--space-3); padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle); }
-.shield__icon { width: 48px; height: 48px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; background: var(--color-primary-lighter); color: var(--color-primary); flex-shrink: 0; }
-.shield__value { font-size: 26px; font-weight: var(--font-weight-semibold); letter-spacing: -0.02em; line-height: 1.1; }
-.shield__label { font-size: 12px; color: var(--text-muted); }
-.risk { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; }
-.risk li { display: flex; align-items: center; gap: 9px; padding: 4px 4px; font-size: 13px; border-radius: var(--radius-md); cursor: pointer; }
-.risk li + li { border-top: 1px solid var(--border-subtle); }
-.risk li:hover { background: var(--color-primary-lighter); }
-.risk li:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
-.risk__label { color: var(--text-secondary); }
-.risk b { margin-left: auto; color: var(--text-primary); }
 
 /* ---------------------------------------------------------------- tables */
 .mini-table { width: 100%; border-collapse: collapse; font-size: 13px; }

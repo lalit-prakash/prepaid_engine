@@ -58,61 +58,42 @@ export class Shell implements OnInit {
   protected readonly quickActionsOpen = signal(false);
   protected readonly pendingNotificationCount = signal(0);
 
+  /** The sidebar: only the working day-to-day pages. Other pages (meter operations, meter data, reports, network hierarchy, integrations,
+   * system health, exceptions and so on) are still routable but are not listed here. */
   protected readonly navGroups: NavGroup[] = [
     {
       label: 'Operations',
       items: [
         { label: 'Consumers', path: '/consumers', icon: 'users' },
         { label: 'Recharge', path: '/recharge', icon: 'bolt' },
-        { label: 'Meter Operations', path: '/meter-credit', icon: 'plug' },
         { label: 'Disconnect / Reconnect', path: '/rc-dc', icon: 'refresh' },
-        { label: 'Service Requests', path: '/service-requests', icon: 'wrench', stub: true },
       ],
     },
     {
-      label: 'Data & Analytics',
+      label: 'Billing & Analytics',
       items: [
-        { label: 'Meter Data', path: '/meter-data', icon: 'trend' },
         { label: 'Billing', path: '/billing', icon: 'receipt' },
         { label: 'Analytics', path: '/analytics', icon: 'chart' },
-        { label: 'Reports', path: '/reports', icon: 'document' },
-        { label: 'SLA Monitoring', path: '/sla-monitoring', icon: 'clock' },
+        { label: 'Reconciliation', path: '/reconciliation', icon: 'calculator' },
+        { label: 'Calculation Workbench', path: '/calculation-workbench', icon: 'flask' },
       ],
     },
     {
       label: 'Configuration',
       items: [
         { label: 'Tariff & Parameters', path: '/tariffs', icon: 'gear' },
-        { label: 'Network Hierarchy', path: '/network', icon: 'building' },
         { label: 'User Management', path: '/user-management', icon: 'users', stub: true },
         { label: 'Roles & Permissions', path: '/roles-permissions', icon: 'lock', stub: true },
-        { label: 'Integrations', path: '/integrations', icon: 'link' },
       ],
     },
     {
       label: 'Administration',
       items: [
         { label: 'Audit Logs', path: '/audit', icon: 'scroll' },
-        { label: 'System Health', path: '/system-health', icon: 'signal' },
         { label: 'System Settings', path: '/system-settings', icon: 'gear', stub: true },
       ],
     },
   ];
-
-  /** Working pages that are not in the reference sidebar; kept reachable under a collapsible group. */
-  protected readonly moreGroup: NavGroup = {
-    label: 'More',
-    items: [
-        { label: 'Meter Replacements', path: '/meter-replacements', icon: 'toolbox' },
-        { label: 'Conversion', path: '/conversion', icon: 'repeat' },
-        { label: 'Exceptions', path: '/exceptions', icon: 'alert' },
-        { label: 'Billing Holds', path: '/billing-holds', icon: 'pause' },
-        { label: 'Reconciliation', path: '/reconciliation', icon: 'calculator' },
-        { label: 'Calculation Workbench', path: '/calculation-workbench', icon: 'flask' },
-        { label: 'Notifications', path: '/notifications', icon: 'bell' },
-    ],
-  };
-  protected readonly moreOpen = signal(false);
 
   protected readonly quickActions = [
     { label: 'Recharge Consumer', path: '/recharge' },
@@ -126,7 +107,6 @@ export class Shell implements OnInit {
     private readonly notificationService: NotificationService,
     private readonly router: Router,
   ) {
-    this.moreOpen.set(this.moreGroup.items.some((i) => this.router.url.startsWith(i.path)));
   }
 
   ngOnInit(): void {

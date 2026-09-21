@@ -39,3 +39,19 @@ export interface BalanceHistoryRow {
   walletTotal: number;
   recordedAt: string;
 }
+
+/** GET /api/v1/analytics/meter-communication: how many installed meters have been heard from recently. The 7-day group is inside the 3-day group. */
+export interface MeterCommunication {
+  asOf: string;
+  total: number;
+  communicating: number;
+  nonCommunicating3Days: number;
+  nonCommunicating7Days: number;
+  neverCommunicated: number;
+}
+
+/** GET /api/v1/analytics/wallet-distribution: consumers by wallet balance band. */
+export interface WalletDistribution {
+  total: number;
+  bands: { label: string; count: number; totalBalance: number }[];
+}
