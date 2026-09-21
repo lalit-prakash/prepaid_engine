@@ -13,7 +13,7 @@ import { Icon } from '../../../../shared/components/icon/icon';
 import { LineChart } from '../../../../shared/components/line-chart/line-chart';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 
-type TrendTab = 'consumption' | 'billing' | 'recharge' | 'revenue';
+type TrendTab = 'consumption' | 'billing' | 'recharge';
 
 /**
  * The operations dashboard. Every number is backed by a real endpoint or shown as
@@ -59,7 +59,6 @@ export class Overview implements OnInit, OnDestroy {
     { id: 'consumption', label: 'Consumption' },
     { id: 'billing', label: 'Billing' },
     { id: 'recharge', label: 'Recharge' },
-    { id: 'revenue', label: 'Revenue' },
   ];
   protected readonly trendRanges = [
     { days: 7, label: 'Last 7 days' },
@@ -235,8 +234,6 @@ export class Overview implements OnInit, OnDestroy {
         return { ...pick(a.billing, (r) => r.billed), total: a.totals.billed, unit: '₹', name: 'Billed', colour: 'var(--color-primary)', money: true };
       case 'recharge':
         return { ...pick(a.recharges, (r) => r.amountReceived), total: a.totals.rechargeReceived, unit: '₹', name: 'Payments received', colour: 'var(--color-success)', money: true };
-      case 'revenue':
-        return { ...pick(a.billing, (r) => r.settled), total: a.totals.settled, unit: '₹', name: 'Settled from wallets', colour: 'var(--color-analytic)', money: true };
       default:
         return { ...pick(a.consumption, (r) => r.totalKwh), total: a.totals.consumptionKwh, unit: 'kWh', name: 'Consumption (kWh)', colour: 'var(--color-primary)', money: false };
     }
