@@ -13,6 +13,11 @@ public class SmartMeter
     public decimal LastReadingKwh { get; private set; }
     public DateTime? LastReadingAt { get; private set; }
 
+    /// <summary>When data from this meter (a load profile, register reading, interval, instantaneous reading, event or alarm) last reached
+    /// the engine; null when none ever has. Kept up to date by <c>MeterCommunication.TouchAsync</c> on ingestion and used to tell communicating
+    /// meters from silent ones. Never set by generated (provisional) profiles, which are not the meter talking.</summary>
+    public DateTime? LastCommunicatedAt { get; private set; }
+
     public SmartMeter(Guid id, string meterNumber, MeterPhase phase)
     {
         if (string.IsNullOrWhiteSpace(meterNumber))

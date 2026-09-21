@@ -1,41 +1,17 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { HttpClient } from '@angular/common/http';
 import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { environment } from '../../../../../environments/environment';
-import { AnalyticsOverview } from '../../../../core/models/analytics.model';
+import { AnalyticsOverview, MeterCommunication, WalletDistribution } from '../../../../core/models/analytics.model';
 import { DashboardSummary } from '../../../../core/models/dashboard.model';
 import { MeterCommandStatus, RechargeListItem, RechargeStatus } from '../../../../core/models/recharge.model';
 import { ConnectivityCommandStatus } from '../../../../core/models/connectivity-command.model';
-import { RiskIndicatorsSummary } from '../../../../core/models/sla.model';
 import { AnalyticsService } from '../../../../core/services/analytics.service';
 import { AuthService } from '../../../../core/services/auth.service';
-import { SystemService } from '../../../../core/services/system.service';
-import { SystemHealth } from '../../../../core/models/system.model';
 import { DashboardService } from '../../../../core/services/dashboard.service';
 import { RechargeService } from '../../../../core/services/recharge.service';
-import { SlaService } from '../../../../core/services/sla.service';
 import { Icon } from '../../../../shared/components/icon/icon';
 import { LineChart } from '../../../../shared/components/line-chart/line-chart';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
-
-interface DonutSlice {
-  label: string;
-  count: number;
-  pct: number;
-  tone: 'success' | 'warning' | 'danger';
-}
-
-/** One row of "Attention Required" - assembled from real open exceptions, active billing holds,
- * pending/failed notifications, failed meter credits and tariff changes. Never hand-authored. */
-interface AttentionItem {
-  id: string;
-  severity: 'critical' | 'warning';
-  title: string;
-  detail: string;
-  at: string;
-  link: string;
-}
 
 type TrendTab = 'consumption' | 'billing' | 'recharge' | 'revenue';
 
@@ -55,6 +31,11 @@ export class Overview implements OnInit, OnDestroy {
   protected readonly now = signal(new Date());
   private clockTimer?: ReturnType<typeof setInterval>;
 
+  protected readonly comm = signal<MeterCommunication | null>(null);
+  protected readonly commLoading = signal(true);
+  protected readonly wallet = signal<WalletDistribution | null>(null);
+  protected readonly walletLoading = signal(true);
+
   protected readonly summary = signal<DashboardSummary | null>(null);
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
@@ -63,22 +44,12 @@ export class Overview implements OnInit, OnDestroy {
   protected readonly rechargesLoading = signal(true);
   protected readonly rechargesError = signal(false);
 
-  protected readonly risk = signal<RiskIndicatorsSummary | null>(null);
-  protected readonly riskError = signal(false);
 
   protected readonly analytics = signal<AnalyticsOverview | null>(null);
   protected readonly analyticsLoading = signal(true);
   protected readonly analyticsError = signal(false);
   protected readonly trendTab = signal<TrendTab>('consumption');
   protected readonly trendDays = signal(30);
-
-  /** Result of a real GET /health probe, with the measured round-trip time. */
-  /** The API's own measurements: database round trip, workers and queues (GET /api/v1/system/health). */
-  protected readonly systemHealth = signal<SystemHealth | null>(null);
-  protected readonly apiHealth = signal<'checking' | 'healthy' | 'down'>('checking');
-  protected readonly apiLatencyMs = signal<number | null>(null);
-
-  protected readonly attentionFilter = signal<'all' | 'critical' | 'warning'>('all');
 
   protected readonly RechargeStatus = RechargeStatus;
   protected readonly MeterCommandStatus = MeterCommandStatus;
@@ -101,20 +72,14 @@ export class Overview implements OnInit, OnDestroy {
 
   constructor(
     private readonly dashboardService: DashboardService,
-    private readonly systemService: SystemService,
     private readonly rechargeService: RechargeService,
-    private readonly slaService: SlaService,
     private readonly analyticsService: AnalyticsService,
     private readonly auth: AuthService,
-    private readonly http: HttpClient,
     private readonly router: Router,
   ) {}
 
   ngOnInit(): void {
     this.clockTimer = setInterval(() => this.now.set(new Date()), 30_000);
-
-
-
 
     this.dashboardService.summary().subscribe({
       next: (summary) => { this.summary.set(summary); this.loading.set(false); },
@@ -125,30 +90,34 @@ export class Overview implements OnInit, OnDestroy {
       error: () => { this.rechargesError.set(true); this.rechargesLoading.set(false); },
     });
 
-
-
-
-
-    this.slaService.getRiskIndicators().subscribe({
-      next: (r) => this.risk.set(r),
-      error: () => this.riskError.set(true),
-    });
-
-    this.systemService.health().subscribe({ next: (h) => this.systemHealth.set(h), error: () => this.systemHealth.set(null) });
-    const started = performance.now();
-    this.http.get(`${environment.apiBaseUrl}/health`).subscribe({
-      next: () => {
-        this.apiLatencyMs.set(Math.round(performance.now() - started));
-        this.apiHealth.set('healthy');
-      },
-      error: () => this.apiHealth.set('down'),
-    });
+    this.analyticsService.meterCommunication().subscribe({ next: (c) => { this.comm.set(c); this.commLoading.set(false); }, error: () => this.commLoading.set(false) });
+    this.analyticsService.walletDistribution().subscribe({ next: (w) => { this.wallet.set(w); this.walletLoading.set(false); }, error: () => this.walletLoading.set(false) });
 
     this.loadTrend();
   }
 
   ngOnDestroy(): void {
     if (this.clockTimer) clearInterval(this.clockTimer);
+  }
+
+  // ---------------------------------------------------------------- analytics boxes
+  /** Silent for 3 to 7 days: the 3 day group less the 7 day group it contains. */
+  protected silent3To7(c: MeterCommunication): number {
+    return Math.max(0, c.nonCommunicating3Days - c.nonCommunicating7Days);
+  }
+
+  protected pct(part: number, whole: number): string {
+    return whole === 0 ? '0' : ((part / whole) * 100).toFixed(1);
+  }
+
+  /** Bar width relative to the largest band, so small bands stay visible next to a large one. */
+  protected bandWidth(count: number, w: WalletDistribution): number {
+    const max = Math.max(...w.bands.map((b) => b.count), 1);
+    return (count / max) * 100;
+  }
+
+  protected walletTotal(w: WalletDistribution): number {
+    return w.bands.reduce((sum, b) => sum + b.totalBalance, 0);
   }
 
   // ---------------------------------------------------------------- hero
@@ -224,26 +193,6 @@ export class Overview implements OnInit, OnDestroy {
     this.router.navigateByUrl(link);
   }
 
-  // ---------------------------------------------------------------- DLP billing progress
-  protected get billingAvailable(): boolean {
-    return !this.loading() && !this.error() && this.summary()?.billing != null;
-  }
-
-  /** Successful = Billed/Reconciled, Failed = Rejected, Pending = everything else; counted by the database for the latest profile date. */
-  protected readonly billing = computed(() => {
-    const b = this.summary()?.billing;
-    if (!b) return { total: 0, successful: 0, failed: 0, pending: 0, pct: 0, profileDate: null as string | null, latestReceived: null as string | null };
-    return {
-      total: b.total,
-      successful: b.successful,
-      failed: b.failed,
-      pending: b.pending,
-      pct: b.total === 0 ? 0 : Math.round((b.successful / b.total) * 100),
-      profileDate: b.profileDate,
-      latestReceived: b.latestReceivedAt,
-    };
-  });
-
   // ---------------------------------------------------------------- energy trend
   private loadTrend(): void {
     const to = new Date();
@@ -303,53 +252,6 @@ export class Overview implements OnInit, OnDestroy {
     return { peakValue: t.values[peakIndex], peakLabel: t.labels[peakIndex], average: t.values.reduce((s, v) => s + v, 0) / t.values.length };
   });
 
-  // ---------------------------------------------------------------- network health
-  protected readonly networkHealthAvailable = computed(() => !this.loading() && !this.error() && this.totalConsumers > 0);
-
-  protected readonly networkHealth = computed<DonutSlice[]>(() => {
-    const c = this.summary()?.consumers;
-    if (!c || c.total === 0) return [];
-    const total = c.total;
-    const healthy = total - c.disconnected - c.lowBalanceConnected;
-    const slice = (label: string, count: number, tone: DonutSlice['tone']): DonutSlice => ({ label, count, pct: Math.round((count / total) * 100), tone });
-    return [slice('Healthy', healthy, 'success'), slice('Low Balance', c.lowBalanceConnected, 'warning'), slice('Disconnected', c.disconnected, 'danger')].filter((x) => x.count > 0);
-  });
-  protected readonly networkGradient = computed(() => {
-    const colour = { success: 'var(--color-success)', warning: 'var(--color-warning)', danger: 'var(--color-danger)' };
-    const total = this.totalConsumers || 1;
-    let acc = 0;
-    const stops = this.networkHealth().map((s) => {
-      const start = acc;
-      acc += (s.count / total) * 100;
-      return `${colour[s.tone]} ${start}% ${acc}%`;
-    });
-    return `conic-gradient(${stops.join(', ')})`;
-  });
-
-  protected readonly networkHealthyPct = computed(() => {
-    const total = this.totalConsumers;
-    const healthy = this.networkHealth().find((s) => s.label === 'Healthy')?.count ?? 0;
-    return total === 0 ? 0 : Math.round((healthy / total) * 100);
-  });
-
-  // ---------------------------------------------------------------- attention required
-  protected readonly attentionItems = computed<AttentionItem[]>(() => this.summary()?.attention.items ?? []);
-  protected readonly attentionCritical = computed(() => this.summary()?.attention.critical ?? 0);
-  protected readonly attentionWarning = computed(() => this.summary()?.attention.warning ?? 0);
-  protected readonly attentionTotal = computed(() => this.attentionCritical() + this.attentionWarning());
-
-  protected readonly attentionShown = computed(() => {
-    const f = this.attentionFilter();
-    const all = this.attentionItems();
-    return (f === 'all' ? all : all.filter((i) => i.severity === f)).slice(0, 3);
-  });
-  protected readonly attentionReady = computed(() => !this.loading());
-  protected readonly attentionFailed = computed(() => !!this.error());
-
-  setAttentionFilter(filter: 'all' | 'critical' | 'warning'): void {
-    this.attentionFilter.set(filter);
-  }
-
   protected timeAgo(at: string): string {
     const minutes = Math.max(0, Math.round((this.now().getTime() - new Date(at).getTime()) / 60000));
     if (minutes < 1) return 'just now';
@@ -359,21 +261,6 @@ export class Overview implements OnInit, OnDestroy {
     const days = Math.round(hours / 24);
     return days === 1 ? '1 day ago' : `${days} days ago`;
   }
-
-  // ---------------------------------------------------------------- revenue protection (real open conditions)
-  protected readonly riskRows = computed(() => {
-    const r = this.risk();
-    if (!r) return [];
-    return [
-      { label: 'Open exceptions', count: r.openExceptions, link: '/exceptions' },
-      { label: 'Active billing holds', count: r.activeBillingHolds, link: '/billing-holds' },
-      { label: 'Unresolved meter alarms', count: r.unresolvedMeterAlarms, link: '/meter-data' },
-      { label: 'Failed energy validations', count: r.failedEnergyValidations, link: '/exceptions' },
-      { label: 'Disconnected consumers', count: r.disconnectedConsumers, link: '/consumers?status=Disconnected' },
-    ];
-  });
-
-  protected readonly riskTotal = computed(() => this.riskRows().reduce((sum, r) => sum + r.count, 0));
 
   // ---------------------------------------------------------------- recent tables
   protected readonly recentMeterOps = computed(() => this.summary()?.recentConnectivity ?? []);
@@ -398,15 +285,5 @@ export class Overview implements OnInit, OnDestroy {
       case MeterCommandStatus.Queued: return 'info';
       default: return 'neutral';
     }
-  }
-
-  protected get workersHealthy(): string {
-    const w = this.systemHealth()?.workers ?? [];
-    return `${w.filter((x) => x.state === 'Healthy').length} of ${w.length} healthy`;
-  }
-
-  protected get workersOk(): boolean {
-    const w = this.systemHealth()?.workers ?? [];
-    return w.length > 0 && w.every((x) => x.state === 'Healthy');
   }
 }

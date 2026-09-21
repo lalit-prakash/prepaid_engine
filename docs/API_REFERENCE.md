@@ -1,7 +1,7 @@
 # API reference
 
 Every HTTP endpoint the Prepaid Engine API exposes: method, path, who may call it, and its parameters.
-Generated from the running app (129 endpoints), so it matches the code. Do not edit by hand; regenerate with:
+Generated from the running app (131 endpoints), so it matches the code. Do not edit by hand; regenerate with:
 
 ```
 ASPNETCORE_ENVIRONMENT=Production Jwt__Key=<any 32+ characters> dotnet run --project backend/PrepaidEngine.Api -- dump-endpoints docs/API_REFERENCE.md
@@ -35,7 +35,9 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | Method | Path | Access | Parameters |
 |---|---|---|---|
 | GET | `/api/v1/analytics/balance-history` | Any signed-in user | query `from` date (optional)<br>query `to` date (optional) |
+| GET | `/api/v1/analytics/meter-communication` | Any signed-in user | none |
 | GET | `/api/v1/analytics/overview` | Any signed-in user | query `from` date (optional)<br>query `to` date (optional) |
+| GET | `/api/v1/analytics/wallet-distribution` | Any signed-in user | none |
 
 ## Audit entries
 

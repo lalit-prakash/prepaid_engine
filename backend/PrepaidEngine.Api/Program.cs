@@ -207,6 +207,7 @@ app.MapDashboardEndpoints();
 app.MapReportEndpoints();
 app.MapLiveRcDcReport();
 app.MapConsumerListEndpoints();
+app.MapDashboardAnalyticsEndpoints();
 app.MapReportJobEndpoints();
 app.MapNetworkEndpoints();
 app.MapPlatformEndpoints();

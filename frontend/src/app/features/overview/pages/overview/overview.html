@@ -103,161 +103,65 @@
         }
       </div>
 
-      <div class="panel">
-        <div class="panel__header"><h2>Billing Progress (DLP)</h2>@if (billingAvailable) { <span class="big-pct">{{ billing().pct }}%</span> }</div>
-        @if (loading()) {
-          <div class="panel__loading">Loading daily load profile data…</div>
-        } @else if (error()) {
-          <div class="panel__unavailable">Data unavailable — could not reach the meter-data API.</div>
-        } @else if (!billingAvailable) {
-          <div class="panel__unavailable">Data unavailable — no Daily Load Profile has been received yet.</div>
-        } @else {
-          <div class="bar" role="progressbar" [attr.aria-valuenow]="billing().pct" aria-valuemin="0" aria-valuemax="100" aria-label="Profiles billed">
-            <div class="bar__fill" [style.width.%]="billing().pct"></div>
-          </div>
-          <p class="bar__caption"><strong>{{ billing().successful }}</strong> / {{ billing().total }} profiles processed</p>
-          <ul class="stat-list">
-            <li><span class="dot dot--success"></span>Successful<b>{{ billing().successful }}</b></li>
-            <li><span class="dot dot--warning"></span>Pending<b>{{ billing().pending }}</b></li>
-            <li><span class="dot dot--danger"></span>Failed<b>{{ billing().failed }}</b></li>
-          </ul>
-          <p class="panel__foot">Profile date {{ billing().profileDate | date:'d MMM y' }}@if (billing().latestReceived) { · last received {{ billing().latestReceived | date:'d MMM, HH:mm' }} }</p>
-        }
-        <a routerLink="/meter-data" class="panel__link">View Billing Details <pe-icon name="link" [size]="12" /></a>
-      </div>
-
-      <div class="panel">
-        <div class="panel__header">
-          <h2>System Health</h2>
-          <span class="panel__source">Live probe</span>
-        </div>
-        <ul class="health">
-          <li>
-            <span class="dot" [class.dot--success]="apiHealth() === 'healthy'" [class.dot--danger]="apiHealth() === 'down'"></span>
-            <span class="health__name">Prepaid Engine API</span>
-            <span class="health__value">@if (apiHealth() === 'healthy') { {{ apiLatencyMs() }} ms } @else if (apiHealth() === 'down') { Down } @else { … }</span>
-          </li>
-          @if (systemHealth(); as h) {
-            <li>
-              <span class="dot" [class.dot--success]="h.database.state === 'Healthy'" [class.dot--warning]="h.database.state === 'Degraded'" [class.dot--danger]="h.database.state === 'Down'"></span>
-              <span class="health__name">Database</span>
-              <span class="health__value">{{ h.database.latencyMs !== null ? h.database.latencyMs + ' ms' : h.database.state }}</span>
-            </li>
-            <li>
-              <span class="dot" [class.dot--success]="workersOk" [class.dot--warning]="!workersOk"></span>
-              <span class="health__name">Background workers</span>
-              <span class="health__value">{{ workersHealthy }}</span>
-            </li>
-            @if (h.queues; as q) {
-              <li>
-                <span class="dot" [class.dot--success]="q.meterCommandsQueued === 0" [class.dot--warning]="q.meterCommandsQueued > 0"></span>
-                <span class="health__name">Meter credit queue</span>
-                <span class="health__value">{{ q.meterCommandsQueued }} waiting</span>
-              </li>
-            }
-            <li><span class="dot"></span><span class="health__name">RMS and meter adapters</span><span class="health__value health__value--muted">Mock (simulated)</span></li>
-          } @else {
-            <li><span class="dot"></span><span class="health__name">Database</span><span class="health__value health__value--muted">Unavailable</span></li>
-          }
-        </ul>
-        <div class="banner" [class.banner--ok]="apiHealth() === 'healthy'" [class.banner--down]="apiHealth() === 'down'">
-          <span class="banner__icon">{{ apiHealth() === 'down' ? '✕' : '✓' }}</span>
-          <div>
-            <strong>{{ apiHealth() === 'healthy' ? 'API reachable' : apiHealth() === 'down' ? 'API unreachable' : 'Checking…' }}</strong>
-            <span>@if (systemHealth(); as h) { Overall: {{ h.overall }} } @else { Health details unavailable }</span>
-          </div>
-        </div>
-        <a routerLink="/system-health" class="panel__link">View System Health <pe-icon name="link" [size]="12" /></a>
-      </div>
     </section>
 
-    <section class="row row--three">
+    <section class="row row--two row--analytics">
       <div class="panel">
         <div class="panel__header">
-          <h2>Prepaid Network Health</h2>
-          <span class="panel__source">Total Consumers <b class="strong">{{ totalConsumers }}</b></span>
+          <h2>Meter Communication</h2>
+          <span class="panel__source">Meters installed at consumers</span>
         </div>
-        @if (!networkHealthAvailable()) {
-          <div class="panel__unavailable">Data unavailable — no consumers to summarise.</div>
-        } @else {
-          <div class="donut-row">
-            <div class="donut" [style.background]="networkGradient()">
-              <div class="donut__hole"><strong>{{ networkHealthyPct() }}%</strong><span>Healthy</span></div>
+        @if (commLoading()) {
+          <div class="panel__loading">Loading…</div>
+        } @else if (comm(); as c) {
+          <div class="comm">
+            <div class="comm__stat comm__stat--total"><b>{{ c.total | number }}</b><span>Total Prepaid Meters</span></div>
+            <div class="comm__stat comm__stat--ok"><b>{{ c.communicating | number }}</b><span>Communicating</span><small>heard from in the last 3 days</small></div>
+            <div class="comm__stat comm__stat--warn"><b>{{ c.nonCommunicating3Days | number }}</b><span>Non-Communicating from 3 Days</span><small>includes the 7 day group</small></div>
+            <div class="comm__stat comm__stat--danger"><b>{{ c.nonCommunicating7Days | number }}</b><span>Non-Communicating from 7 Days</span></div>
+            <div class="comm__stat comm__stat--never"><b>{{ c.neverCommunicated | number }}</b><span>Never Communicated</span><small>no data received yet</small></div>
+          </div>
+          @if (c.total > 0) {
+            <div class="segbar" role="img" [attr.aria-label]="'Communicating ' + c.communicating + ', silent 3 to 7 days ' + silent3To7(c) + ', silent 7 days or more ' + c.nonCommunicating7Days + ', never ' + c.neverCommunicated">
+              <span class="segbar__seg segbar__seg--ok" [style.flex-grow]="c.communicating" [title]="'Communicating: ' + c.communicating"></span>
+              <span class="segbar__seg segbar__seg--warn" [style.flex-grow]="silent3To7(c)" [title]="'Silent 3 to 7 days: ' + silent3To7(c)"></span>
+              <span class="segbar__seg segbar__seg--danger" [style.flex-grow]="c.nonCommunicating7Days" [title]="'Silent 7 days or more: ' + c.nonCommunicating7Days"></span>
+              <span class="segbar__seg segbar__seg--never" [style.flex-grow]="c.neverCommunicated" [title]="'Never communicated: ' + c.neverCommunicated"></span>
             </div>
-            <ul class="legend">
-              @for (s of networkHealth(); track s.label) {
+            <p class="panel__foot">{{ pct(c.communicating, c.total) }}% communicating · as of {{ c.asOf | date:'d MMM, HH:mm' }}</p>
+          } @else {
+            <div class="panel__empty">No prepaid meters yet.</div>
+          }
+        } @else {
+          <div class="panel__unavailable">Data unavailable — could not reach the analytics API.</div>
+        }
+      </div>
+
+      <div class="panel">
+        <div class="panel__header">
+          <h2>Wallet Balance Distribution</h2>
+          <span class="panel__source">Consumers by balance</span>
+        </div>
+        @if (walletLoading()) {
+          <div class="panel__loading">Loading…</div>
+        } @else if (wallet(); as w) {
+          @if (w.total === 0) {
+            <div class="panel__empty">No consumers yet.</div>
+          } @else {
+            <ul class="dist">
+              @for (b of w.bands; track b.label; let i = $index) {
                 <li>
-                  <span class="swatch" [class.swatch--success]="s.tone === 'success'" [class.swatch--warning]="s.tone === 'warning'" [class.swatch--danger]="s.tone === 'danger'"></span>
-                  <span class="legend__label">{{ s.label }}</span>
-                  <b>{{ s.count }}</b>
-                  <span class="legend__pct">{{ s.pct }}%</span>
+                  <span class="dist__label">{{ b.label }}</span>
+                  <span class="dist__track"><span class="dist__fill" [class.dist__fill--neg]="i === 0" [style.width.%]="bandWidth(b.count, w)"></span></span>
+                  <span class="dist__value">{{ b.count | number }} <small>{{ pct(b.count, w.total) }}%</small></span>
                 </li>
               }
             </ul>
-          </div>
-        }
-        <a routerLink="/consumers" class="panel__link">View Consumer Analysis <pe-icon name="link" [size]="12" /></a>
-      </div>
-
-      <div class="panel">
-        <div class="panel__header">
-          <h2>Attention Required</h2>
-          <a routerLink="/exceptions" class="panel__link panel__link--inline">View All <pe-icon name="link" [size]="12" /></a>
-        </div>
-        <div class="pills" role="tablist" aria-label="Attention severity">
-          <button type="button" role="tab" class="pill" [class.pill--active]="attentionFilter() === 'all'" (click)="setAttentionFilter('all')">All ({{ attentionTotal() }})</button>
-          <button type="button" role="tab" class="pill" [class.pill--active]="attentionFilter() === 'critical'" (click)="setAttentionFilter('critical')">Critical ({{ attentionCritical() }})</button>
-          <button type="button" role="tab" class="pill" [class.pill--active]="attentionFilter() === 'warning'" (click)="setAttentionFilter('warning')">Warning ({{ attentionWarning() }})</button>
-        </div>
-        @if (!attentionReady()) {
-          <div class="panel__loading">Loading…</div>
-        } @else if (attentionFailed()) {
-          <div class="panel__unavailable">Data unavailable — part of this list could not be loaded.</div>
-        } @else if (attentionShown().length === 0) {
-          <div class="panel__empty">Nothing needs attention right now.</div>
+            <p class="panel__foot">{{ w.total | number }} consumers · {{ money(walletTotal(w)) }} total balance</p>
+          }
         } @else {
-          <ul class="attention">
-            @for (item of attentionShown(); track item.id) {
-              <li tabindex="0" role="link" (click)="goTo(item.link)" (keydown.enter)="goTo(item.link)">
-                <span class="attention__icon" [class.attention__icon--critical]="item.severity === 'critical'">
-                  <pe-icon name="alert" [size]="15" />
-                </span>
-                <div class="attention__body">
-                  <strong>{{ item.title }}</strong>
-                  <span>{{ item.detail }}</span>
-                </div>
-                <time class="attention__time">{{ timeAgo(item.at) }}</time>
-              </li>
-            }
-          </ul>
+          <div class="panel__unavailable">Data unavailable — could not reach the analytics API.</div>
         }
-      </div>
-
-      <div class="panel">
-        <div class="panel__header"><h2>Revenue Protection</h2></div>
-        @if (riskError()) {
-          <div class="panel__unavailable">Data unavailable — could not reach the risk-indicators API.</div>
-        } @else if (!risk()) {
-          <div class="panel__loading">Loading…</div>
-        } @else {
-          <div class="shield">
-            <span class="shield__icon"><pe-icon name="shield" [size]="30" /></span>
-            <div>
-              <div class="shield__value">{{ riskTotal() }}</div>
-              <div class="shield__label">open risk conditions</div>
-            </div>
-          </div>
-          <ul class="risk">
-            @for (r of riskRows(); track r.label) {
-              <li tabindex="0" role="link" (click)="goTo(r.link)" (keydown.enter)="goTo(r.link)">
-                <span class="dot" [class.dot--danger]="r.count > 0" [class.dot--success]="r.count === 0"></span>
-                <span class="risk__label">{{ r.label }}</span>
-                <b>{{ r.count }}</b>
-              </li>
-            }
-          </ul>
-        }
-        <a routerLink="/exceptions" class="panel__link">View Exceptions <pe-icon name="link" [size]="12" /></a>
       </div>
     </section>
 
