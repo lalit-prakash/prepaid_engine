@@ -27,7 +27,7 @@ export interface ConsumerFilters {
   meterNumber?: string;
   q?: string;
   status?: ConnectionStatus | null;
-  /** Completed, Pending or Rejected: consumers with a conversion request in that state. */
+  /** The conversion view: Total (any request), Completed or Failed (rejected). */
   conversion?: string;
   from?: string;
   to?: string;
@@ -64,7 +64,7 @@ export class ConsumerService {
     return this.http.get<ConsumerSearchPage>(`${this.baseUrl}/search`, { params: query });
   }
 
-  /** GET /consumers/summary: consumer counts by conversion state. */
+  /** GET /consumers/summary: conversion request counts by outcome. */
   summary(): Observable<ConsumerSummaryStats> {
     return this.http.get<ConsumerSummaryStats>(`${this.baseUrl}/summary`);
   }
