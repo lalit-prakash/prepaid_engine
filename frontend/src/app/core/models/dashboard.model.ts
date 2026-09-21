@@ -4,6 +4,9 @@ export interface DashboardSummary {
     total: number;
     active: number;
     disconnected: number;
+    /** Consumers on a single-phase / three-phase meter. */
+    singlePhase: number;
+    threePhase: number;
     /** Wallet balance below the emergency credit limit, whatever the connection state. */
     lowBalance: number;
     /** Low balance among consumers that are not disconnected (used by the network health split). */

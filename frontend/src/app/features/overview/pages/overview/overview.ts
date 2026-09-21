@@ -16,7 +16,6 @@ import { DashboardService } from '../../../../core/services/dashboard.service';
 import { RechargeService } from '../../../../core/services/recharge.service';
 import { SlaService } from '../../../../core/services/sla.service';
 import { Icon } from '../../../../shared/components/icon/icon';
-import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
 import { LineChart } from '../../../../shared/components/line-chart/line-chart';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
 
@@ -48,7 +47,7 @@ type TrendTab = 'consumption' | 'billing' | 'recharge' | 'revenue';
  */
 @Component({
   selector: 'pe-overview',
-  imports: [KpiCard, StatusBadge, Icon, LineChart, DecimalPipe, DatePipe, RouterLink],
+  imports: [StatusBadge, Icon, LineChart, DecimalPipe, DatePipe, RouterLink],
   templateUrl: './overview.html',
   styleUrls: ['./overview.scss', './overview-lists.scss'],
 })
@@ -185,6 +184,24 @@ export class Overview implements OnInit, OnDestroy {
   protected get activeCount(): number {
     return this.summary()?.consumers.active ?? 0;
   }
+
+  protected get singlePhaseCount(): number {
+    return this.summary()?.consumers.singlePhase ?? 0;
+  }
+
+  protected get threePhaseCount(): number {
+    return this.summary()?.consumers.threePhase ?? 0;
+  }
+
+  protected get disconnectedCount(): number {
+    return this.summary()?.consumers.disconnected ?? 0;
+  }
+
+  /** Whether the daily Happy Hours window (9 AM-2 PM IST, when manual disconnects are allowed) is open right now. Public holidays are not modelled. */
+  protected readonly happyHourOpen = computed(() => {
+    const istHour = new Date(this.now().getTime() + 5.5 * 3_600_000).getUTCHours();
+    return istHour >= 9 && istHour < 14;
+  });
 
   protected get totalWalletBalance(): number {
     return this.summary()?.consumers.walletTotal ?? 0;
