@@ -71,7 +71,7 @@
       <pe-kpi-card [tile]="true" label="Reconnections Completed" [value]="s.reconnectsCompleted" tone="success" icon="bolt"
         sublabel="acknowledged by the meter" [clickable]="true" (click)="selectStatus('Acknowledged')" />
       <pe-kpi-card [tile]="true" label="Pending Operations" [value]="s.pending" tone="warning" icon="clock"
-        [sublabel]="s.queued + ' queued · ' + s.sent + ' sent'" [clickable]="true" (click)="selectStatus('Pending')" />
+        [sublabel]="s.queued + ' queued · ' + s.sent + ' sent'" />
       <pe-kpi-card [tile]="true" label="Success Rate" [value]="successRate(s)" tone="analytic" icon="chart"
         sublabel="of finished commands" />
     </section>
@@ -86,8 +86,11 @@
   <section class="card filters" aria-label="Search and filter">
     <h2 class="card__title">Search &amp; Filter</h2>
     <form class="filters__grid" (ngSubmit)="search()">
-      <label class="f f--wide">Search
-        <input type="search" name="q" [(ngModel)]="form.q" placeholder="RR number or consumer name…" />
+      <label class="f">Consumer number
+        <input type="search" name="q" [(ngModel)]="form.q" placeholder="RR / consumer number" />
+      </label>
+      <label class="f">Meter number
+        <input type="search" name="meterNumber" [(ngModel)]="form.meterNumber" placeholder="Meter serial (MSN)" />
       </label>
       <label class="f">Operation Type
         <select name="type" [(ngModel)]="form.type">
@@ -99,25 +102,8 @@
       <label class="f">Status
         <select name="status" [(ngModel)]="form.status">
           <option value="">All</option>
-          <option value="Pending">Pending or in progress</option>
-          <option value="Queued">Pending (queued)</option>
-          <option value="Sent">In progress (sent)</option>
-          <option value="Acknowledged">Completed</option>
-          <option value="FailedOrTimedOut">Failed or timed out</option>
-        </select>
-      </label>
-      <label class="f">Reason
-        <select name="reason" [(ngModel)]="form.reason">
-          <option value="">All</option>
-          @for (r of stats()?.reasons ?? []; track r.reason) { <option [value]="r.reason">{{ r.reason }}</option> }
-        </select>
-      </label>
-      <label class="f">Balance Status
-        <select name="balance" [(ngModel)]="form.balance">
-          <option value="">All</option>
-          <option value="Positive">Positive balance</option>
-          <option value="Negative">Negative balance</option>
-          <option value="BeyondLimit">Beyond emergency credit</option>
+          <option value="Acknowledged">Success</option>
+          <option value="FailedOrTimedOut">Fail</option>
         </select>
       </label>
       <label class="f">Zone
@@ -127,9 +113,21 @@
         </select>
       </label>
       <label class="f">Circle
-        <select name="circleId" [(ngModel)]="form.circleId" [disabled]="!form.zoneId">
+        <select name="circleId" [(ngModel)]="form.circleId" (ngModelChange)="onCircleChange()" [disabled]="!form.zoneId">
           <option value="">All</option>
           @for (c of circles(); track c.id) { <option [value]="c.id">{{ c.name }}</option> }
+        </select>
+      </label>
+      <label class="f">Division
+        <select name="divisionId" [(ngModel)]="form.divisionId" (ngModelChange)="onDivisionChange()" [disabled]="!form.circleId">
+          <option value="">All</option>
+          @for (d of divisions(); track d.id) { <option [value]="d.id">{{ d.name }}</option> }
+        </select>
+      </label>
+      <label class="f">Subdivision
+        <select name="subDivisionId" [(ngModel)]="form.subDivisionId" [disabled]="!form.divisionId">
+          <option value="">All</option>
+          @for (d of subDivisions(); track d.id) { <option [value]="d.id">{{ d.name }}</option> }
         </select>
       </label>
       <label class="f">From
@@ -141,7 +139,13 @@
       <div class="filters__actions">
         <button type="button" class="btn btn--ghost" (click)="reset()">Reset</button>
         <button type="submit" class="btn btn--primary">Search</button>
+        <button type="button" class="btn btn--excel" (click)="download()" [disabled]="!!downloadHint || downloading()" [title]="downloadHint ?? 'Download the filtered list as an Excel file'">
+          {{ downloading() ? 'Preparing…' : 'Download Excel' }}
+        </button>
       </div>
+      <p class="filters__hint" [class.filters__hint--warn]="!!downloadHint || !!downloadError()">
+        {{ downloadError() ?? downloadHint ?? 'Download exports the filtered list for the chosen dates (up to 30 days).' }}
+      </p>
     </form>
   </section>
 

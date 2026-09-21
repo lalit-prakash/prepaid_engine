@@ -28,12 +28,13 @@ interface Tab {
 /** The filters as typed into the Search & Filter card; they only take effect when Search is pressed. */
 interface Filters {
   q: string;
+  meterNumber: string;
   type: string;
   status: string;
-  reason: string;
-  balance: string;
   zoneId: string;
   circleId: string;
+  divisionId: string;
+  subDivisionId: string;
   from: string;
   to: string;
 }
@@ -43,7 +44,10 @@ function isoDay(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const EMPTY: Filters = { q: '', type: '', status: '', reason: '', balance: '', zoneId: '', circleId: '', from: '', to: '' };
+const EMPTY: Filters = { q: '', meterNumber: '', type: '', status: '', zoneId: '', circleId: '', divisionId: '', subDivisionId: '', from: '', to: '' };
+
+/** A download covers at most this many days. */
+const EXPORT_MAX_DAYS = 30;
 
 /**
  * Disconnection / Reconnection. KPIs and tab counts come from GET /connectivity-commands/summary (counted by the database)
@@ -67,6 +71,10 @@ export class RcDcDashboard implements OnInit, OnDestroy {
   protected readonly statsError = signal(false);
   protected readonly zones = signal<NetworkNode[]>([]);
   protected readonly circles = signal<NetworkNode[]>([]);
+  protected readonly divisions = signal<NetworkNode[]>([]);
+  protected readonly subDivisions = signal<NetworkNode[]>([]);
+  protected readonly downloading = signal(false);
+  protected readonly downloadError = signal<string | null>(null);
   protected readonly activeTab = signal<string | null>(null);
 
   /** The Live RC DC Status view opens in place (?view=live), so the browser Back button returns to the operations list. */
@@ -85,27 +93,13 @@ export class RcDcDashboard implements OnInit, OnDestroy {
 
   protected readonly tabs: Tab[] = [
     { label: 'All Operations', status: null, count: (s) => s.total },
-    { label: 'Pending', status: 'Queued', count: (s) => s.queued },
-    { label: 'In Progress', status: 'Sent', count: (s) => s.sent },
-    { label: 'Completed', status: 'Acknowledged', count: (s) => s.acknowledged },
-    { label: 'Failed', status: 'FailedOrTimedOut', count: (s) => s.failedOrTimedOut },
+    { label: 'Success', status: 'Acknowledged', count: (s) => s.acknowledged },
+    { label: 'Fail', status: 'FailedOrTimedOut', count: (s) => s.failedOrTimedOut },
   ];
 
   protected readonly list = new PagedList<ConnectivityCommandSummary>(
     (after) =>
-      this.connectivityCommandService.search({
-        q: this.applied.q,
-        type: this.applied.type === '' ? null : (Number(this.applied.type) as ConnectivityCommandType),
-        status: this.applied.status || null,
-        reason: this.applied.reason,
-        balance: this.applied.balance,
-        zoneId: this.applied.zoneId,
-        circleId: this.applied.circleId,
-        from: this.applied.from,
-        to: this.applied.to,
-        after,
-        pageSize: PAGE_SIZE,
-      }),
+      this.connectivityCommandService.search({ ...this.toParams(this.applied), after, pageSize: PAGE_SIZE }),
     'Could not load connectivity commands from the API.',
   );
 
@@ -170,14 +164,80 @@ export class RcDcDashboard implements OnInit, OnDestroy {
     const date = day.slice(0, 10);
     this.form = { ...EMPTY, type: String(ConnectivityCommandType.Disconnect), status, from: date, to: date };
     this.circles.set([]);
+    this.divisions.set([]);
+    this.subDivisions.set([]);
     this.search();
     this.router.navigate([], { relativeTo: this.route, queryParams: { view: null } });
   }
 
+  private toParams(f: Filters) {
+    return {
+      q: f.q,
+      meterNumber: f.meterNumber,
+      type: f.type === '' ? null : (Number(f.type) as ConnectivityCommandType),
+      status: f.status || null,
+      zoneId: f.zoneId,
+      circleId: f.circleId,
+      divisionId: f.divisionId,
+      subDivisionId: f.subDivisionId,
+      from: f.from,
+      to: f.to,
+    };
+  }
+
+  /** Each location list follows the one above it: zone, then circle, division and subdivision. */
   protected onZoneChange(): void {
-    this.form.circleId = '';
+    this.form.circleId = this.form.divisionId = this.form.subDivisionId = '';
     this.circles.set([]);
+    this.divisions.set([]);
+    this.subDivisions.set([]);
     if (this.form.zoneId) this.network.nodes('circle', this.form.zoneId).subscribe({ next: (c) => this.circles.set(c), error: () => this.circles.set([]) });
+  }
+
+  protected onCircleChange(): void {
+    this.form.divisionId = this.form.subDivisionId = '';
+    this.divisions.set([]);
+    this.subDivisions.set([]);
+    if (this.form.circleId) this.network.nodes('division', this.form.circleId).subscribe({ next: (d) => this.divisions.set(d), error: () => this.divisions.set([]) });
+  }
+
+  protected onDivisionChange(): void {
+    this.form.subDivisionId = '';
+    this.subDivisions.set([]);
+    if (this.form.divisionId) this.network.nodes('subdivision', this.form.divisionId).subscribe({ next: (d) => this.subDivisions.set(d), error: () => this.subDivisions.set([]) });
+  }
+
+  /** The Excel download needs a From and To date no more than 30 days apart; null when the range is fine, otherwise what to fix. */
+  protected get downloadHint(): string | null {
+    const { from, to } = this.form;
+    if (!from || !to) return 'Choose a From and To date to download.';
+    const days = (Date.parse(to) - Date.parse(from)) / 86_400_000;
+    if (days < 0) return 'The To date is before the From date.';
+    if (days >= EXPORT_MAX_DAYS) return `Download covers at most ${EXPORT_MAX_DAYS} days.`;
+    return null;
+  }
+
+  protected download(): void {
+    if (this.downloadHint || this.downloading()) return;
+    this.downloading.set(true);
+    this.downloadError.set(null);
+    this.connectivityCommandService.exportExcel(this.toParams(this.form)).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `rc-dc-${this.form.from}-to-${this.form.to}.xlsx`;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.downloading.set(false);
+      },
+      error: async (err) => {
+        let message = 'Could not download the file.';
+        try { message = JSON.parse(await (err.error as Blob).text()).error ?? message; } catch { /* keep the generic message */ }
+        this.downloadError.set(message);
+        this.downloading.set(false);
+      },
+    });
   }
 
   protected search(): void {
@@ -189,6 +249,8 @@ export class RcDcDashboard implements OnInit, OnDestroy {
   protected reset(): void {
     this.form = { ...EMPTY };
     this.circles.set([]);
+    this.divisions.set([]);
+    this.subDivisions.set([]);
     this.search();
   }
 

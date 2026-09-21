@@ -48,7 +48,9 @@
 }
 .f input:focus, .f select:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-lighter); }
 .f select:disabled { opacity: 0.55; background: var(--color-neutral-100); }
-.filters__actions { grid-column: -2 / -1; display: flex; gap: var(--space-2); justify-content: flex-end; }
+.filters__actions { grid-column: span 2; display: flex; gap: var(--space-2); justify-content: flex-end; }
+.filters__hint { grid-column: 1 / -1; margin: 0; font-size: var(--font-size-meta); color: var(--text-muted); text-align: right; }
+.filters__hint--warn { color: var(--color-warning-dark, #b45309); }
 
 .btn { height: 40px; padding: 0 var(--space-5); border-radius: 10px; font: inherit; font-weight: 600; cursor: pointer; border: 1px solid transparent; text-decoration: none; display: inline-flex; align-items: center; white-space: nowrap; }
 .btn--primary { background: var(--color-primary); color: #fff; box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3); }
@@ -124,3 +126,7 @@ tr.row-clickable:hover td { background: var(--color-primary-lighter); }
 th.num, td.num { text-align: right; }
 .cell-link { background: none; border: none; padding: 0; font: inherit; font-weight: 600; color: var(--color-primary); cursor: pointer; text-decoration: underline; }
 .cell-link:hover { filter: brightness(0.85); }
+
+.btn--excel { background: #16a34a; color: #fff; box-shadow: 0 2px 6px rgba(22, 163, 74, 0.3); }
+.btn--excel:hover:not(:disabled) { filter: brightness(1.08); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }

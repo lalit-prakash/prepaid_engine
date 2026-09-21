@@ -54,8 +54,6 @@ export interface ConnectivityCommandSummaryStats {
   disconnectedConsumers: number;
   /** Reconnect commands the meter has acknowledged. */
   reconnectsCompleted: number;
-  /** The most used reasons on record, for the Reason filter. */
-  reasons: { reason: string; count: number }[];
 }
 
 /** GET /api/v1/connectivity-commands/{id}. */
