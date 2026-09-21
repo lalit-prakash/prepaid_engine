@@ -124,6 +124,26 @@ public static class ConsumerListEndpoints
         .WithName("SearchConsumers")
         .RequireAuthorization();
 
+        // A consumer's daily prepaid bills, newest first: what was debited each day and every component of it.
+        app.MapGet("/api/v1/consumers/{accountNumber}/daily-bills", async (string accountNumber, int? take, PrepaidEngineDbContext db) =>
+        {
+            var consumerId = await db.Consumers.AsNoTracking().Where(c => c.AccountNumber == accountNumber).Select(c => (Guid?)c.Id).FirstOrDefaultAsync();
+            if (consumerId is null) return Results.NotFound(new { error = "No such consumer." });
+
+            var rows = await (from b in db.DailyBills.AsNoTracking()
+                              join t in db.Tariffs.AsNoTracking() on b.TariffId equals t.Id
+                              where b.ConsumerId == consumerId
+                              orderby b.BillDate descending
+                              select new
+                              {
+                                  b.Id, b.BillDate, b.Kwh, b.MonthToDateKwhBefore, b.GrossEnergyCharge, b.PrepaidRebate, b.FixedCharge, b.ElectricityDuty,
+                                  b.LtSideMeteringSurcharge, b.Tmc, b.Cpmc, b.FppasShare, b.Total, b.IsProvisional, b.Notes, TariffName = t.Name, t.ScheduleCode,
+                              }).Take(Math.Clamp(take ?? 31, 1, 366)).ToListAsync();
+            return Results.Ok(rows);
+        })
+        .WithName("ListConsumerDailyBills")
+        .RequireAuthorization();
+
         // Counts of conversion requests for the cards. Success rate is completed of the requests that have been decided (completed or rejected).
         app.MapGet("/api/v1/consumers/summary", async (PrepaidEngineDbContext db) =>
         {

@@ -88,6 +88,7 @@ public sealed class TariffActivationService
             if (superseded is null || superseded.Status != TariffLifecycleStatus.Active)
                 throw new InvalidOperationException("The tariff this change revises is no longer Active; cancel this request and revise the current tariff.");
             superseded.Retire();
+            newTariff.InheritClassification(superseded);
         }
         _db.Tariffs.Add(newTariff);
 

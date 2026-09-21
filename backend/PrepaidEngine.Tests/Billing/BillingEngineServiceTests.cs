@@ -122,7 +122,7 @@ public class BillingEngineServiceTests : IDisposable
     {
         var billingDate = new DateOnly(2026, 9, 11);
 
-        // 24 kWh @ ₹5/kWh = ₹120.
+        // 24 kWh @ ₹5/kWh = ₹120 energy charge, plus ₹1.20 electricity duty (24 units × ₹0.05, Domestic) = ₹121.20.
         await _service.IngestDailyLoadProfileAsync(
             new DailyLoadProfileRequest(_consumer.Id, _consumer.Meter.Id, billingDate, DateTime.UtcNow, 0m, 24m));
 
@@ -131,10 +131,10 @@ public class BillingEngineServiceTests : IDisposable
 
         Assert.Single(results);
         Assert.Equal("Stage1", results[0].Stage);
-        Assert.Equal(120m, results[0].ChargeAmount);
+        Assert.Equal(121.20m, results[0].ChargeAmount);
 
         var reloaded = await ReloadConsumerAsync();
-        Assert.Equal(10000m - 120m, reloaded.Wallet.Balance);
+        Assert.Equal(10000m - 121.20m, reloaded.Wallet.Balance);
     }
 
     [Fact]
@@ -169,10 +169,10 @@ public class BillingEngineServiceTests : IDisposable
 
         Assert.Single(results);
         Assert.Equal("Stage2", results[0].Stage);
-        Assert.Equal(120m, results[0].ChargeAmount);
+        Assert.Equal(121.20m, results[0].ChargeAmount);
 
         var reloaded = await ReloadConsumerAsync();
-        Assert.Equal(10000m - 120m, reloaded.Wallet.Balance);
+        Assert.Equal(10000m - 121.20m, reloaded.Wallet.Balance);
     }
 
     [Fact]

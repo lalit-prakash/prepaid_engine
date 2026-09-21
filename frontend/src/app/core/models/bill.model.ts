@@ -1,10 +1,18 @@
 import { BillStatus } from './consumer.model';
 
+/** Mirrors the backend's ConsumerCategory (the tariff book's consumption categories); the numbers must match the API. */
 export enum ConsumerCategory {
   Domestic = 0,
-  Bpl = 1,
-  Industrial = 2,
-  Commercial = 3,
+  NonDomestic = 1,
+  GeneralPurpose = 2,
+  PublicWaterSupply = 3,
+  Industrial = 4,
+  FerroAlloy = 5,
+  Agriculture = 6,
+  Crematorium = 7,
+  ElectricVehicle = 8,
+  KutirJyotiBpl = 9,
+  PublicLighting = 10,
 }
 
 /** One row of GET /api/v1/bills — a bill joined with its consumer and tariff. */
