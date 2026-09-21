@@ -39,7 +39,22 @@ $gap: 12px;
 .hero__accent { display: inline-block; width: 46px; height: 3px; border-radius: 2px; background: #3b82f6; margin-top: 4px; }
 
 /* ---------------------------------------------------------------- kpis */
-.kpi-row { position: relative; margin-top: -34px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: $gap; align-items: stretch; }
+.stat-row { position: relative; margin-top: -34px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: $gap; align-items: stretch; }
+.stat {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 16px 10px 14px; text-align: center;
+  font: inherit; color: inherit; border: none; border-bottom: 5px solid var(--stat-accent);
+  border-radius: 12px; background: linear-gradient(180deg, #fff 0%, #ececec 100%); box-shadow: 0 1px 3px rgba(15, 31, 61, 0.12);
+}
+.stat--link { cursor: pointer; transition: box-shadow 0.15s; }
+.stat--link:hover { box-shadow: 0 4px 12px rgba(15, 31, 61, 0.18); }
+.stat__icon { color: var(--stat-accent); display: inline-flex; }
+.stat__value { font-size: 28px; font-weight: 600; line-height: 1.15; color: #2f6fb0; }
+.stat__label { font-size: 12.5px; color: var(--text-secondary); }
+.stat--indigo { --stat-accent: #3d4a7a; }
+.stat--blue { --stat-accent: #1d5fd8; }
+.stat--green { --stat-accent: #16a34a; }
+.stat--red { --stat-accent: #9b1c1c; }
+.stat--amber { --stat-accent: #d99a06; }
 
 /* ---------------------------------------------------------------- rows */
 .row { display: grid; gap: $gap; align-items: stretch; }
@@ -151,7 +166,7 @@ $gap: 12px;
   .row--two { grid-template-columns: 1fr; }
 }
 @media (max-width: 1200px) {
-  .kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .stat-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .row--trend { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .row--trend .panel--trend { grid-column: 1 / -1; }
 }
@@ -160,7 +175,7 @@ $gap: 12px;
 }
 @media (max-width: 900px) {
   .hero { flex-wrap: wrap; }
-  .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .row--trend, .row--three, .row--two { grid-template-columns: 1fr; }
   .trend { grid-template-columns: 1fr; }
   .trend__stats { border-left: none; padding-left: 0; flex-direction: row; flex-wrap: wrap; }

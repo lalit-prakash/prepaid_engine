@@ -23,21 +23,37 @@
       <p>Retry, or check the API's health endpoint and integration status.</p>
     </div>
   } @else {
-    <section class="kpi-row" aria-label="Key performance indicators">
-      <pe-kpi-card [tile]="true" label="Consumers" [value]="totalConsumers" tone="primary" icon="users"
-        [sublabel]="activeCount + ' active'" [clickable]="true" (click)="goToConsumers()" />
-      <pe-kpi-card [tile]="true" label="Wallet Balance" [value]="'₹' + (totalWalletBalance | number:'1.0-0')" tone="success" icon="wallet"
-        [sublabel]="'across ' + totalConsumers + ' wallets'" />
-      <pe-kpi-card [tile]="true" label="Healthy Meters" [value]="healthyMetersPct + '%'" tone="success" icon="signal"
-        [sublabel]="activeCount + ' / ' + totalConsumers" />
-      <pe-kpi-card [tile]="true" label="Low Balance" [value]="lowBalanceCount" tone="warning" icon="alert"
-        [sublabel]="'of ' + totalConsumers + ' consumers'" [clickable]="true" (click)="goToConsumers({ lowBalance: 'true' })" />
-      @if (billingAvailable) {
-        <pe-kpi-card [tile]="true" label="Billing (DLP)" [value]="billing().pct + '%'" tone="analytic" icon="receipt"
-          [sublabel]="billing().successful + ' / ' + billing().total + ' processed'" />
-      } @else {
-        <pe-kpi-card [tile]="true" label="Billing (DLP)" value="" [unavailable]="true" tone="analytic" icon="receipt" />
-      }
+    <section class="stat-row" aria-label="Consumer overview">
+      <div class="stat stat--indigo">
+        <span class="stat__icon"><pe-icon name="users" [size]="22" /></span>
+        <span class="stat__value">{{ singlePhaseCount | number }}</span>
+        <span class="stat__label">1 PH Consumers</span>
+      </div>
+      <div class="stat stat--indigo">
+        <span class="stat__icon"><pe-icon name="users" [size]="22" /></span>
+        <span class="stat__value">{{ threePhaseCount | number }}</span>
+        <span class="stat__label">3 PH Consumers</span>
+      </div>
+      <button type="button" class="stat stat--blue stat--link" (click)="goToConsumers()">
+        <span class="stat__icon"><pe-icon name="users" [size]="22" /></span>
+        <span class="stat__value">{{ totalConsumers | number }}</span>
+        <span class="stat__label">Total Consumers</span>
+      </button>
+      <button type="button" class="stat stat--green stat--link" (click)="goToConsumers({ status: 'Active' })">
+        <span class="stat__icon"><pe-icon name="bolt" [size]="22" /></span>
+        <span class="stat__value">{{ activeCount | number }}</span>
+        <span class="stat__label">Connected</span>
+      </button>
+      <button type="button" class="stat stat--red stat--link" (click)="goToConsumers({ status: 'Disconnected' })">
+        <span class="stat__icon"><pe-icon name="plug" [size]="22" /></span>
+        <span class="stat__value">{{ disconnectedCount | number }}</span>
+        <span class="stat__label">Disconnected</span>
+      </button>
+      <div class="stat stat--amber">
+        <span class="stat__icon"><pe-icon name="clock" [size]="22" /></span>
+        <span class="stat__value">{{ happyHourOpen() ? 'Open' : 'Closed' }}</span>
+        <span class="stat__label">Happy Hour · 9 AM–2 PM IST</span>
+      </div>
     </section>
   }
   </div>

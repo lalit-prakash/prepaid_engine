@@ -35,10 +35,12 @@ const HIERARCHY_COLUMNS: ReportColumn[] = [
   { key: 'zone', label: 'Zone', type: 'text' },
   { key: 'circle', label: 'Circle', type: 'text' },
   { key: 'division', label: 'Division', type: 'text' },
-  { key: 'subDivision', label: 'Sub-division', type: 'text' },
-  { key: 'substation', label: 'Substation', type: 'text' },
+  { key: 'subDivision', label: 'Subdivision', type: 'text' },
+  { key: 'substation', label: 'Sub Station', type: 'text' },
   { key: 'feeder', label: 'Feeder', type: 'text' },
+  { key: 'feederCode', label: 'Feeder code', type: 'text' },
   { key: 'dtr', label: 'DTR', type: 'text' },
+  { key: 'dtrCode', label: 'DTR Code', type: 'text' },
 ];
 const GROUP_COLUMN: ReportColumn = { key: 'group', label: 'Network group', type: 'text', groupedOnly: true };
 
@@ -84,6 +86,26 @@ export const REPORT_DEFINITIONS: ReportDefinition[] = [
       { key: 'amount', label: 'Total', type: 'money', totalKey: 'totalBilled', link: (r) => `/billing/${r['id']}` },
       { key: 'amountPaid', label: 'Settled', type: 'money', totalKey: 'totalSettled' },
       { key: 'status', label: 'Status', type: 'enum', labels: BILL_STATUS_LABELS },
+    ],
+  },
+  {
+    id: 'live-rc-dc',
+    title: 'Live RC DC Status',
+    description: 'For each day: disconnects sent, the reconnects raised against those disconnects, and the recharges by those consumers with their meter-credit outcome. Eligible DC is a live count, given for today only.',
+    endpoint: 'live-rc-dc',
+    columns: [
+      { key: 'date', label: 'Date', type: 'date' },
+      { key: 'eligibleDc', label: 'Eligible DC', type: 'number' },
+      { key: 'dcTriggered', label: 'DC Triggered', type: 'number' },
+      { key: 'dcPending', label: 'DC Pending', type: 'number' },
+      { key: 'dcSuccess', label: 'DC Success', type: 'number' },
+      { key: 'rcInitiated', label: "RC Initiated Against Today's DC", type: 'number' },
+      { key: 'rcPending', label: "RC Pending against Today's DC", type: 'number' },
+      { key: 'rcSuccess', label: 'RC Success', type: 'number' },
+      { key: 'rechargeMdmSuccess', label: 'Recharge MDM Success', type: 'number' },
+      { key: 'rechargePendingInMdm', label: 'Recharge Pending in MDM', type: 'number' },
+      { key: 'rechargeSuccessInHes', label: 'Recharge Success in HES', type: 'number' },
+      { key: 'rechargeFailInHes', label: 'Recharge Fail in HES', type: 'number' },
     ],
   },
   {

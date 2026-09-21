@@ -108,7 +108,8 @@ docs/      architecture, domain rules, sourcing and security notes
 ## Security note
 Authentication is JWT bearer: `POST /api/v1/auth/login` returns a 30-minute signed token (renewable up to
 8 hours), passwords are stored as PBKDF2 hashes, and repeated failed sign-ins lock the login id for 15
-minutes. There are five roles with per-endpoint policies, and every write endpoint must name one. The API also
+minutes. "Forgot password?" on the login page e-mails a 6-digit code (10 minutes, single use) to the user's
+registered address; that needs SMTP settings (`Email:*`) and an `Email` per user. There are five roles with per-endpoint policies, and every write endpoint must name one. The API also
 applies per-IP rate limiting, security headers, HSTS and a request size cap. Users are still configured
 rather than stored in a database, and load testing at scale has not been done. Do not expose this API beyond a
 trusted network until the remaining items are done (see [assumptions-and-security.md](docs/assumptions-and-security.md)).

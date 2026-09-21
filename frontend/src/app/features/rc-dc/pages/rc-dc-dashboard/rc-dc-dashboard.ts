@@ -1,4 +1,5 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subject, Subscription, debounceTime } from 'rxjs';
@@ -21,7 +22,7 @@ const PAGE_SIZE = 25;
  */
 @Component({
   selector: 'pe-rc-dc-dashboard',
-  imports: [StatusBadge, KpiCard, DatePipe, DecimalPipe],
+  imports: [StatusBadge, KpiCard, DatePipe, DecimalPipe, RouterLink],
   templateUrl: './rc-dc-dashboard.html',
   styleUrl: './rc-dc-dashboard.scss',
 })

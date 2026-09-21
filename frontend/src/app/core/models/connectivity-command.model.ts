@@ -26,6 +26,18 @@ export interface ConnectivityCommandSummary {
   createdAt: string;
   sentAt: string | null;
   acknowledgedAt: string | null;
+  /** Serial number of the consumer's meter (MSN). */
+  meterNumber: string;
+  /** Network position of the consumer's DTR; all null when the consumer is not mapped to a DTR yet. */
+  zone: string | null;
+  circle: string | null;
+  division: string | null;
+  subDivision: string | null;
+  substation: string | null;
+  feeder: string | null;
+  feederCode: string | null;
+  dtr: string | null;
+  dtrCode: string | null;
 }
 
 /** GET /api/v1/connectivity-commands/summary: counts computed by the database. */

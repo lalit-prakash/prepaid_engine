@@ -86,3 +86,7 @@ tr.row-clickable:hover td { background: var(--color-primary-lighter); }
 .pager button { padding: 6px var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--surface-card); color: var(--text-primary); cursor: pointer; }
 .pager button:disabled { opacity: 0.4; cursor: not-allowed; }
 .kpi-row--filterable pe-kpi-card { cursor: pointer; }
+
+.table-wrap { overflow-x: auto; }
+table.wide { min-width: 1500px; }
+table.wide th, table.wide td { white-space: nowrap; }

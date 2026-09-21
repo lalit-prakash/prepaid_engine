@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
 using PrepaidEngine.Domain.Entities;
 using PrepaidEngine.Domain.Enums;
 using PrepaidEngine.Infrastructure.Persistence;
@@ -6,6 +7,8 @@ using PrepaidEngine.Infrastructure.Persistence;
 namespace PrepaidEngine.Api.Auth;
 
 public sealed record LoginRequest(string? Username, string? Password);
+public sealed record ForgotPasswordRequest(string? Username);
+public sealed record ResetPasswordRequest(string? Username, string? Code, string? NewPassword);
 
 public static class AuthEndpoints
 {
@@ -21,11 +24,15 @@ public static class AuthEndpoints
             {
                 log.LogWarning("Sign-in blocked for {User}: too many failed attempts.", request.Username);
                 await RecordAsync(db, log, request.Username, "LOGIN_BLOCKED", null, "Too many failed attempts.");
-                http.Response.Headers.RetryAfter = ((int)Math.Ceiling(wait.TotalSeconds)).ToString();
-                return Results.Json(new { error = "Too many failed attempts. Try again later." }, statusCode: StatusCodes.Status429TooManyRequests);
+                var seconds = (int)Math.Ceiling(wait.TotalSeconds);
+                http.Response.Headers.RetryAfter = seconds.ToString();
+                return Results.Json(new { error = "Too many failed attempts. Try again later.", retryAfterSeconds = seconds }, statusCode: StatusCodes.Status429TooManyRequests);
             }
 
-            var user = users.Validate(request.Username, request.Password);
+            // A password chosen through "Forgot password" lives in the database and replaces the configured one.
+            var known = users.Find(request.Username)?.Username;
+            var overrideHash = known is null ? null : await db.UserPasswordOverrides.AsNoTracking().Where(o => o.LoginId == known).Select(o => o.PasswordHash).FirstOrDefaultAsync();
+            var user = users.Validate(request.Username, request.Password, overrideHash);
             if (user is null)
             {
                 throttle.RecordFailure(request.Username, now);
@@ -39,6 +46,28 @@ public static class AuthEndpoints
             await RecordAsync(db, log, user.Username, "LOGIN_SUCCEEDED", user.Role.ToString(), null);
             return Results.Ok(Response(tokens.Issue(user, now, now), user));
         }).AllowAnonymous().RequireRateLimiting(PrepaidEngine.Api.Security.SecurityExtensions.LoginLimiter).WithName("Login");
+
+        // Forgot password, step 1: e-mail a one-time code to the address registered for the login id. The reply is the same
+        // whether or not the login id exists, so this cannot be used to discover accounts.
+        app.MapPost("/api/v1/auth/forgot-password", async (ForgotPasswordRequest request, HttpContext http, PasswordResetService reset, PrepaidEngine.Api.Auth.Email.IEmailSender email) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Username))
+                return Results.BadRequest(new { error = "Enter your login id." });
+            if (!email.CanSend)
+                return Results.Json(new { error = "E-mail is not set up on this server, so a reset code cannot be sent. Ask an administrator to reset your password." }, statusCode: StatusCodes.Status503ServiceUnavailable);
+
+            await reset.RequestAsync(request.Username, http.Connection.RemoteIpAddress?.ToString(), DateTime.UtcNow, http.RequestAborted);
+            return Results.Ok(new { message = "If that login id has a registered e-mail address, a 6-digit code has been sent to it. It is valid for 10 minutes." });
+        }).AllowAnonymous().RequireRateLimiting(PrepaidEngine.Api.Security.SecurityExtensions.ResetLimiter).WithName("ForgotPassword");
+
+        // Forgot password, step 2: the code plus a new password.
+        app.MapPost("/api/v1/auth/reset-password", async (ResetPasswordRequest request, HttpContext http, PasswordResetService reset) =>
+        {
+            var result = await reset.ResetAsync(request.Username, request.Code, request.NewPassword, DateTime.UtcNow, http.RequestAborted);
+            return result.Ok
+                ? Results.Ok(new { message = "Your password has been changed. Sign in with the new password." })
+                : Results.BadRequest(new { error = result.Error, problems = result.Problems });
+        }).AllowAnonymous().RequireRateLimiting(PrepaidEngine.Api.Security.SecurityExtensions.ResetLimiter).WithName("ResetPassword");
 
         // Sliding renewal: a still-valid token is swapped for a fresh one until the session reaches its absolute limit.
         app.MapPost("/api/v1/auth/refresh", (ClaimsPrincipal principal, TokenService tokens) =>

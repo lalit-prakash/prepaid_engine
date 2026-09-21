@@ -30,6 +30,8 @@ public static class DashboardEndpoints
                     Total = g.Count(),
                     Active = g.Count(c => c.ConnectionStatus == ConnectionStatus.Active),
                     Disconnected = g.Count(c => c.ConnectionStatus == ConnectionStatus.Disconnected),
+                    SinglePhase = g.Count(c => c.Meter.Phase == MeterPhase.SinglePhase),
+                    ThreePhase = g.Count(c => c.Meter.Phase == MeterPhase.ThreePhase),
                     LowBalance = g.Count(c => c.Wallet.Balance < (threshold ?? c.Wallet.EmergencyCreditLimit)),
                     LowBalanceConnected = g.Count(c => c.ConnectionStatus != ConnectionStatus.Disconnected && c.Wallet.Balance < (threshold ?? c.Wallet.EmergencyCreditLimit)),
                     WalletTotal = g.Sum(c => (decimal?)c.Wallet.Balance) ?? 0m,
@@ -115,7 +117,7 @@ public static class DashboardEndpoints
 
             return Results.Ok(new
             {
-                Consumers = consumers ?? new { Total = 0, Active = 0, Disconnected = 0, LowBalance = 0, LowBalanceConnected = 0, WalletTotal = 0m },
+                Consumers = consumers ?? new { Total = 0, Active = 0, Disconnected = 0, SinglePhase = 0, ThreePhase = 0, LowBalance = 0, LowBalanceConnected = 0, WalletTotal = 0m },
                 Billing = billing,
                 Attention = new { Critical = critical, Warning = warning, Items = items.OrderByDescending(i => i.At).Take(AttentionRows) },
                 RecentConnectivity = recentConnectivity,
