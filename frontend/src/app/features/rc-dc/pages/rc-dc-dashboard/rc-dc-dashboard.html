@@ -1,47 +1,161 @@
 <div class="rc-dc">
   <div class="page-header">
-    <h1>RC / DC</h1>
-    <p class="page-header__subtitle">{{ (stats()?.total ?? 0) | number }} disconnect/reconnect command(s) across all consumers ·
-      <a routerLink="/reports/view/live-rc-dc">Live RC DC Status report</a></p>
+    <div>
+      <h1>Disconnection / Reconnection</h1>
+      <p class="page-header__subtitle">
+        Manage consumer disconnection and reconnection commands, from the zone down to the DTR.
+      </p>
+    </div>
+    @if (view() === 'operations') {
+      <button type="button" class="btn btn--primary" (click)="openLive()">Live RC DC Status</button>
+    } @else {
+      <button type="button" class="btn btn--ghost" (click)="closeLive()">← Back to Disconnection / Reconnection</button>
+    }
   </div>
 
+  @if (view() === 'live') {
+    <section class="card live">
+      <h2 class="card__title">Live RC DC Status</h2>
+      <p class="live__note">For each day: disconnects sent, the reconnects raised against them, and those consumers' recharges with their meter-credit outcome. Click a DC count to see those commands. Eligible DC is a live count, given for today only.</p>
+      <form class="live__filters" (ngSubmit)="loadLive()">
+        <label class="f">From <input type="date" name="lf" [(ngModel)]="liveFrom" /></label>
+        <label class="f">To <input type="date" name="lt" [(ngModel)]="liveTo" /></label>
+        <label class="f">Zone
+          <select name="lz" [(ngModel)]="liveZoneId">
+            <option value="">All</option>
+            @for (z of zones(); track z.id) { <option [value]="z.id">{{ z.name }}</option> }
+          </select>
+        </label>
+        <button type="submit" class="btn btn--primary" [disabled]="liveLoading()">{{ liveLoading() ? 'Loading…' : 'Refresh' }}</button>
+      </form>
+      @if (liveError()) {
+        <div class="error-panel">{{ liveError() }}</div>
+      } @else {
+        <div class="table-wrap" [class.table-wrap--loading]="liveLoading()">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th class="num">Eligible DC</th><th class="num">DC Triggered</th><th class="num">DC Pending</th><th class="num">DC Success</th>
+                <th class="num">RC Initiated Against Today's DC</th><th class="num">RC Pending against Today's DC</th><th class="num">RC Success</th>
+                <th class="num">Recharge MDM Success</th><th class="num">Recharge Pending in MDM</th><th class="num">Recharge Success in HES</th><th class="num">Recharge Fail in HES</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (r of live(); track r.date) {
+                <tr>
+                  <td>{{ r.date | date: 'dd-MMM-yyyy' }}</td>
+                  <td class="num">{{ r.eligibleDc === null ? '—' : (r.eligibleDc | number) }}</td>
+                  <td class="num">@if (r.dcTriggered) { <button type="button" class="cell-link" (click)="drillDc(r.date, '')">{{ r.dcTriggered | number }}</button> } @else { 0 }</td>
+                  <td class="num">@if (r.dcPending) { <button type="button" class="cell-link" (click)="drillDc(r.date, 'Pending')">{{ r.dcPending | number }}</button> } @else { 0 }</td>
+                  <td class="num">@if (r.dcSuccess) { <button type="button" class="cell-link" (click)="drillDc(r.date, 'Acknowledged')">{{ r.dcSuccess | number }}</button> } @else { 0 }</td>
+                  <td class="num">{{ r.rcInitiated | number }}</td>
+                  <td class="num">{{ r.rcPending | number }}</td>
+                  <td class="num">{{ r.rcSuccess | number }}</td>
+                  <td class="num">{{ r.rechargeMdmSuccess | number }}</td>
+                  <td class="num">{{ r.rechargePendingInMdm | number }}</td>
+                  <td class="num">{{ r.rechargeSuccessInHes | number }}</td>
+                  <td class="num">{{ r.rechargeFailInHes | number }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (liveGeneratedAt()) { <p class="live__note">Generated {{ liveGeneratedAt() | date: 'dd-MM-yyyy HH:mm:ss' }}</p> }
+      }
+    </section>
+  } @else {
   @if (stats(); as s) {
-    <section class="kpi-row kpi-row--filterable">
-      <pe-kpi-card label="Total Commands" [value]="s.total" tone="primary" [clickable]="true" (click)="clearFilters()" />
-      <pe-kpi-card label="Disconnects" [value]="s.disconnects" tone="danger" [clickable]="true" (click)="filterByType(ConnectivityCommandType.Disconnect)" />
-      <pe-kpi-card label="Reconnects" [value]="s.reconnects" tone="success" [clickable]="true" (click)="filterByType(ConnectivityCommandType.Reconnect)" />
-      <pe-kpi-card label="Acknowledged" [value]="s.acknowledged" tone="success" [clickable]="true" (click)="filterByStatus('Acknowledged')" />
-      <pe-kpi-card label="Failed / Timed Out" [value]="s.failedOrTimedOut" tone="danger" [clickable]="true" (click)="filterByStatus('FailedOrTimedOut')" />
-      <pe-kpi-card label="Pending" [value]="s.pending" tone="warning" [clickable]="true" (click)="filterByStatus('Pending')" />
-      <pe-kpi-card label="Success Rate" [value]="successRate(s)" tone="info" />
+    <section class="kpi-row">
+      <pe-kpi-card [tile]="true" label="Disconnected Consumers" [value]="s.disconnectedConsumers" tone="danger" icon="plug"
+        sublabel="supply off right now" />
+      <pe-kpi-card [tile]="true" label="Reconnections Completed" [value]="s.reconnectsCompleted" tone="success" icon="bolt"
+        sublabel="acknowledged by the meter" [clickable]="true" (click)="selectStatus('Acknowledged')" />
+      <pe-kpi-card [tile]="true" label="Pending Operations" [value]="s.pending" tone="warning" icon="clock"
+        [sublabel]="s.queued + ' queued · ' + s.sent + ' sent'" />
+      <pe-kpi-card [tile]="true" label="Success Rate" [value]="successRate(s)" tone="analytic" icon="chart"
+        sublabel="of finished commands" />
     </section>
   } @else if (statsError()) {
     <div class="error-panel">Could not load the summary counts from the API.</div>
   } @else {
     <div class="skeleton-row">
-      @for (i of [1,2,3,4,5,6]; track i) { <div class="skeleton-card"></div> }
+      @for (i of [1,2,3,4]; track i) { <div class="skeleton-card"></div> }
     </div>
   }
 
-  <div class="toolbar">
-    <input
-      #searchBox
-      type="search"
-      placeholder="Search RR number or consumer name…"
-      [value]="searchTerm()"
-      (input)="onSearchInput($any($event.target).value)"
-    />
-    <select (change)="onTypeChange($any($event.target).value)">
-      <option value="" [selected]="typeFilter() === null">Disconnect and reconnect</option>
-      <option [value]="ConnectivityCommandType.Disconnect" [selected]="typeFilter() === ConnectivityCommandType.Disconnect">Disconnect only</option>
-      <option [value]="ConnectivityCommandType.Reconnect" [selected]="typeFilter() === ConnectivityCommandType.Reconnect">Reconnect only</option>
-    </select>
-    <select (change)="onStatusChange($any($event.target).value)">
-      <option value="" [selected]="!statusFilter()">All statuses</option>
-      @for (o of statusOptions; track o.value) { <option [value]="o.value" [selected]="statusFilter() === o.value">{{ o.label }}</option> }
-    </select>
-    @if (hasActiveFilters) { <button type="button" class="toolbar__clear" (click)="clearFilters(); searchBox.value = ''">Clear filters</button> }
-  </div>
+  <section class="card filters" aria-label="Search and filter">
+    <h2 class="card__title">Search &amp; Filter</h2>
+    <form class="filters__grid" (ngSubmit)="search()">
+      <label class="f">Consumer number
+        <input type="search" name="q" [(ngModel)]="form.q" placeholder="RR / consumer number" />
+      </label>
+      <label class="f">Meter number
+        <input type="search" name="meterNumber" [(ngModel)]="form.meterNumber" placeholder="Meter serial (MSN)" />
+      </label>
+      <label class="f">Operation Type
+        <select name="type" [(ngModel)]="form.type">
+          <option value="">All</option>
+          <option [value]="ConnectivityCommandType.Disconnect">Disconnection</option>
+          <option [value]="ConnectivityCommandType.Reconnect">Reconnection</option>
+        </select>
+      </label>
+      <label class="f">Status
+        <select name="status" [(ngModel)]="form.status">
+          <option value="">All</option>
+          <option value="Acknowledged">Success</option>
+          <option value="FailedOrTimedOut">Fail</option>
+        </select>
+      </label>
+      <label class="f">Zone
+        <select name="zoneId" [(ngModel)]="form.zoneId" (ngModelChange)="onZoneChange()">
+          <option value="">All</option>
+          @for (z of zones(); track z.id) { <option [value]="z.id">{{ z.name }}</option> }
+        </select>
+      </label>
+      <label class="f">Circle
+        <select name="circleId" [(ngModel)]="form.circleId" (ngModelChange)="onCircleChange()" [disabled]="!form.zoneId">
+          <option value="">All</option>
+          @for (c of circles(); track c.id) { <option [value]="c.id">{{ c.name }}</option> }
+        </select>
+      </label>
+      <label class="f">Division
+        <select name="divisionId" [(ngModel)]="form.divisionId" (ngModelChange)="onDivisionChange()" [disabled]="!form.circleId">
+          <option value="">All</option>
+          @for (d of divisions(); track d.id) { <option [value]="d.id">{{ d.name }}</option> }
+        </select>
+      </label>
+      <label class="f">Subdivision
+        <select name="subDivisionId" [(ngModel)]="form.subDivisionId" [disabled]="!form.divisionId">
+          <option value="">All</option>
+          @for (d of subDivisions(); track d.id) { <option [value]="d.id">{{ d.name }}</option> }
+        </select>
+      </label>
+      <label class="f">From
+        <input type="date" name="from" [(ngModel)]="form.from" />
+      </label>
+      <label class="f">To
+        <input type="date" name="to" [(ngModel)]="form.to" />
+      </label>
+      <div class="filters__actions">
+        <button type="button" class="btn btn--ghost" (click)="reset()">Reset</button>
+        <button type="submit" class="btn btn--primary">Search</button>
+        <button type="button" class="btn btn--excel" (click)="download()" [disabled]="!!downloadHint || downloading()" [title]="downloadHint ?? 'Download the filtered list as an Excel file'">
+          {{ downloading() ? 'Preparing…' : 'Download Excel' }}
+        </button>
+      </div>
+      <p class="filters__hint" [class.filters__hint--warn]="!!downloadHint || !!downloadError()">
+        {{ downloadError() ?? downloadHint ?? 'Download exports the filtered list for the chosen dates (up to 30 days).' }}
+      </p>
+    </form>
+  </section>
+
+  <nav class="tabs" aria-label="Operations by status">
+    @for (t of tabs; track t.label) {
+      <button type="button" class="tab" [class.tab--active]="activeTab() === t.status" (click)="selectStatus(t.status)">
+        {{ t.label }}@if (stats(); as s) { <span class="tab__count">{{ t.count(s) | number }}</span> }
+      </button>
+    }
+  </nav>
 
   @if (list.loading() && list.items().length === 0) {
     <div class="skeleton-row"><div class="skeleton-card"></div></div>
@@ -90,7 +204,13 @@
               <td class="mono">{{ c.accountNumber }}</td>
               <td>{{ c.name }}</td>
               <td class="mono">{{ c.meterNumber }}</td>
-              <td>{{ c.commandType === ConnectivityCommandType.Disconnect ? 'Disconnection' : 'Reconnection' }}</td>
+              <td>
+                @if (c.commandType === ConnectivityCommandType.Disconnect) {
+                  <pe-status-badge label="Disconnection" tone="danger" />
+                } @else {
+                  <pe-status-badge label="Reconnection" tone="success" />
+                }
+              </td>
               <td>
                 @switch (c.status) {
                   @case (ConnectivityCommandStatus.Acknowledged) { <pe-status-badge label="success" tone="success" /> }
@@ -107,12 +227,13 @@
       </table>
     </div>
 
-      <div class="pager">
-        <span>{{ list.totalCount() | number }} command(s){{ hasActiveFilters ? ' match' : '' }} · page {{ list.pageIndex() + 1 }}</span>
-        <span class="pager__buttons">
-          <button type="button" (click)="list.previous()" [disabled]="list.pageIndex() === 0 || list.loading()">Previous</button>
-          <button type="button" (click)="list.next()" [disabled]="!list.nextCursor() || list.loading()">Next</button>
-        </span>
-      </div>
+    <div class="pager">
+      <span>Showing page {{ list.pageIndex() + 1 }} · {{ list.totalCount() | number }} command(s){{ hasActiveFilters ? ' match' : '' }}</span>
+      <span class="pager__buttons">
+        <button type="button" (click)="list.previous()" [disabled]="list.pageIndex() === 0 || list.loading()">Previous</button>
+        <button type="button" (click)="list.next()" [disabled]="!list.nextCursor() || list.loading()">Next</button>
+      </span>
+    </div>
+  }
   }
 </div>

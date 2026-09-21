@@ -48,6 +48,12 @@ export interface ConnectivityCommandSummaryStats {
   acknowledged: number;
   failedOrTimedOut: number;
   pending: number;
+  queued: number;
+  sent: number;
+  /** Consumers whose supply is disconnected right now. */
+  disconnectedConsumers: number;
+  /** Reconnect commands the meter has acknowledged. */
+  reconnectsCompleted: number;
 }
 
 /** GET /api/v1/connectivity-commands/{id}. */
@@ -71,4 +77,20 @@ export interface RetryConnectivityCommandResult {
   retryCount: number;
   errorMessage: string | null;
   consumerConnectionStatus: string;
+}
+
+/** One day of GET /api/v1/reports/live-rc-dc. `eligibleDc` is a live count, so it is null for every day but today. */
+export interface LiveRcDcRow {
+  date: string;
+  eligibleDc: number | null;
+  dcTriggered: number;
+  dcPending: number;
+  dcSuccess: number;
+  rcInitiated: number;
+  rcPending: number;
+  rcSuccess: number;
+  rechargeMdmSuccess: number;
+  rechargePendingInMdm: number;
+  rechargeSuccessInHes: number;
+  rechargeFailInHes: number;
 }

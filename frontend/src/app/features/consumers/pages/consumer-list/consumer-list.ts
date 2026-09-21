@@ -1,39 +1,62 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, ElementRef, OnDestroy, OnInit, signal, viewChild } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Subject, Subscription, debounceTime } from 'rxjs';
 import { ConsumerService } from '../../../../core/services/consumer.service';
-import { ConnectionStatus, ConsumerListItem } from '../../../../core/models/consumer.model';
+import { NetworkNode, NetworkService } from '../../../../core/services/network.service';
+import { ConnectionStatus, ConsumerListItem, ConsumerSummaryStats } from '../../../../core/models/consumer.model';
+import { KpiCard } from '../../../../shared/components/kpi-card/kpi-card';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
+import { PagedList } from '../../../../shared/utils/paged-list';
 
 const PAGE_SIZE = 25;
 
+/** The filters as typed into the Search & Filter card; they only take effect when Search is pressed. */
+interface Filters {
+  consumerNumber: string;
+  meterNumber: string;
+  q: string;
+  status: string;
+  conversion: string;
+  zoneId: string;
+  circleId: string;
+  divisionId: string;
+  subDivisionId: string;
+  from: string;
+  to: string;
+}
+
+const EMPTY: Filters = {
+  consumerNumber: '', meterNumber: '', q: '', status: '', conversion: '', zoneId: '', circleId: '', divisionId: '', subDivisionId: '', from: '', to: '',
+};
+
 /**
- * Consumers list. Search, filters and paging all run on the server
- * (GET /api/v1/consumers/search, keyset-paginated on account number) - the browser only ever
- * holds one page. Only columns the backend actually models are shown; circle/division/feeder/
- * tariff/category from the wider spec are omitted rather than faked.
+ * Consumers. Search, filters and paging all run on the server (GET /api/v1/consumers/search, keyset-paged on account number),
+ * so the browser only ever holds one page. The cards count consumers by postpaid-to-prepaid conversion state
+ * (GET /consumers/summary) and narrow this list in place; nothing on this page navigates away except opening one consumer.
+ * Only what the backend models is shown: a conversion date appears only for consumers with a completed conversion.
  */
 @Component({
   selector: 'pe-consumer-list',
-  imports: [StatusBadge, DecimalPipe, DatePipe],
+  imports: [StatusBadge, KpiCard, DecimalPipe, DatePipe, FormsModule],
   templateUrl: './consumer-list.html',
   styleUrl: './consumer-list.scss',
 })
 export class ConsumerList implements OnInit, OnDestroy {
-  protected readonly items = signal<ConsumerListItem[]>([]);
-  protected readonly totalCount = signal(0);
-  protected readonly loading = signal(true);
-  protected readonly error = signal<string | null>(null);
-  protected readonly searchTerm = signal('');
-  protected readonly statusFilter = signal<ConnectionStatus | null>(null);
-  protected readonly lowBalanceOnly = signal(false);
-  protected readonly ConnectionStatus = ConnectionStatus;
+  /** What the form shows. */
+  protected form: Filters = { ...EMPTY };
+  /** What the list is currently filtered by. */
+  private applied: Filters = { ...EMPTY };
 
-  /** Cursors used to reach each page; index 0 is the first page (no cursor). */
-  private readonly cursorStack = signal<(string | null)[]>([null]);
-  protected readonly nextCursor = signal<string | null>(null);
-  protected readonly pageIndex = signal(0);
+  protected readonly stats = signal<ConsumerSummaryStats | null>(null);
+  protected readonly statsError = signal(false);
+  protected readonly zones = signal<NetworkNode[]>([]);
+  protected readonly circles = signal<NetworkNode[]>([]);
+  protected readonly divisions = signal<NetworkNode[]>([]);
+  protected readonly subDivisions = signal<NetworkNode[]>([]);
+  protected readonly downloading = signal(false);
+  protected readonly downloadError = signal<string | null>(null);
+  protected readonly ConnectionStatus = ConnectionStatus;
 
   protected readonly statusOptions = [
     { label: 'Active', value: ConnectionStatus.Active },
@@ -42,121 +65,126 @@ export class ConsumerList implements OnInit, OnDestroy {
     { label: 'Reconnection pending', value: ConnectionStatus.ReconnectionPending },
   ];
 
-  private readonly searchBox = viewChild<ElementRef<HTMLInputElement>>('searchBox');
-  private readonly search$ = new Subject<string>();
-  private searchSub?: Subscription;
-  private requestSub?: Subscription;
+  protected readonly list = new PagedList<ConsumerListItem>(
+    (after) => this.consumerService.search({ ...this.toParams(this.applied), after, pageSize: PAGE_SIZE }),
+    'Could not load consumers from the API.',
+  );
 
   constructor(
     private readonly consumerService: ConsumerService,
+    private readonly network: NetworkService,
     private readonly router: Router,
     private readonly route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
+    // Prefills from a cross-link (the global search, or a dashboard tile).
     const params = this.route.snapshot.queryParamMap;
     const initialQuery = params.get('q');
-    if (initialQuery) this.searchTerm.set(initialQuery);
-    if (params.get('lowBalance') === 'true') this.lowBalanceOnly.set(true);
+    if (initialQuery) this.form.q = this.applied.q = initialQuery;
     const initialStatus = params.get('status');
     if (initialStatus !== null && initialStatus in ConnectionStatus) {
-      this.statusFilter.set(ConnectionStatus[initialStatus as keyof typeof ConnectionStatus]);
+      this.form.status = this.applied.status = String(ConnectionStatus[initialStatus as keyof typeof ConnectionStatus]);
     }
 
-    this.searchSub = this.search$
-      .pipe(debounceTime(300))
-      .subscribe((term) => {
-        if (term === this.searchTerm()) return;
-        this.searchTerm.set(term);
-        this.resetAndLoad();
-      });
-
-    this.load();
+    this.consumerService.summary().subscribe({ next: (s) => this.stats.set(s), error: () => this.statsError.set(true) });
+    this.network.nodes('zone').subscribe({ next: (z) => this.zones.set(z), error: () => this.zones.set([]) });
+    this.list.load();
   }
 
   ngOnDestroy(): void {
-    this.searchSub?.unsubscribe();
-    this.requestSub?.unsubscribe();
+    this.list.destroy();
   }
 
-  onSearchInput(term: string): void {
-    this.search$.next(term);
+  private toParams(f: Filters) {
+    return {
+      consumerNumber: f.consumerNumber,
+      meterNumber: f.meterNumber,
+      q: f.q,
+      status: f.status === '' ? null : (Number(f.status) as ConnectionStatus),
+      conversion: f.conversion,
+      zoneId: f.zoneId,
+      circleId: f.circleId,
+      divisionId: f.divisionId,
+      subDivisionId: f.subDivisionId,
+      from: f.from,
+      to: f.to,
+    };
   }
 
-  onStatusChange(raw: string): void {
-    this.statusFilter.set(raw === '' ? null : (Number(raw) as ConnectionStatus));
-    this.resetAndLoad();
+  /** Each location list follows the one above it: zone, then circle, division and subdivision. */
+  protected onZoneChange(): void {
+    this.form.circleId = this.form.divisionId = this.form.subDivisionId = '';
+    this.circles.set([]);
+    this.divisions.set([]);
+    this.subDivisions.set([]);
+    if (this.form.zoneId) this.network.nodes('circle', this.form.zoneId).subscribe({ next: (c) => this.circles.set(c), error: () => this.circles.set([]) });
   }
 
-  onLowBalanceChange(checked: boolean): void {
-    this.lowBalanceOnly.set(checked);
-    this.resetAndLoad();
+  protected onCircleChange(): void {
+    this.form.divisionId = this.form.subDivisionId = '';
+    this.divisions.set([]);
+    this.subDivisions.set([]);
+    if (this.form.circleId) this.network.nodes('division', this.form.circleId).subscribe({ next: (d) => this.divisions.set(d), error: () => this.divisions.set([]) });
   }
 
-  clearFilters(): void {
-    const box = this.searchBox();
-    if (box) box.nativeElement.value = '';
-    this.searchTerm.set('');
-    this.statusFilter.set(null);
-    this.lowBalanceOnly.set(false);
-    this.resetAndLoad();
+  protected onDivisionChange(): void {
+    this.form.subDivisionId = '';
+    this.subDivisions.set([]);
+    if (this.form.divisionId) this.network.nodes('subdivision', this.form.divisionId).subscribe({ next: (d) => this.subDivisions.set(d), error: () => this.subDivisions.set([]) });
+  }
+
+  protected search(): void {
+    this.applied = { ...this.form };
+    this.list.reload();
+  }
+
+  protected reset(): void {
+    this.form = { ...EMPTY };
+    this.circles.set([]);
+    this.divisions.set([]);
+    this.subDivisions.set([]);
+    this.search();
+  }
+
+  /** A card narrows the list to one conversion state in place, keeping the other filters. */
+  protected selectConversion(state: string): void {
+    this.form.conversion = state;
+    this.search();
+  }
+
+  protected get activeConversion(): string {
+    return this.applied.conversion;
   }
 
   protected get hasActiveFilters(): boolean {
-    return !!this.searchTerm().trim() || this.statusFilter() !== null || this.lowBalanceOnly();
+    return Object.values(this.applied).some((v) => !!v && String(v).trim() !== '');
   }
 
-  nextPage(): void {
-    const cursor = this.nextCursor();
-    if (!cursor) return;
-    this.cursorStack.update((stack) => [...stack.slice(0, this.pageIndex() + 1), cursor]);
-    this.pageIndex.update((i) => i + 1);
-    this.load();
-  }
-
-  previousPage(): void {
-    if (this.pageIndex() === 0) return;
-    this.pageIndex.update((i) => i - 1);
-    this.load();
-  }
-
-  retry(): void {
-    this.load();
+  protected download(): void {
+    if (this.downloading()) return;
+    this.downloading.set(true);
+    this.downloadError.set(null);
+    this.consumerService.exportExcel(this.toParams(this.form)).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `consumers-${new Date().toISOString().slice(0, 10)}.xlsx`;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.downloading.set(false);
+      },
+      error: async (err) => {
+        let message = 'Could not download the file.';
+        try { message = JSON.parse(await (err.error as Blob).text()).error ?? message; } catch { /* keep the generic message */ }
+        this.downloadError.set(message);
+        this.downloading.set(false);
+      },
+    });
   }
 
   open(accountNumber: string): void {
     this.router.navigate(['/consumers', accountNumber]);
-  }
-
-  private resetAndLoad(): void {
-    this.cursorStack.set([null]);
-    this.pageIndex.set(0);
-    this.load();
-  }
-
-  private load(): void {
-    this.requestSub?.unsubscribe();
-    this.loading.set(true);
-    this.error.set(null);
-    this.requestSub = this.consumerService
-      .search({
-        q: this.searchTerm(),
-        status: this.statusFilter(),
-        lowBalance: this.lowBalanceOnly(),
-        after: this.cursorStack()[this.pageIndex()],
-        pageSize: PAGE_SIZE,
-      })
-      .subscribe({
-        next: (page) => {
-          this.items.set(page.items);
-          this.totalCount.set(page.totalCount);
-          this.nextCursor.set(page.nextCursor);
-          this.loading.set(false);
-        },
-        error: () => {
-          this.error.set('Could not load consumers from the API.');
-          this.loading.set(false);
-        },
-      });
   }
 }

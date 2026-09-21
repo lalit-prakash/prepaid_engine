@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PrepaidEngine.Api.Reports;
 using PrepaidEngine.Domain.Entities;
 using PrepaidEngine.Domain.Enums;
 using PrepaidEngine.Infrastructure.Persistence;
@@ -31,6 +32,86 @@ public static class PagedListEndpoints
     }
 
     private static string Cursor(DateTime at, Guid id) => $"{at.Ticks}_{id}";
+
+    private const int ExportMaxDays = 30;
+    private const int ExportMaxRows = 100_000;
+
+    /// <summary>The RC/DC list filters, shared by the page and the Excel download so they always agree. Consumer number is an account-number prefix (never a name).</summary>
+    private static IQueryable<ConnectivityRow> ConnectivityFilter(
+        PrepaidEngineDbContext db, string? consumerNumber, string? meterNumber, ConnectivityCommandType? type, string? status, DateTime? from, DateTime? to,
+        Guid? zoneId, Guid? circleId, Guid? divisionId, Guid? subDivisionId)
+    {
+        var query =
+            from cmd in db.ConnectivityCommands.AsNoTracking()
+            join c in db.Consumers.AsNoTracking() on cmd.ConsumerId equals c.Id
+            select new ConnectivityRow { cmd = cmd, c = c };
+
+        if (!string.IsNullOrWhiteSpace(consumerNumber)) { var (prefix, _) = Terms(consumerNumber); query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix, "\\")); }
+        if (!string.IsNullOrWhiteSpace(meterNumber)) { var (prefix, _) = Terms(meterNumber); query = query.Where(x => EF.Functions.ILike(x.c.Meter.MeterNumber, prefix, "\\")); }
+        if (type.HasValue) query = query.Where(x => x.cmd.CommandType == type.Value);
+        if (from.HasValue) { var start = DateTime.SpecifyKind(from.Value.Date, DateTimeKind.Utc); query = query.Where(x => x.cmd.CreatedAt >= start); }
+        if (to.HasValue) { var endExclusive = DateTime.SpecifyKind(to.Value.Date.AddDays(1), DateTimeKind.Utc); query = query.Where(x => x.cmd.CreatedAt < endExclusive); }
+        if (subDivisionId.HasValue) query = query.Where(x => x.c.Dtr!.Feeder.Substation.SubDivisionId == subDivisionId.Value);
+        else if (divisionId.HasValue) query = query.Where(x => x.c.Dtr!.Feeder.Substation.SubDivision.DivisionId == divisionId.Value);
+        else if (circleId.HasValue) query = query.Where(x => x.c.Dtr!.Feeder.Substation.SubDivision.Division.CircleId == circleId.Value);
+        else if (zoneId.HasValue) query = query.Where(x => x.c.Dtr!.Feeder.Substation.SubDivision.Division.Circle.ZoneId == zoneId.Value);
+        return status switch
+        {
+            "Queued" => query.Where(x => x.cmd.Status == ConnectivityCommandStatus.Queued),
+            "Sent" => query.Where(x => x.cmd.Status == ConnectivityCommandStatus.Sent),
+            "Acknowledged" => query.Where(x => x.cmd.Status == ConnectivityCommandStatus.Acknowledged),
+            "FailedOrTimedOut" => query.Where(x => x.cmd.Status == ConnectivityCommandStatus.Failed || x.cmd.Status == ConnectivityCommandStatus.TimedOut),
+            "Pending" => query.Where(x => x.cmd.Status == ConnectivityCommandStatus.Queued || x.cmd.Status == ConnectivityCommandStatus.Sent),
+            _ => query,
+        };
+    }
+
+    public sealed class ConnectivityRow
+    {
+        public ConnectivityCommand cmd { get; set; } = null!;
+        public Consumer c { get; set; } = null!;
+    }
+
+    private static IQueryable<ConnectivityCommandListItem> ConnectivityRows(IQueryable<ConnectivityRow> query) => query.Select(x => new ConnectivityCommandListItem
+    {
+        Id = x.cmd.Id, AccountNumber = x.c.AccountNumber, Name = x.c.Name, CommandType = x.cmd.CommandType, Reason = x.cmd.Reason, Status = x.cmd.Status,
+        RetryCount = x.cmd.RetryCount, ErrorMessage = x.cmd.ErrorMessage, CreatedAt = x.cmd.CreatedAt, SentAt = x.cmd.SentAt, AcknowledgedAt = x.cmd.AcknowledgedAt,
+        MeterNumber = x.c.Meter.MeterNumber,
+        Zone = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.SubDivision.Division.Circle.Zone.Name : null,
+        Circle = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.SubDivision.Division.Circle.Name : null,
+        Division = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.SubDivision.Division.Name : null,
+        SubDivision = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.SubDivision.Name : null,
+        Substation = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.Name : null,
+        Feeder = x.c.Dtr != null ? x.c.Dtr.Feeder.Name : null,
+        FeederCode = x.c.Dtr != null ? x.c.Dtr.Feeder.Code : null,
+        Dtr = x.c.Dtr != null ? x.c.Dtr.Name : null,
+        DtrCode = x.c.Dtr != null ? x.c.Dtr.Code : null,
+    });
+
+    public sealed class ConnectivityCommandListItem
+    {
+        public Guid Id { get; set; }
+        public string AccountNumber { get; set; } = "";
+        public string Name { get; set; } = "";
+        public ConnectivityCommandType CommandType { get; set; }
+        public string Reason { get; set; } = "";
+        public ConnectivityCommandStatus Status { get; set; }
+        public int RetryCount { get; set; }
+        public string? ErrorMessage { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? SentAt { get; set; }
+        public DateTime? AcknowledgedAt { get; set; }
+        public string MeterNumber { get; set; } = "";
+        public string? Zone { get; set; }
+        public string? Circle { get; set; }
+        public string? Division { get; set; }
+        public string? SubDivision { get; set; }
+        public string? Substation { get; set; }
+        public string? Feeder { get; set; }
+        public string? FeederCode { get; set; }
+        public string? Dtr { get; set; }
+        public string? DtrCode { get; set; }
+    }
 
     public static void MapPagedListEndpoints(this WebApplication app)
     {
@@ -104,27 +185,11 @@ public static class PagedListEndpoints
 
         // ---------------------------------------------------------------- RC / DC (connectivity commands)
         app.MapGet("/api/v1/connectivity-commands/search", async (
-            string? q, ConnectivityCommandType? type, string? status, string? after, int? pageSize, PrepaidEngineDbContext db) =>
+            string? q, string? meterNumber, ConnectivityCommandType? type, string? status, DateTime? from, DateTime? to,
+            Guid? zoneId, Guid? circleId, Guid? divisionId, Guid? subDivisionId, string? after, int? pageSize, PrepaidEngineDbContext db) =>
         {
             var size = Math.Clamp(pageSize ?? 25, 1, MaxPage);
-            var query =
-                from cmd in db.ConnectivityCommands.AsNoTracking()
-                join c in db.Consumers.AsNoTracking() on cmd.ConsumerId equals c.Id
-                select new { cmd, c };
-
-            if (!string.IsNullOrWhiteSpace(q))
-            {
-                var (prefix, contains) = Terms(q);
-                query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix, "\\") || EF.Functions.ILike(x.c.Name, contains, "\\"));
-            }
-            if (type.HasValue) query = query.Where(x => x.cmd.CommandType == type.Value);
-            query = status switch
-            {
-                "Acknowledged" => query.Where(x => x.cmd.Status == ConnectivityCommandStatus.Acknowledged),
-                "FailedOrTimedOut" => query.Where(x => x.cmd.Status == ConnectivityCommandStatus.Failed || x.cmd.Status == ConnectivityCommandStatus.TimedOut),
-                "Pending" => query.Where(x => x.cmd.Status == ConnectivityCommandStatus.Queued || x.cmd.Status == ConnectivityCommandStatus.Sent),
-                _ => query,
-            };
+            var query = ConnectivityFilter(db, q, meterNumber, type, status, from, to, zoneId, circleId, divisionId, subDivisionId);
 
             var totalCount = await query.CountAsync();
             if (!string.IsNullOrEmpty(after))
@@ -133,25 +198,7 @@ public static class PagedListEndpoints
                 query = query.Where(x => x.cmd.CreatedAt < at || (x.cmd.CreatedAt == at && x.cmd.Id.CompareTo(afterId) < 0));
             }
 
-            var rows = await query
-                .OrderByDescending(x => x.cmd.CreatedAt).ThenByDescending(x => x.cmd.Id)
-                .Take(size + 1)
-                .Select(x => new
-                {
-                    x.cmd.Id, x.c.AccountNumber, x.c.Name, x.cmd.CommandType, x.cmd.Reason, x.cmd.Status, x.cmd.RetryCount,
-                    x.cmd.ErrorMessage, x.cmd.CreatedAt, x.cmd.SentAt, x.cmd.AcknowledgedAt,
-                    MeterNumber = x.c.Meter.MeterNumber,
-                    Zone = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.SubDivision.Division.Circle.Zone.Name : null,
-                    Circle = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.SubDivision.Division.Circle.Name : null,
-                    Division = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.SubDivision.Division.Name : null,
-                    SubDivision = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.SubDivision.Name : null,
-                    Substation = x.c.Dtr != null ? x.c.Dtr.Feeder.Substation.Name : null,
-                    Feeder = x.c.Dtr != null ? x.c.Dtr.Feeder.Name : null,
-                    FeederCode = x.c.Dtr != null ? x.c.Dtr.Feeder.Code : null,
-                    Dtr = x.c.Dtr != null ? x.c.Dtr.Name : null,
-                    DtrCode = x.c.Dtr != null ? x.c.Dtr.Code : null,
-                })
-                .ToListAsync();
+            var rows = await ConnectivityRows(query.OrderByDescending(x => x.cmd.CreatedAt).ThenByDescending(x => x.cmd.Id).Take(size + 1)).ToListAsync();
 
             var hasMore = rows.Count > size;
             var items = hasMore ? rows.Take(size).ToList() : rows;
@@ -160,12 +207,48 @@ public static class PagedListEndpoints
         .WithName("SearchConnectivityCommands")
         .RequireAuthorization();
 
+        // Excel download of the same filtered list. A date range is required and is limited to 30 days, so a download is always a bounded size.
+        app.MapGet("/api/v1/connectivity-commands/export", async (
+            string? q, string? meterNumber, ConnectivityCommandType? type, string? status, DateTime? from, DateTime? to,
+            Guid? zoneId, Guid? circleId, Guid? divisionId, Guid? subDivisionId, int? tzOffsetMinutes, HttpContext http, PrepaidEngineDbContext db) =>
+        {
+            if (!from.HasValue || !to.HasValue) return Results.BadRequest(new { error = "Choose a From and To date to download." });
+            if (to.Value.Date < from.Value.Date) return Results.BadRequest(new { error = "The To date is before the From date." });
+            if ((to.Value.Date - from.Value.Date).TotalDays >= ExportMaxDays) return Results.BadRequest(new { error = $"Choose a range of at most {ExportMaxDays} days." });
+
+            var query = ConnectivityFilter(db, q, meterNumber, type, status, from, to, zoneId, circleId, divisionId, subDivisionId);
+            var rows = await ConnectivityRows(query.OrderByDescending(x => x.cmd.CreatedAt).ThenByDescending(x => x.cmd.Id).Take(ExportMaxRows + 1)).ToListAsync();
+            var truncated = rows.Count > ExportMaxRows;
+            if (truncated) rows.RemoveAt(rows.Count - 1);
+
+            // Times are written in the viewer's own time zone, as the page shows them.
+            var offset = TimeSpan.FromMinutes(Math.Clamp(tzOffsetMinutes ?? 0, -840, 840));
+            static string Text(DateTime v, TimeSpan o) => (DateTime.SpecifyKind(v, DateTimeKind.Utc) + o).ToString("dd-MM-yyyy HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+            var bytes = XlsxWriter.Build("RC DC", new[]
+            {
+                "Zone", "Circle", "Division", "Subdivision", "Sub Station", "Feeder", "Feeder code", "DTR", "DTR Code", "RRNumber",
+                "Consumer Name", "MSN", "Command Type", "ProcessStatus", "Requested Time", "Processed Time",
+            }, rows.Select(r => new string?[]
+            {
+                r.Zone, r.Circle, r.Division, r.SubDivision, r.Substation, r.Feeder, r.FeederCode, r.Dtr, r.DtrCode, r.AccountNumber,
+                r.Name, r.MeterNumber, r.CommandType == ConnectivityCommandType.Disconnect ? "Disconnection" : "Reconnection",
+                r.Status == ConnectivityCommandStatus.Acknowledged ? "success" : r.Status is ConnectivityCommandStatus.Failed or ConnectivityCommandStatus.TimedOut ? "fail" : "pending",
+                Text(r.CreatedAt, offset), r.AcknowledgedAt.HasValue ? Text(r.AcknowledgedAt.Value, offset) : null,
+            }));
+            if (truncated) http.Response.Headers["X-Result-Truncated"] = "true";
+            return Results.File(bytes, XlsxWriter.ContentType, $"rc-dc-{from.Value:yyyyMMdd}-{to.Value:yyyyMMdd}.xlsx");
+        })
+        .WithName("ExportConnectivityCommands")
+        .RequireAuthorization();
+
         app.MapGet("/api/v1/connectivity-commands/summary", async (PrepaidEngineDbContext db) =>
         {
             var byStatus = await db.ConnectivityCommands.AsNoTracking().GroupBy(c => c.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
             var byType = await db.ConnectivityCommands.AsNoTracking().GroupBy(c => c.CommandType).Select(g => new { Type = g.Key, Count = g.Count() }).ToListAsync();
             int N(ConnectivityCommandStatus s) => byStatus.FirstOrDefault(x => x.Status == s)?.Count ?? 0;
             int T(ConnectivityCommandType t) => byType.FirstOrDefault(x => x.Type == t)?.Count ?? 0;
+            var disconnectedConsumers = await db.Consumers.AsNoTracking().CountAsync(c => c.ConnectionStatus == ConnectionStatus.Disconnected);
+            var reconnectsCompleted = await db.ConnectivityCommands.AsNoTracking().CountAsync(c => c.CommandType == ConnectivityCommandType.Reconnect && c.Status == ConnectivityCommandStatus.Acknowledged);
             return Results.Ok(new
             {
                 Total = byStatus.Sum(x => x.Count),
@@ -174,6 +257,10 @@ public static class PagedListEndpoints
                 Acknowledged = N(ConnectivityCommandStatus.Acknowledged),
                 FailedOrTimedOut = N(ConnectivityCommandStatus.Failed) + N(ConnectivityCommandStatus.TimedOut),
                 Pending = N(ConnectivityCommandStatus.Queued) + N(ConnectivityCommandStatus.Sent),
+                Queued = N(ConnectivityCommandStatus.Queued),
+                Sent = N(ConnectivityCommandStatus.Sent),
+                DisconnectedConsumers = disconnectedConsumers,
+                ReconnectsCompleted = reconnectsCompleted,
             });
         })
         .WithName("ConnectivityCommandSummary")
