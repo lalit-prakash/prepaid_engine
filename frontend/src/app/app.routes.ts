@@ -215,7 +215,10 @@ export const routes: Routes = [
         path: 'integrations',
         loadComponent: () => import('./features/system/pages/integrations/integrations').then((m) => m.Integrations),
       },
-      ...stubRoute('system-settings', 'System Settings'),
+      {
+        path: 'system-settings',
+        loadComponent: () => import('./features/system/pages/system-settings/system-settings').then((m) => m.SystemSettings),
+      },
       { path: '**', redirectTo: 'overview' },
     ],
   },

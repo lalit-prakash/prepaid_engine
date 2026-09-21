@@ -63,7 +63,7 @@ public static class ConsumerEndpoints
 
 
 
-        app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, PrepaidEngineDbContext db, Microsoft.Extensions.Options.IOptions<PrepaidEngine.Application.Wallets.LowBalanceOptions> lowBalanceOptions) =>
+        app.MapGet("/api/v1/consumers/{accountNumber}", async (string accountNumber, PrepaidEngineDbContext db, Microsoft.Extensions.Options.IOptionsSnapshot<PrepaidEngine.Application.Wallets.LowBalanceOptions> lowBalanceOptions) =>
         {
             var consumer = await db.Consumers
                 .Include(c => c.Meter)

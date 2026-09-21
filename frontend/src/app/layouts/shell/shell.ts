@@ -83,7 +83,7 @@ export class Shell {
       label: 'Administration',
       items: [
         { label: 'Audit Logs', path: '/audit', icon: 'scroll' },
-        { label: 'System Settings', path: '/system-settings', icon: 'gear', stub: true },
+        { label: 'System Settings', path: '/system-settings', icon: 'gear' },
       ],
     },
   ];
