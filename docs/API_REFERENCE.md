@@ -1,7 +1,7 @@
 # API reference
 
 Every HTTP endpoint the Prepaid Engine API exposes: method, path, who may call it, and its parameters.
-Generated from the running app (126 endpoints), so it matches the code. Do not edit by hand; regenerate with:
+Generated from the running app (127 endpoints), so it matches the code. Do not edit by hand; regenerate with:
 
 ```
 ASPNETCORE_ENVIRONMENT=Production Jwt__Key=<any 32+ characters> dotnet run --project backend/PrepaidEngine.Api -- dump-endpoints docs/API_REFERENCE.md
@@ -91,7 +91,8 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | GET | `/api/v1/connectivity-commands` | Any signed-in user | query `accountNumber` string (optional) |
 | GET | `/api/v1/connectivity-commands/{id:guid}` | Any signed-in user | path `id` guid |
 | POST | `/api/v1/connectivity-commands/{id:guid}/retry` | `Operations` (Admin, IT, Operator) | path `id` guid |
-| GET | `/api/v1/connectivity-commands/search` | Any signed-in user | query `q` string (optional)<br>query `type` ConnectivityCommandType (Disconnect|Reconnect) (optional)<br>query `status` string (optional)<br>query `after` string (optional)<br>query `pageSize` int (optional) |
+| GET | `/api/v1/connectivity-commands/export` | Any signed-in user | query `q` string (optional)<br>query `meterNumber` string (optional)<br>query `type` ConnectivityCommandType (Disconnect|Reconnect) (optional)<br>query `status` string (optional)<br>query `from` date (optional)<br>query `to` date (optional)<br>query `zoneId` guid (optional)<br>query `circleId` guid (optional)<br>query `divisionId` guid (optional)<br>query `subDivisionId` guid (optional)<br>query `tzOffsetMinutes` int (optional) |
+| GET | `/api/v1/connectivity-commands/search` | Any signed-in user | query `q` string (optional)<br>query `meterNumber` string (optional)<br>query `type` ConnectivityCommandType (Disconnect|Reconnect) (optional)<br>query `status` string (optional)<br>query `from` date (optional)<br>query `to` date (optional)<br>query `zoneId` guid (optional)<br>query `circleId` guid (optional)<br>query `divisionId` guid (optional)<br>query `subDivisionId` guid (optional)<br>query `after` string (optional)<br>query `pageSize` int (optional) |
 | GET | `/api/v1/connectivity-commands/summary` | Any signed-in user | none |
 
 ## Consumers
