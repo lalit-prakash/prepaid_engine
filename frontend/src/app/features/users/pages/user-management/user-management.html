@@ -1,0 +1,188 @@
+<div class="um">
+  <div class="page-header">
+    <div>
+      <h1>User Management</h1>
+      <p class="page-header__subtitle">Who can sign in, and what each role may do.</p>
+    </div>
+    @if (tab() === 'users' && !error()) {
+      <button type="button" class="btn btn--primary" (click)="openAdd()">+ Add user</button>
+    }
+  </div>
+
+  <nav class="tabs" aria-label="User management">
+    <button type="button" class="tab" [class.tab--active]="tab() === 'users'" (click)="showTab('users')">Users</button>
+    <button type="button" class="tab" [class.tab--active]="tab() === 'roles'" (click)="showTab('roles')">Roles &amp; Permissions</button>
+  </nav>
+
+  @if (notice()) {
+    <div class="notice" role="status">{{ notice() }} <button type="button" class="notice__close" (click)="notice.set(null)" aria-label="Dismiss">×</button></div>
+  }
+
+  @if (tab() === 'users') {
+    @if (formOpen()) {
+      <section class="card">
+        <h2 class="card__title">{{ editing() ? 'Edit ' + editing()!.loginId : 'Add a user' }}</h2>
+        <form class="form" (ngSubmit)="save()" autocomplete="off">
+          <label class="f">Login id
+            <input name="loginId" [(ngModel)]="draft.loginId" [disabled]="!!editing()" placeholder="e.g. Meera_K" autocomplete="off" required />
+          </label>
+          <label class="f">Name
+            <input name="displayName" [(ngModel)]="draft.displayName" placeholder="Full name" required />
+          </label>
+          <label class="f">E-mail
+            <input name="email" type="email" [(ngModel)]="draft.email" placeholder="Password reset codes are sent here" required />
+          </label>
+          <label class="f">Role
+            <select name="role" [(ngModel)]="draft.role" [disabled]="!!editing() && isMe(editing()!)">
+              @for (r of roleOptions; track r) { <option [value]="r">{{ r }}</option> }
+            </select>
+          </label>
+          @if (!editing()) {
+            <label class="f">Password
+              <input name="password" type="password" [(ngModel)]="draft.password" autocomplete="new-password" placeholder="At least 8 characters" required />
+            </label>
+          }
+          <div class="form__actions">
+            <button type="button" class="btn btn--ghost" (click)="cancelForm()">Cancel</button>
+            <button type="submit" class="btn btn--primary" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save' }}</button>
+          </div>
+          @if (formErrors().length) {
+            <ul class="errors">@for (e of formErrors(); track e) { <li>{{ e }}</li> }</ul>
+          }
+        </form>
+      </section>
+    }
+
+    @if (passwordFor(); as p) {
+      <section class="card">
+        <h2 class="card__title">Set a new password for {{ p.loginId }}</h2>
+        <form class="form form--inline" (ngSubmit)="savePassword()" autocomplete="off">
+          <label class="f">New password
+            <input name="newPassword" type="password" [(ngModel)]="newPassword" autocomplete="new-password" placeholder="8+ characters, upper, lower, digit, symbol" required />
+          </label>
+          <div class="form__actions">
+            <button type="button" class="btn btn--ghost" (click)="passwordFor.set(null)">Cancel</button>
+            <button type="submit" class="btn btn--primary">Change password</button>
+          </div>
+          @if (passwordErrors().length) {
+            <ul class="errors">@for (e of passwordErrors(); track e) { <li>{{ e }}</li> }</ul>
+          }
+        </form>
+      </section>
+    }
+
+    <section class="toolbar">
+      <form class="toolbar__form" (ngSubmit)="load()">
+        <input type="search" name="q" [(ngModel)]="q" placeholder="Search login id, name or e-mail…" />
+        <select name="roleFilter" [(ngModel)]="roleFilter" (ngModelChange)="load()" aria-label="Filter by role">
+          <option value="">All roles</option>
+          @for (r of roleOptions; track r) { <option [value]="r">{{ r }}</option> }
+        </select>
+        <select name="statusFilter" [(ngModel)]="statusFilter" (ngModelChange)="load()" aria-label="Filter by status">
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <button type="submit" class="btn btn--primary">Search</button>
+        <button type="button" class="btn btn--ghost" (click)="clearFilters()">Reset</button>
+      </form>
+    </section>
+
+    @if (loading() && users().length === 0) {
+      <div class="skeleton"></div>
+    } @else if (error()) {
+      <div class="error-panel">{{ error() }}</div>
+    } @else if (users().length === 0) {
+      <div class="empty-panel">No users match.</div>
+    } @else {
+      <div class="table-wrap" [class.table-wrap--loading]="loading()">
+        <table>
+          <thead>
+            <tr>
+              <th>Login id</th>
+              <th>Name</th>
+              <th>E-mail</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Last sign-in</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (u of users(); track u.loginId) {
+              <tr>
+                <td class="mono">{{ u.loginId }} @if (isMe(u)) { <span class="you">you</span> }</td>
+                <td>{{ u.displayName }}</td>
+                <td>{{ u.email || '—' }}</td>
+                <td><pe-status-badge [label]="u.role" [tone]="roleTone(u.role)" /></td>
+                <td>
+                  @if (u.isActive) { <pe-status-badge label="Active" tone="success" /> } @else { <pe-status-badge label="Inactive" tone="neutral" /> }
+                  @if (u.locked) { <pe-status-badge label="Locked" tone="danger" /> }
+                </td>
+                <td>{{ u.lastLoginAt ? (u.lastLoginAt | date: 'dd-MM-yyyy HH:mm') : '—' }}</td>
+                <td class="actions">
+                  @if (u.source === 'Configuration') {
+                    <span class="muted" title="Defined in the API's configuration, so it is changed there.">Managed in configuration</span>
+                  } @else {
+                    <button type="button" class="link" (click)="openEdit(u)">Edit</button>
+                    <button type="button" class="link" (click)="openPassword(u)">Set password</button>
+                    @if (!isMe(u)) {
+                      <button type="button" class="link" [class.link--danger]="u.isActive" (click)="toggleActive(u)">
+                        {{ u.isActive ? (confirmingId() === u.id ? 'Confirm deactivate' : 'Deactivate') : 'Activate' }}
+                      </button>
+                    }
+                  }
+                  @if (u.locked) { <button type="button" class="link" (click)="unlock(u)">Unlock</button> }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="hint">{{ users().length }} user(s). A deactivated user cannot sign in or renew a session; a session already open ends within its 30 minutes.</p>
+    }
+  } @else {
+    @if (rolesError()) {
+      <div class="error-panel">{{ rolesError() }}</div>
+    } @else if (rolesData(); as d) {
+      <section class="card">
+        <h2 class="card__title">Roles</h2>
+        <ul class="roles">
+          @for (r of d.roles; track r.role) {
+            <li>
+              <pe-status-badge [label]="r.role" [tone]="roleTone(r.role)" />
+              <span class="roles__summary">{{ r.summary }}</span>
+              <span class="roles__count">{{ r.activeUsers }} active user{{ r.activeUsers === 1 ? '' : 's' }}</span>
+            </li>
+          }
+        </ul>
+      </section>
+
+      <div class="table-wrap">
+        <table class="matrix">
+          <thead>
+            <tr>
+              <th>Permission</th>
+              @for (r of d.roles; track r.role) { <th class="matrix__role">{{ r.role }}</th> }
+            </tr>
+          </thead>
+          <tbody>
+            @for (p of d.permissions; track p.policy) {
+              <tr>
+                <td class="matrix__perm"><strong>{{ p.name }}</strong><small>{{ p.description }}</small></td>
+                @for (r of d.roles; track r.role) {
+                  <td class="matrix__cell">
+                    @if (granted(p.roles, r.role)) { <span class="yes" aria-label="Allowed">✓</span> } @else { <span class="no" aria-label="Not allowed">—</span> }
+                  </td>
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="hint">These are the rules the API enforces. Roles are fixed; what each may do is set in code, not here.</p>
+    } @else {
+      <div class="skeleton"></div>
+    }
+  }
+</div>

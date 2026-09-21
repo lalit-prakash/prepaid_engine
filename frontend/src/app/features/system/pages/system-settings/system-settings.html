@@ -1,0 +1,71 @@
+<div class="ss">
+  <div class="page-header">
+    <div>
+      <h1>System Settings</h1>
+      <p class="page-header__subtitle">Thresholds and targets the engine uses. Changes apply immediately, and every change is recorded in the audit log.</p>
+    </div>
+    @if (data() && changedCount > 0) {
+      <div class="save-bar">
+        <span>{{ changedCount }} unsaved change{{ changedCount === 1 ? '' : 's' }}</span>
+        <button type="button" class="btn btn--ghost" (click)="discard()" [disabled]="saving()">Discard</button>
+        <button type="button" class="btn btn--primary" (click)="save()" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save changes' }}</button>
+      </div>
+    }
+  </div>
+
+  @if (notice()) {
+    <div class="notice" role="status">{{ notice() }} <button type="button" class="notice__close" (click)="notice.set(null)" aria-label="Dismiss">×</button></div>
+  }
+  @if (problems().length) {
+    <div class="problems" role="alert">
+      <strong>Not saved:</strong>
+      <ul>@for (p of problems(); track p) { <li>{{ p }}</li> }</ul>
+    </div>
+  }
+
+  @if (loading() && !data()) {
+    <div class="skeleton"></div>
+  } @else if (error()) {
+    <div class="error-panel">{{ error() }}</div>
+  } @else if (data(); as d) {
+    @for (g of d.groups; track g.name) {
+      <section class="card">
+        <h2 class="card__title">{{ g.name }}</h2>
+        <ul class="settings">
+          @for (s of g.settings; track s.key) {
+            <li class="setting">
+              <div class="setting__text">
+                <label [for]="s.key" class="setting__label">{{ s.label }}
+                  @if (s.isCustom) { <pe-status-badge label="Custom" tone="info" /> } @else { <pe-status-badge label="Default" tone="neutral" /> }
+                </label>
+                <p class="setting__desc">{{ s.description }}</p>
+                <p class="setting__meta">
+                  Allowed: {{ range(s) }} (blank = default) · Default: {{ s.defaultValue ? s.defaultValue + (s.unit === '%' ? '%' : ' ' + s.unit) : 'not set' }}
+                  @if (s.isCustom && s.updatedAt) { · Changed by {{ s.updatedBy }} on {{ s.updatedAt | date: 'dd-MM-yyyy HH:mm' }} }
+                </p>
+              </div>
+              <div class="setting__input">
+                <input [id]="s.key" [name]="s.key" type="text" inputmode="decimal" [(ngModel)]="values[s.key]" [class.changed]="isChanged(s.key)"
+                  [placeholder]="s.allowBlank ? 'Default' : ''" />
+                <span class="unit">{{ s.unit }}</span>
+                @if (s.isCustom) {
+                  <button type="button" class="link" (click)="reset(s)" [disabled]="saving()" title="Go back to the default">Reset</button>
+                }
+              </div>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    <section class="card">
+      <h2 class="card__title">How the system is set up</h2>
+      <dl class="facts">
+        @for (f of d.readOnly; track f.label) {
+          <div><dt>{{ f.label }}</dt><dd>{{ f.value }}</dd></div>
+        }
+      </dl>
+      <p class="hint">{{ d.note }}</p>
+    </section>
+  }
+</div>
