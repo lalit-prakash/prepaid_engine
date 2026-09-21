@@ -25,12 +25,13 @@ export class ConnectivityCommandService {
     return this.http.get<ConnectivityCommandSummary[]>(this.baseUrl, { params: accountNumber ? { accountNumber } : {} });
   }
 
-  /** GET /connectivity-commands/search: newest first, keyset-paged. `status`: Acknowledged, FailedOrTimedOut or Pending. */
-  search(params: { q?: string; type?: ConnectivityCommandType | null; status?: string | null; after?: string | null; pageSize?: number }): Observable<Page<ConnectivityCommandSummary>> {
+  /** GET /connectivity-commands/search: newest first, keyset-paged. `status`: Queued, Sent, Pending (queued or sent), Acknowledged or FailedOrTimedOut. */
+  search(params: { q?: string; type?: ConnectivityCommandType | null; status?: string | null; from?: string; to?: string; balance?: string; reason?: string; zoneId?: string; circleId?: string; after?: string | null; pageSize?: number }): Observable<Page<ConnectivityCommandSummary>> {
     const query: Record<string, string> = {};
     if (params.q?.trim()) query['q'] = params.q.trim();
     if (params.type !== null && params.type !== undefined) query['type'] = String(params.type);
     if (params.status) query['status'] = params.status;
+    for (const k of ['from', 'to', 'balance', 'reason', 'zoneId', 'circleId'] as const) if (params[k]) query[k] = params[k]!;
     if (params.after) query['after'] = params.after;
     if (params.pageSize) query['pageSize'] = String(params.pageSize);
     return this.http.get<Page<ConnectivityCommandSummary>>(`${this.baseUrl}/search`, { params: query });

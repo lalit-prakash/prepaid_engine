@@ -1,47 +1,101 @@
 <div class="rc-dc">
   <div class="page-header">
-    <h1>RC / DC</h1>
-    <p class="page-header__subtitle">{{ (stats()?.total ?? 0) | number }} disconnect/reconnect command(s) across all consumers ·
-      <a routerLink="/reports/view/live-rc-dc">Live RC DC Status report</a></p>
+    <div>
+      <h1>Disconnection / Reconnection</h1>
+      <p class="page-header__subtitle">
+        Manage consumer disconnection and reconnection commands, from the zone down to the DTR.
+      </p>
+    </div>
+    <a class="btn btn--primary" routerLink="/reports/view/live-rc-dc">Live RC DC Status report</a>
   </div>
 
   @if (stats(); as s) {
-    <section class="kpi-row kpi-row--filterable">
-      <pe-kpi-card label="Total Commands" [value]="s.total" tone="primary" [clickable]="true" (click)="clearFilters()" />
-      <pe-kpi-card label="Disconnects" [value]="s.disconnects" tone="danger" [clickable]="true" (click)="filterByType(ConnectivityCommandType.Disconnect)" />
-      <pe-kpi-card label="Reconnects" [value]="s.reconnects" tone="success" [clickable]="true" (click)="filterByType(ConnectivityCommandType.Reconnect)" />
-      <pe-kpi-card label="Acknowledged" [value]="s.acknowledged" tone="success" [clickable]="true" (click)="filterByStatus('Acknowledged')" />
-      <pe-kpi-card label="Failed / Timed Out" [value]="s.failedOrTimedOut" tone="danger" [clickable]="true" (click)="filterByStatus('FailedOrTimedOut')" />
-      <pe-kpi-card label="Pending" [value]="s.pending" tone="warning" [clickable]="true" (click)="filterByStatus('Pending')" />
-      <pe-kpi-card label="Success Rate" [value]="successRate(s)" tone="info" />
+    <section class="kpi-row">
+      <pe-kpi-card [tile]="true" label="Disconnected Consumers" [value]="s.disconnectedConsumers" tone="danger" icon="plug"
+        sublabel="supply off right now" />
+      <pe-kpi-card [tile]="true" label="Reconnections Completed" [value]="s.reconnectsCompleted" tone="success" icon="bolt"
+        sublabel="acknowledged by the meter" [clickable]="true" (click)="selectStatus('Acknowledged')" />
+      <pe-kpi-card [tile]="true" label="Pending Operations" [value]="s.pending" tone="warning" icon="clock"
+        [sublabel]="s.queued + ' queued · ' + s.sent + ' sent'" [clickable]="true" (click)="selectStatus('Pending')" />
+      <pe-kpi-card [tile]="true" label="Success Rate" [value]="successRate(s)" tone="analytic" icon="chart"
+        sublabel="of finished commands" />
     </section>
   } @else if (statsError()) {
     <div class="error-panel">Could not load the summary counts from the API.</div>
   } @else {
     <div class="skeleton-row">
-      @for (i of [1,2,3,4,5,6]; track i) { <div class="skeleton-card"></div> }
+      @for (i of [1,2,3,4]; track i) { <div class="skeleton-card"></div> }
     </div>
   }
 
-  <div class="toolbar">
-    <input
-      #searchBox
-      type="search"
-      placeholder="Search RR number or consumer name…"
-      [value]="searchTerm()"
-      (input)="onSearchInput($any($event.target).value)"
-    />
-    <select (change)="onTypeChange($any($event.target).value)">
-      <option value="" [selected]="typeFilter() === null">Disconnect and reconnect</option>
-      <option [value]="ConnectivityCommandType.Disconnect" [selected]="typeFilter() === ConnectivityCommandType.Disconnect">Disconnect only</option>
-      <option [value]="ConnectivityCommandType.Reconnect" [selected]="typeFilter() === ConnectivityCommandType.Reconnect">Reconnect only</option>
-    </select>
-    <select (change)="onStatusChange($any($event.target).value)">
-      <option value="" [selected]="!statusFilter()">All statuses</option>
-      @for (o of statusOptions; track o.value) { <option [value]="o.value" [selected]="statusFilter() === o.value">{{ o.label }}</option> }
-    </select>
-    @if (hasActiveFilters) { <button type="button" class="toolbar__clear" (click)="clearFilters(); searchBox.value = ''">Clear filters</button> }
-  </div>
+  <section class="card filters" aria-label="Search and filter">
+    <h2 class="card__title">Search &amp; Filter</h2>
+    <form class="filters__grid" (ngSubmit)="search()">
+      <label class="f f--wide">Search
+        <input type="search" name="q" [(ngModel)]="form.q" placeholder="RR number or consumer name…" />
+      </label>
+      <label class="f">Operation Type
+        <select name="type" [(ngModel)]="form.type">
+          <option value="">All</option>
+          <option [value]="ConnectivityCommandType.Disconnect">Disconnection</option>
+          <option [value]="ConnectivityCommandType.Reconnect">Reconnection</option>
+        </select>
+      </label>
+      <label class="f">Status
+        <select name="status" [(ngModel)]="form.status">
+          <option value="">All</option>
+          <option value="Queued">Pending (queued)</option>
+          <option value="Sent">In progress (sent)</option>
+          <option value="Acknowledged">Completed</option>
+          <option value="FailedOrTimedOut">Failed or timed out</option>
+        </select>
+      </label>
+      <label class="f">Reason
+        <select name="reason" [(ngModel)]="form.reason">
+          <option value="">All</option>
+          @for (r of stats()?.reasons ?? []; track r.reason) { <option [value]="r.reason">{{ r.reason }}</option> }
+        </select>
+      </label>
+      <label class="f">Balance Status
+        <select name="balance" [(ngModel)]="form.balance">
+          <option value="">All</option>
+          <option value="Positive">Positive balance</option>
+          <option value="Negative">Negative balance</option>
+          <option value="BeyondLimit">Beyond emergency credit</option>
+        </select>
+      </label>
+      <label class="f">Zone
+        <select name="zoneId" [(ngModel)]="form.zoneId" (ngModelChange)="onZoneChange()">
+          <option value="">All</option>
+          @for (z of zones(); track z.id) { <option [value]="z.id">{{ z.name }}</option> }
+        </select>
+      </label>
+      <label class="f">Circle
+        <select name="circleId" [(ngModel)]="form.circleId" [disabled]="!form.zoneId">
+          <option value="">All</option>
+          @for (c of circles(); track c.id) { <option [value]="c.id">{{ c.name }}</option> }
+        </select>
+      </label>
+      <label class="f">From
+        <input type="date" name="from" [(ngModel)]="form.from" />
+      </label>
+      <label class="f">To
+        <input type="date" name="to" [(ngModel)]="form.to" />
+      </label>
+      <div class="filters__actions">
+        <button type="button" class="btn btn--ghost" (click)="reset()">Reset</button>
+        <button type="submit" class="btn btn--primary">Search</button>
+      </div>
+    </form>
+  </section>
+
+  <nav class="tabs" aria-label="Operations by status">
+    @for (t of tabs; track t.label) {
+      <button type="button" class="tab" [class.tab--active]="activeTab() === t.status" (click)="selectStatus(t.status)">
+        {{ t.label }}@if (stats(); as s) { <span class="tab__count">{{ t.count(s) | number }}</span> }
+      </button>
+    }
+  </nav>
 
   @if (list.loading() && list.items().length === 0) {
     <div class="skeleton-row"><div class="skeleton-card"></div></div>
@@ -90,7 +144,13 @@
               <td class="mono">{{ c.accountNumber }}</td>
               <td>{{ c.name }}</td>
               <td class="mono">{{ c.meterNumber }}</td>
-              <td>{{ c.commandType === ConnectivityCommandType.Disconnect ? 'Disconnection' : 'Reconnection' }}</td>
+              <td>
+                @if (c.commandType === ConnectivityCommandType.Disconnect) {
+                  <pe-status-badge label="Disconnection" tone="danger" />
+                } @else {
+                  <pe-status-badge label="Reconnection" tone="success" />
+                }
+              </td>
               <td>
                 @switch (c.status) {
                   @case (ConnectivityCommandStatus.Acknowledged) { <pe-status-badge label="success" tone="success" /> }
@@ -107,12 +167,12 @@
       </table>
     </div>
 
-      <div class="pager">
-        <span>{{ list.totalCount() | number }} command(s){{ hasActiveFilters ? ' match' : '' }} · page {{ list.pageIndex() + 1 }}</span>
-        <span class="pager__buttons">
-          <button type="button" (click)="list.previous()" [disabled]="list.pageIndex() === 0 || list.loading()">Previous</button>
-          <button type="button" (click)="list.next()" [disabled]="!list.nextCursor() || list.loading()">Next</button>
-        </span>
-      </div>
+    <div class="pager">
+      <span>Showing page {{ list.pageIndex() + 1 }} · {{ list.totalCount() | number }} command(s){{ hasActiveFilters ? ' match' : '' }}</span>
+      <span class="pager__buttons">
+        <button type="button" (click)="list.previous()" [disabled]="list.pageIndex() === 0 || list.loading()">Previous</button>
+        <button type="button" (click)="list.next()" [disabled]="!list.nextCursor() || list.loading()">Next</button>
+      </span>
+    </div>
   }
 </div>

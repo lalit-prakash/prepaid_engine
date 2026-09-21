@@ -104,7 +104,7 @@ public static class PagedListEndpoints
 
         // ---------------------------------------------------------------- RC / DC (connectivity commands)
         app.MapGet("/api/v1/connectivity-commands/search", async (
-            string? q, ConnectivityCommandType? type, string? status, string? after, int? pageSize, PrepaidEngineDbContext db) =>
+            string? q, ConnectivityCommandType? type, string? status, DateTime? from, DateTime? to, string? balance, string? reason, Guid? zoneId, Guid? circleId, string? after, int? pageSize, PrepaidEngineDbContext db) =>
         {
             var size = Math.Clamp(pageSize ?? 25, 1, MaxPage);
             var query =
@@ -118,8 +118,22 @@ public static class PagedListEndpoints
                 query = query.Where(x => EF.Functions.ILike(x.c.AccountNumber, prefix, "\\") || EF.Functions.ILike(x.c.Name, contains, "\\"));
             }
             if (type.HasValue) query = query.Where(x => x.cmd.CommandType == type.Value);
+            if (from.HasValue) { var start = DateTime.SpecifyKind(from.Value.Date, DateTimeKind.Utc); query = query.Where(x => x.cmd.CreatedAt >= start); }
+            if (to.HasValue) { var endExclusive = DateTime.SpecifyKind(to.Value.Date.AddDays(1), DateTimeKind.Utc); query = query.Where(x => x.cmd.CreatedAt < endExclusive); }
+            if (!string.IsNullOrWhiteSpace(reason)) query = query.Where(x => x.cmd.Reason == reason);
+            query = balance switch
+            {
+                "Positive" => query.Where(x => x.c.Wallet.Balance > 0),
+                "Negative" => query.Where(x => x.c.Wallet.Balance < 0),
+                "BeyondLimit" => query.Where(x => x.c.Wallet.Balance < -x.c.Wallet.EmergencyCreditLimit),
+                _ => query,
+            };
+            if (circleId.HasValue) query = query.Where(x => x.c.Dtr!.Feeder.Substation.SubDivision.Division.CircleId == circleId.Value);
+            else if (zoneId.HasValue) query = query.Where(x => x.c.Dtr!.Feeder.Substation.SubDivision.Division.Circle.ZoneId == zoneId.Value);
             query = status switch
             {
+                "Queued" => query.Where(x => x.cmd.Status == ConnectivityCommandStatus.Queued),
+                "Sent" => query.Where(x => x.cmd.Status == ConnectivityCommandStatus.Sent),
                 "Acknowledged" => query.Where(x => x.cmd.Status == ConnectivityCommandStatus.Acknowledged),
                 "FailedOrTimedOut" => query.Where(x => x.cmd.Status == ConnectivityCommandStatus.Failed || x.cmd.Status == ConnectivityCommandStatus.TimedOut),
                 "Pending" => query.Where(x => x.cmd.Status == ConnectivityCommandStatus.Queued || x.cmd.Status == ConnectivityCommandStatus.Sent),
@@ -166,6 +180,11 @@ public static class PagedListEndpoints
             var byType = await db.ConnectivityCommands.AsNoTracking().GroupBy(c => c.CommandType).Select(g => new { Type = g.Key, Count = g.Count() }).ToListAsync();
             int N(ConnectivityCommandStatus s) => byStatus.FirstOrDefault(x => x.Status == s)?.Count ?? 0;
             int T(ConnectivityCommandType t) => byType.FirstOrDefault(x => x.Type == t)?.Count ?? 0;
+            var disconnectedConsumers = await db.Consumers.AsNoTracking().CountAsync(c => c.ConnectionStatus == ConnectionStatus.Disconnected);
+            var reconnectsCompleted = await db.ConnectivityCommands.AsNoTracking().CountAsync(c => c.CommandType == ConnectivityCommandType.Reconnect && c.Status == ConnectivityCommandStatus.Acknowledged);
+            // The most used reasons, for the Reason filter (reasons are free text, so this is what has actually been recorded).
+            var reasons = await db.ConnectivityCommands.AsNoTracking().GroupBy(c => c.Reason).Select(g => new { Reason = g.Key, Count = g.Count() })
+                .OrderByDescending(g => g.Count).Take(30).ToListAsync();
             return Results.Ok(new
             {
                 Total = byStatus.Sum(x => x.Count),
@@ -174,6 +193,11 @@ public static class PagedListEndpoints
                 Acknowledged = N(ConnectivityCommandStatus.Acknowledged),
                 FailedOrTimedOut = N(ConnectivityCommandStatus.Failed) + N(ConnectivityCommandStatus.TimedOut),
                 Pending = N(ConnectivityCommandStatus.Queued) + N(ConnectivityCommandStatus.Sent),
+                Queued = N(ConnectivityCommandStatus.Queued),
+                Sent = N(ConnectivityCommandStatus.Sent),
+                DisconnectedConsumers = disconnectedConsumers,
+                ReconnectsCompleted = reconnectsCompleted,
+                Reasons = reasons,
             });
         })
         .WithName("ConnectivityCommandSummary")
