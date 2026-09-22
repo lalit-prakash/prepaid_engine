@@ -200,33 +200,21 @@ button[type='submit']:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 .rcdc-confirm__actions { display: flex; gap: var(--space-3); }
 
-.danger-btn {
+.danger-btn, .primary-btn {
   padding: 9px var(--space-5);
   border: none;
   border-radius: var(--radius-md);
-  background: var(--color-danger);
   color: var(--text-inverse);
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-button);
   cursor: pointer;
   white-space: nowrap;
 }
+.danger-btn { background: var(--color-danger); }
 .danger-btn:hover:not(:disabled) { background: var(--color-danger-dark); }
-.danger-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-.primary-btn {
-  padding: 9px var(--space-5);
-  border: none;
-  border-radius: var(--radius-md);
-  background: var(--color-primary);
-  color: var(--text-inverse);
-  font-weight: var(--font-weight-semibold);
-  font-size: var(--font-size-button);
-  cursor: pointer;
-  white-space: nowrap;
-}
+.primary-btn { background: var(--color-primary); }
 .primary-btn:hover:not(:disabled) { background: var(--color-primary-dark); }
-.primary-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.danger-btn:disabled, .primary-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .cancel-btn {
   padding: 9px var(--space-5);
@@ -278,3 +266,7 @@ button[type='submit']:disabled { opacity: 0.6; cursor: not-allowed; }
 .mobile-error { color: var(--color-danger-dark); font-size: var(--font-size-meta); margin-top: 4px; }
 .link-btn { background: none; border: none; color: var(--color-primary); cursor: pointer; padding: 0 var(--space-2); text-decoration: underline; font-size: var(--font-size-meta); }
 .link-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.billing-facts-form { display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--font-size-meta); }
+.billing-facts-form label, .check { display: flex; gap: var(--space-2); flex-direction: column; }
+.check { flex-direction: row; align-items: center; }

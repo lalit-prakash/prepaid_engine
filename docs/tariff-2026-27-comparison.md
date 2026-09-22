@@ -28,8 +28,8 @@ computed · **Open** needs a decision or data the system does not have.
 | Minimum charges (§3) | The fixed charge is the monthly minimum | Same idea | Same | Same |
 | Electricity duty (§21) | Domestic and BPL 5 paisa; Industrial 5 paisa first 15,000, 4.5 next 25,000, 3 after; others 6 paisa | Correct in `ElectricityDuty` | Same. Not used by the daily run (see 3) | Same |
 | Prepaid rebate (§22.1) | 2% on energy charge | Correct in tariffs | Same | Same |
-| FPPAS (§A.4) | Monthly, notified | Domain object exists, never applied by the run | Same as before. The workbench can preview a share | Open |
-| TMC, CPMC (§4, §5) | ₹20 /25 per kVA per month; ₹800 / 1,000 / 1,500 / 1,900 per month | Correct constants | Same; now also in the daily bill calculation | Same |
+| FPPAS (§A.4) | Monthly, notified | Domain object exists, never applied by the run | Notified via the tariff master (`POST /api/v1/tariff-parameters/fppas`) and applied automatically by the daily run, per consumer, from their own prior month's energy charge | Fixed |
+| TMC, CPMC (§4, §5) | ₹20 /25 per kVA per month; ₹800 / 1,000 / 1,500 / 1,900 per month | Correct constants | Applied automatically from each consumer's own recorded billing facts (supply voltage, LT-side metering, opt-in, capacity/wiring) | Fixed |
 | LT-side metering surcharge | 3% of energy charges where an HT consumer is metered on the LT side (Supply Code 2.3.1) | Not modelled | In the daily calculation and the workbench | Fixed |
 
 ## 2. Prepaid meter facilities (§22)
@@ -54,7 +54,7 @@ This is where the engine differed most from the book.
 | Prepaid rebate | 2% of energy charge | Same |
 | Fixed charge | Monthly × load × 12 / 365, every day | Same, and never on less than the minimum chargeable demand (HT 56 kVA) |
 | Electricity duty | **Left out of the debit** | Added each day; Industrial tiers run across the month |
-| LT-side metering surcharge, TMC, CPMC, FPPAS share | Left out | In the calculation. The daily run passes zero for them because the system does not yet record per consumer whether they apply (metering side, opted-in maintenance, a notified FPPAS rate). The Calculation Workbench previews them |
+| LT-side metering surcharge, TMC, CPMC, FPPAS share | Left out | In the calculation, driven automatically: LT-side metering, TMC/CPMC opt-in and equipment facts are recorded per consumer (`PUT /api/v1/consumers/{account}/billing-facts`); FPPAS from the notified tariff-master rate. The Calculation Workbench can still preview any of them manually |
 | Record of the bill | Only a wallet debit for one number | A `DailyBill` row per day with every component, the month-to-date it started from, the tariff, and any assumption made |
 | Time-of-Day (IHT, IEHT) | Priced as zero energy (no slabs) | Split into bands from the load survey intervals MDM sends every 15 or 30 minutes (each interval goes to the band its IST start time falls in). Energy the intervals do not cover, or a day with no intervals, is priced at the Normal rate and the bill says so |
 | kVAh schedules (HT, EHT, ILT) | Billed on kWh, silently | Billed on the daily load profile's kVAh. Electricity duty stays on kWh units. A day whose profile has no kVAh falls back to kWh and the bill says so. The bill records the energy and unit it was worked on |
@@ -78,10 +78,9 @@ minimum recharge (General Purpose only), kVAh and Time-of-Day billing (from the 
 fixed on the way: activating a tariff revision now moves the tariff's consumers to the new version (they used to stay on the retired one, so a
 revision never reached billing).
 
-Still open:
-
-1. **Per-consumer facts** (LT-side metering, opted-in TMC and CPMC, a notified FPPAS rate) need somewhere to be recorded before the daily run can
-   apply them.
+Decided and done since: per-consumer facts for LT-side metering, TMC and CPMC (`Consumer.SetBillingFacts`), and the FPPAS rate as a tariff-master
+notification (`FppasRateNotification`) the daily run applies automatically, per consumer, from their own prior month's energy charge. Still open:
+the shared-transformer-capacity billing basis for TMC (§5.2) has no per-consumer model — only the exclusive-use basis (§5.1) is supported.
 
 ## 6. Not applicable to prepaid daily billing (kept as reference)
 

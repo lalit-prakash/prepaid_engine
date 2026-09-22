@@ -5,7 +5,7 @@ import { Router, RouterLink } from '@angular/router';
 import { TariffService } from '../../../../core/services/tariff.service';
 import { TariffChangeRequestService } from '../../../../core/services/tariff-change-request.service';
 import { AuthService } from '../../../../core/services/auth.service';
-import { BookCheck, EnergyUnit, FixedChargeBasis, TariffParameters, TariffSummary, VoltageLevel } from '../../../../core/models/tariff.model';
+import { BookCheck, EnergyUnit, FixedChargeBasis, FppasRate, TariffParameters, TariffSummary, VoltageLevel } from '../../../../core/models/tariff.model';
 import { TariffChangeRequestStatus, TariffChangeRequestSummary } from '../../../../core/models/tariff-change-request.model';
 import { categoryLabel } from '../../../../shared/utils/category-label';
 import { changeRequestStatusLabel, changeRequestStatusTone } from '../../../../shared/utils/tariff-change-request-status';
@@ -46,6 +46,10 @@ export class TariffManagement implements OnInit {
 
   protected readonly bookCheck = signal<BookCheck | null>(null);
   protected readonly parameters = signal<TariffParameters | null>(null);
+  protected readonly fppasRates = signal<FppasRate[]>([]);
+  protected readonly fppasSaving = signal(false);
+  protected readonly fppasError = signal<string | null>(null);
+  protected fppasRateInput: number | null = null;
   protected readonly bookError = signal<string | null>(null);
 
   protected readonly voltageFilter = signal<VoltageFilter>('all');
@@ -54,6 +58,7 @@ export class TariffManagement implements OnInit {
 
   protected readonly isIt = computed(() => this.auth.role() === 'IT' || this.auth.role() === 'Admin');
   protected readonly isUtility = computed(() => this.auth.role() === 'Utility');
+  protected readonly canGovernTariffs = computed(() => this.auth.canGovernTariffs());
 
   private count(status: TariffChangeRequestStatus): number {
     return this.changeRequests().filter((r) => r.status === status).length;
@@ -119,6 +124,7 @@ export class TariffManagement implements OnInit {
     this.tariffService.list('Retired').subscribe({ next: (rows) => this.retiredTariffs.set(rows), error: () => this.retiredTariffs.set([]) });
     this.tariffService.bookCheck().subscribe({ next: (b) => this.bookCheck.set(b), error: () => this.bookError.set('Could not compare with the tariff book.') });
     this.tariffService.parameters().subscribe({ next: (p) => this.parameters.set(p), error: () => this.parameters.set(null) });
+    this.loadFppasRates();
     this.changeRequestService.list().subscribe({
       next: (requests) => {
         this.changeRequests.set(requests);
@@ -133,6 +139,27 @@ export class TariffManagement implements OnInit {
 
   selectTab(tab: Tab): void {
     this.activeTab.set(tab);
+  }
+
+  private loadFppasRates(): void {
+    this.tariffService.fppasRates().subscribe({ next: (rates) => this.fppasRates.set(rates), error: () => this.fppasRates.set([]) });
+  }
+
+  protected notifyFppasRate(): void {
+    if (this.fppasRateInput === null || Number.isNaN(this.fppasRateInput)) return;
+    this.fppasSaving.set(true);
+    this.fppasError.set(null);
+    this.tariffService.notifyFppasRate(this.fppasRateInput / 100).subscribe({
+      next: () => {
+        this.fppasSaving.set(false);
+        this.fppasRateInput = null;
+        this.loadFppasRates();
+      },
+      error: (err) => {
+        this.fppasSaving.set(false);
+        this.fppasError.set(err?.error?.error ?? 'Could not notify this FPPAS rate.');
+      },
+    });
   }
 
   applySearch(): void {

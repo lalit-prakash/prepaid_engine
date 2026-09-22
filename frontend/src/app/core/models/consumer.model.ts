@@ -89,6 +89,31 @@ export interface ConsumerSummary {
 }
 
 /** Where the consumer sits in the supply network; every level is null until the consumer is mapped to a DTR. */
+/** Mirrors SupplyVoltage (backend/PrepaidEngine.Domain/Enums/SupplyVoltage.cs): the voltage an HT/EHT consumer's
+ * transformer/CT-PT set is connected at, which sets the TMC/CPMC rate (tariff book §4-§5). Null for an LT consumer. */
+export enum SupplyVoltage {
+  Kv11 = 'Kv11',
+  Kv33 = 'Kv33',
+  Kv132 = 'Kv132',
+}
+
+/** Mirrors CtPtWiring (backend/PrepaidEngine.Domain/Enums/CtPtWiring.cs). */
+export enum CtPtWiring {
+  ThreePhaseThreeWire = 'ThreePhaseThreeWire',
+  ThreePhaseFourWire = 'ThreePhaseFourWire',
+}
+
+/** The per-consumer facts the daily bill needs for TMC, CPMC and the LT-side metering surcharge (tariff book §4, §5,
+ * Supply Code 2.3.1) — see Consumer.SetBillingFacts. All null/false for an LT consumer, who owns none of this equipment. */
+export interface ConsumerBillingFacts {
+  supplyVoltage: SupplyVoltage | null;
+  meteredOnLtSide: boolean;
+  transformerMaintenanceOptedIn: boolean;
+  transformerCapacityKva: number | null;
+  ctPtMaintenanceOptedIn: boolean;
+  ctPtWiring: CtPtWiring | null;
+}
+
 export interface ConsumerNetwork {
   zone: string | null;
   circle: string | null;
@@ -110,6 +135,7 @@ export interface ConsumerDetail {
   serviceAddress: string;
   connectionStatus: ConnectionStatus;
   connectedLoadKw: number;
+  billingFacts: ConsumerBillingFacts;
   isDisconnectEligibleOnCredit: boolean;
   meter: Meter;
   wallet: Wallet;

@@ -149,6 +149,32 @@
             </dl>
           </section>
         }
+        <section class="card">
+          <h2 class="card__title">FPPAS (Fuel and Power Purchase Adjustment Surcharge, §A.4)</h2>
+          @if (fppasRates().length > 0) {
+            <dl class="params">
+              @for (r of fppasRates(); track r.id) {
+                <div>
+                  <dt>{{ r.applicableBillingMonth | date: 'MMMM y' }}</dt>
+                  <dd>{{ r.rateFraction * 100 | number: '1.2-2' }}%<small>notified {{ r.notifiedAt | date: 'd MMM y' }} — each consumer's own prior month's energy charge times this rate, spread across the month</small></dd>
+                </div>
+              }
+            </dl>
+          } @else {
+            <p class="hint">No FPPAS rate notified yet — the daily run charges nothing for it.</p>
+          }
+          @if (canGovernTariffs()) {
+            <div class="fppas-form">
+              <label>Notify a rate for next month's billing (%)
+                <input type="number" step="0.01" [(ngModel)]="fppasRateInput" placeholder="e.g. -14 or 6.65" />
+              </label>
+              <button type="button" class="btn-primary" (click)="notifyFppasRate()" [disabled]="fppasSaving() || fppasRateInput === null">
+                {{ fppasSaving() ? 'Notifying…' : 'Notify' }}
+              </button>
+              @if (fppasError()) { <div class="fppas-form__error" role="alert">{{ fppasError() }}</div> }
+            </div>
+          }
+        </section>
       </div>
     }
   } @else {

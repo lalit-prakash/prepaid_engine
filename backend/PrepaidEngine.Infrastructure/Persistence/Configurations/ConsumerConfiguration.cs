@@ -47,6 +47,14 @@ public class ConsumerConfiguration : IEntityTypeConfiguration<Consumer>
         builder.Property(c => c.MobileNumber)
             .HasMaxLength(20);
 
+        // Transformer/CT-PT/metering-side facts (TMC, CPMC, LT-side surcharge) — HT/EHT only, null/false for LT.
+        builder.Property(c => c.SupplyVoltage).HasConversion<string>().HasMaxLength(10);
+        builder.Property(c => c.MeteredOnLtSide).IsRequired();
+        builder.Property(c => c.TransformerMaintenanceOptedIn).IsRequired();
+        builder.Property(c => c.TransformerCapacityKva).HasColumnType("decimal(18,3)");
+        builder.Property(c => c.CtPtMaintenanceOptedIn).IsRequired();
+        builder.Property(c => c.CtPtWiring).HasConversion<string>().HasMaxLength(20);
+
         // Trigram indexes for the server-side search box (ILIKE prefix on account and mobile, contains on name).
         builder.HasIndex(c => c.AccountNumber, "IX_Consumers_AccountNumber_trgm").HasMethod("gin").HasOperators("gin_trgm_ops");
         builder.HasIndex(c => c.MobileNumber, "IX_Consumers_MobileNumber_trgm").HasMethod("gin").HasOperators("gin_trgm_ops");

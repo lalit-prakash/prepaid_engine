@@ -44,6 +44,31 @@ public class Consumer
 
     public Dtr? Dtr { get; private set; }
 
+    /// <summary>
+    /// Facts the daily bill needs for an HT/EHT consumer's transformer and CT-PT set, and whether they are metered on the
+    /// LT side of their transformer (tariff book §4, §5, Supply Code 2.3.1). All null/false for an LT consumer, who owns
+    /// none of this equipment. Set together via <see cref="SetBillingFacts"/>, never piecemeal, so they are never left
+    /// inconsistent (for example CPMC opted in without a wiring, or without the LT-side metering the book requires for it).
+    /// </summary>
+    public SupplyVoltage? SupplyVoltage { get; private set; }
+
+    /// <summary>An HT consumer metered on the LT side of their own transformer (Supply Code 2.3.1): adds the tariff
+    /// book's 3% LT-side metering surcharge on the energy charge, and is what makes them eligible for CPMC.</summary>
+    public bool MeteredOnLtSide { get; private set; }
+
+    /// <summary>Opted for MePDCL to maintain their own transformer (TMC, tariff book §5); zero unless opted in.</summary>
+    public bool TransformerMaintenanceOptedIn { get; private set; }
+
+    /// <summary>The transformer's installed capacity, billed exclusively to its owner (§5.1) — the basis TMC is charged
+    /// on. Required when <see cref="TransformerMaintenanceOptedIn"/> is true.</summary>
+    public decimal? TransformerCapacityKva { get; private set; }
+
+    /// <summary>Opted for MePDCL to maintain their own CT-PT metering set (CPMC, tariff book §4); zero unless opted in.
+    /// Per the book, only eligible when <see cref="MeteredOnLtSide"/> is true.</summary>
+    public bool CtPtMaintenanceOptedIn { get; private set; }
+
+    public CtPtWiring? CtPtWiring { get; private set; }
+
     public Consumer(Guid id, string accountNumber, string name, string serviceAddress, SmartMeter meter, decimal connectedLoadKw, bool isNetMeter = false)
     {
         if (string.IsNullOrWhiteSpace(accountNumber))
@@ -109,6 +134,35 @@ public class Consumer
     public void AssignTariff(Guid tariffId) => TariffId = tariffId;
 
     public void AssignDtr(Guid dtrId) => DtrId = dtrId;
+
+    /// <summary>
+    /// Records this consumer's transformer/CT-PT/metering-side facts for the daily bill to use (LT-side metering
+    /// surcharge, TMC, CPMC — tariff book §4, §5, Supply Code 2.3.1). Set together, not piecemeal, so the combination
+    /// is always one the book allows: CPMC needs LT-side metering; either maintenance charge needs a supply voltage;
+    /// TMC needs the transformer's installed capacity; CPMC needs its wiring. An LT consumer (no <paramref name="supplyVoltage"/>)
+    /// cannot opt into either — this equipment and the LT-side surcharge are HT/EHT-only.
+    /// </summary>
+    public void SetBillingFacts(
+        SupplyVoltage? supplyVoltage, bool meteredOnLtSide,
+        bool transformerMaintenanceOptedIn, decimal? transformerCapacityKva,
+        bool ctPtMaintenanceOptedIn, CtPtWiring? ctPtWiring)
+    {
+        if (supplyVoltage is null && (meteredOnLtSide || transformerMaintenanceOptedIn || ctPtMaintenanceOptedIn))
+            throw new ArgumentException("A supply voltage is required to record LT-side metering or opt into TMC/CPMC — an LT consumer has neither.", nameof(supplyVoltage));
+        if (transformerMaintenanceOptedIn && transformerCapacityKva is not (> 0))
+            throw new ArgumentOutOfRangeException(nameof(transformerCapacityKva), "The transformer's installed capacity is required, and must be positive, to opt into TMC.");
+        if (ctPtMaintenanceOptedIn && !meteredOnLtSide)
+            throw new ArgumentException("CPMC applies only when the consumer is metered on the LT side of their transformer (tariff book §4.2).", nameof(ctPtMaintenanceOptedIn));
+        if (ctPtMaintenanceOptedIn && ctPtWiring is null)
+            throw new ArgumentException("The CT-PT set's wiring is required to opt into CPMC.", nameof(ctPtWiring));
+
+        SupplyVoltage = supplyVoltage;
+        MeteredOnLtSide = meteredOnLtSide;
+        TransformerMaintenanceOptedIn = transformerMaintenanceOptedIn;
+        TransformerCapacityKva = transformerMaintenanceOptedIn ? transformerCapacityKva : null;
+        CtPtMaintenanceOptedIn = ctPtMaintenanceOptedIn;
+        CtPtWiring = ctPtMaintenanceOptedIn ? ctPtWiring : null;
+    }
 
     /// <summary>Sets the notification destination.</summary>
     public void SetMobileNumber(string mobileNumber)

@@ -637,6 +637,50 @@ public static class TariffEndpoints
         .WithName("TariffBookParameters")
         .RequireAuthorization();
 
+        // The FPPAS rate the utility has notified for a billing month (tariff book §A.4) — the tariff-master record the daily run reads
+        // (see BillingEngineService.FppasDailySharesAsync) to charge each consumer their own prior month's energy charge times this rate,
+        // spread across the month. Listed newest month first; the most recent one is what the run currently applies going forward.
+        app.MapGet("/api/v1/tariff-parameters/fppas", async (PrepaidEngineDbContext db) =>
+        {
+            var rates = await db.FppasRateNotifications.AsNoTracking()
+                .OrderByDescending(f => f.ApplicableBillingMonth)
+                .Select(f => new { f.Id, f.RateFraction, f.NotifiedAt, f.ApplicableBillingMonth })
+                .ToListAsync();
+            return Results.Ok(rates);
+        })
+        .WithName("ListFppasRates")
+        .RequireAuthorization();
+
+        // Notifies the FPPAS rate for the billing month one month after when it's notified (§A.4's deferred-by-one-month
+        // mechanism — see FppasRateNotification/FppasCharge). Renotifying within the same billing month corrects it rather
+        // than stacking a second rate for that month. Restricted like a tariff change: it changes what every consumer is charged.
+        app.MapPost("/api/v1/tariff-parameters/fppas", async (NotifyFppasRateRequest request, ClaimsPrincipal user, PrepaidEngineDbContext db) =>
+        {
+            var notifiedAt = request.NotifiedAt ?? DateTime.UtcNow;
+            var applicableMonth = FppasRateNotification.ApplicableMonthFor(notifiedAt);
+            var existing = await db.FppasRateNotifications.FirstOrDefaultAsync(f => f.ApplicableBillingMonth == applicableMonth);
+
+            string action;
+            if (existing is null)
+            {
+                db.FppasRateNotifications.Add(new FppasRateNotification(Guid.NewGuid(), request.RateFraction, notifiedAt));
+                action = "FPPAS_NOTIFIED";
+            }
+            else
+            {
+                existing.Renotify(request.RateFraction, notifiedAt);
+                action = "FPPAS_RENOTIFIED";
+            }
+
+            Audit(db, nameof(FppasRateNotification), applicableMonth.ToString("yyyy-MM"), action, user.Identity?.Name ?? "unknown",
+                oldValue: existing?.RateFraction.ToString(), newValue: request.RateFraction.ToString());
+            await db.SaveChangesAsync();
+
+            return Results.Ok(new { ApplicableBillingMonth = applicableMonth, request.RateFraction, NotifiedAt = notifiedAt });
+        })
+        .WithName("NotifyFppasRate")
+        .RequireAuthorization("TariffGovernanceRole");
+
 
         // --- Tariff version history: append-only record of parameter changes, enabling a Tariff -------
         // Change Report even though Tariff itself still only exposes its single current version (see

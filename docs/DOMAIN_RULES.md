@@ -81,13 +81,12 @@ MePDCL's reference workbook (the tariff book only states FPPAS is monthly, not t
   reconciles exactly to the total (needed since the workbook's own unrounded figures don't sum
   to a clean rupee-and-paisa amount).
 
-**Wired into `PrepaidBill`** — a bill carries `FppasAmount` (this bill's daily share) and
-`FppasChargeId` (a traceable link back to the notification it came from), both exposed via
-`GET /api/v1/consumers/{accountNumber}`. Verified live against real PostgreSQL: a ₹225 gross
-energy charge with a 2% FPPAS notification correctly produces `225.00 − 4.50 (rebate) + 180.00
-(fixed) + 2.25 (duty) + 0.15 (FPPAS share) = ₹402.90`. Still missing: automatic scheduling of
-*when* a newly notified rate gets picked up for the next cycle — today the caller constructs
-the `FppasCharge` and passes its daily share in explicitly (see `DbSeeder`).
+**Wired into the daily run**, fully automatically. `FppasRateNotification` (tariff master, `GET`/`POST /api/v1/tariff-parameters/fppas`,
+`TariffGovernanceRole`) is the utility's notified rate for a billing month; `BillingEngineService.FppasDailySharesAsync` finds the rate
+notified for the current billing month and, for every consumer being billed, sums their *own* prior calendar month's `DailyBill.GrossEnergyCharge`
+rows, builds an `FppasCharge` from that sum and the notified rate, and takes that day's share — no caller constructs an `FppasCharge` by hand any
+more. A `DailyBill` carries `FppasShare` (this day's amount, via `DailyBillInput.FppasDailyShare`). Renotifying within the same billing month
+corrects the rate rather than stacking a second one for that month.
 
 ### TMC and CPMC (transformer / CT-PT maintenance charges)
 
@@ -104,15 +103,13 @@ example values exist in either reference workbook, so nothing to cross-check num
   voltage and CT-PT wiring (₹800/1,000/1,500/1,900), zero unless opted in; throws for 132 kV
   (no rate defined in the tariff book) unless not opted in, in which case it's zero regardless.
 
-**Wired into `PrepaidBill`** — `TmcAmount`/`CpmcAmount` are both included in `Amount`. Verified
-live against real PostgreSQL: the existing residential DLT demo bill correctly still shows both
-as zero (that consumer owns no transformer/CT-PT set), and unit tests hand-verify a non-zero
-case (100 kVA transformer + an 11kV 3-wire CT-PT set, both opted in → ₹2,000 TMC + ₹800 CPMC
-composed correctly into the total) since neither workbook has a worked example to
-regression-test against. **Still missing**: per-consumer equipment facts (transformer/CT-PT
-ownership, maintenance opt-in, exclusive vs. shared use) aren't modeled on `Consumer` — today
-the caller computes `TmcAmount`/`CpmcAmount` via the calculators and passes them in explicitly,
-same as FPPAS's daily share.
+**Wired into the daily run.** `Consumer.SetBillingFacts` (`PUT /api/v1/consumers/{accountNumber}/billing-facts`, `TariffGovernanceRole`)
+records an HT/EHT consumer's supply voltage, whether they are metered on the LT side of their transformer, and their TMC/CPMC opt-in (with the
+transformer's installed capacity or the CT-PT set's wiring) — enforced together so the combination is always one the book allows (CPMC needs
+LT-side metering; either charge needs a supply voltage; TMC needs a capacity; CPMC needs a wiring). `BillingEngineService.MonthlyMaintenanceCharges`
+reads these straight off the consumer (always exclusive-use billing — this project has no shared-transformer-capacity concept) and feeds the
+monthly figures into `DailyBillCalculator`, which prorates them to the day exactly as before. An LT consumer, or an HT consumer who has not opted
+in, is billed zero for both, same as before this was wired up.
 
 ### Arrear recovery
 
