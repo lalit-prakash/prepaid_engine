@@ -107,6 +107,62 @@
             <dt>Last reading</dt><dd>{{ c.meter.lastReadingKwh | number: '1.0-3' }} kWh</dd>
           </dl>
         </section>
+        <section class="panel">
+          <h2>Billing facts</h2>
+          @if (!editingBillingFacts()) {
+            @if (c.billingFacts.supplyVoltage) {
+              <dl class="kv">
+                <dt>Supply voltage</dt><dd>{{ c.billingFacts.supplyVoltage }}</dd>
+                <dt>Metered on LT side</dt><dd>{{ c.billingFacts.meteredOnLtSide ? 'Yes — adds the 3% surcharge' : 'No' }}</dd>
+                <dt>Transformer maintenance (TMC)</dt>
+                <dd>{{ c.billingFacts.transformerMaintenanceOptedIn ? ('Opted in — ' + c.billingFacts.transformerCapacityKva + ' kVA installed') : 'Not opted in' }}</dd>
+                <dt>CT-PT maintenance (CPMC)</dt>
+                <dd>{{ c.billingFacts.ctPtMaintenanceOptedIn ? ('Opted in — ' + c.billingFacts.ctPtWiring) : 'Not opted in' }}</dd>
+              </dl>
+            } @else {
+              <p class="kv__note">Not an HT/EHT consumer — no transformer or CT-PT set of their own to maintain.</p>
+            }
+            @if (auth.canGovernTariffs()) {
+              <button type="button" class="link-btn" (click)="startEditBillingFacts()">Edit</button>
+            }
+          } @else {
+            <div class="billing-facts-form">
+              <label>Supply voltage
+                <select class="mobile-input" [(ngModel)]="billingFactsDraft.supplyVoltage" name="supplyVoltage">
+                  <option [ngValue]="null">Not HT/EHT</option>
+                  <option [ngValue]="SupplyVoltage.Kv11">11 kV</option>
+                  <option [ngValue]="SupplyVoltage.Kv33">33 kV</option>
+                  <option [ngValue]="SupplyVoltage.Kv132">132 kV</option>
+                </select>
+              </label>
+              @if (billingFactsDraft.supplyVoltage) {
+                <span class="check"><input type="checkbox" name="ltSide" [(ngModel)]="billingFactsDraft.meteredOnLtSide" /> Metered on the LT side of the transformer</span>
+                <span class="check"><input type="checkbox" name="tmcOpt" [(ngModel)]="billingFactsDraft.transformerMaintenanceOptedIn" /> Opted for MePDCL transformer maintenance (TMC)</span>
+                @if (billingFactsDraft.transformerMaintenanceOptedIn) {
+                  <label>Installed transformer capacity (kVA)
+                    <input class="mobile-input" type="number" min="0.01" step="1" name="tCap" [(ngModel)]="billingFactsDraft.transformerCapacityKva" />
+                  </label>
+                }
+                <span class="check"><input type="checkbox" name="cpmcOpt" [(ngModel)]="billingFactsDraft.ctPtMaintenanceOptedIn" [disabled]="!billingFactsDraft.meteredOnLtSide" /> Opted for MePDCL CT-PT maintenance (CPMC)</span>
+                @if (!billingFactsDraft.meteredOnLtSide) { <span class="field-hint">CPMC needs LT-side metering.</span> }
+                @if (billingFactsDraft.ctPtMaintenanceOptedIn) {
+                  <label>CT-PT wiring
+                    <select class="mobile-input" [(ngModel)]="billingFactsDraft.ctPtWiring" name="wiring">
+                      <option [ngValue]="null">Select…</option>
+                      <option [ngValue]="CtPtWiring.ThreePhaseThreeWire">3-phase, 3-wire</option>
+                      <option [ngValue]="CtPtWiring.ThreePhaseFourWire">3-phase, 4-wire</option>
+                    </select>
+                  </label>
+                }
+              }
+              @if (billingFactsError()) { <div class="mobile-error" role="alert">{{ billingFactsError() }}</div> }
+              <div class="billing-facts-form__actions">
+                <button type="button" class="link-btn" (click)="saveBillingFacts()" [disabled]="billingFactsSaving()">{{ billingFactsSaving() ? 'Saving…' : 'Save' }}</button>
+                <button type="button" class="link-btn" (click)="cancelEditBillingFacts()" [disabled]="billingFactsSaving()">Cancel</button>
+              </div>
+            </div>
+          }
+        </section>
         @if (walletStats(); as w) {
           <section class="panel">
             <h2>Prepaid wallet</h2>

@@ -202,3 +202,16 @@ public record EvaluateEnergyValidationRequest(Guid ConsumerId, Guid MeterId, Dat
 // Exposed so WebApplicationFactory-based integration tests can bootstrap this Api project.
 
 public record UpdateMobileRequest(string? MobileNumber);
+
+/// <summary>PUT /api/v1/consumers/{accountNumber}/billing-facts — see <see cref="PrepaidEngine.Domain.Entities.Consumer.SetBillingFacts"/> for the
+/// tariff-book rules these are validated against (§4, §5, Supply Code 2.3.1).</summary>
+public record UpdateBillingFactsRequest(
+    PrepaidEngine.Domain.Enums.SupplyVoltage? SupplyVoltage, bool MeteredOnLtSide,
+    bool TransformerMaintenanceOptedIn, decimal? TransformerCapacityKva,
+    bool CtPtMaintenanceOptedIn, PrepaidEngine.Domain.Enums.CtPtWiring? CtPtWiring);
+
+/// <summary>POST /api/v1/tariff-parameters/fppas — notifies (or, for the same billing month, corrects) the monthly FPPAS rate
+/// (tariff book §A.4). See <see cref="PrepaidEngine.Domain.Entities.FppasRateNotification"/> for when it takes effect.</summary>
+/// <param name="RateFraction">Signed fraction, not a percentage: -0.14 for a -14% adjustment, 0.0665 for +6.65%.</param>
+/// <param name="NotifiedAt">When the utility notified it; defaults to now. Determines the billing month it applies to.</param>
+public record NotifyFppasRateRequest(decimal RateFraction, DateTime? NotifiedAt = null);

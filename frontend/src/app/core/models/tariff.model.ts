@@ -116,3 +116,13 @@ export interface TariffParameters {
   source: string;
   sections: { title: string; items: { label: string; value: string; note: string | null }[] }[];
 }
+
+/** GET/POST /api/v1/tariff-parameters/fppas: one monthly FPPAS rate as notified (tariff book §A.4). `rateFraction` is a
+ * signed fraction, not a percentage (e.g. -0.14 for -14%). The daily run charges each consumer their own prior month's
+ * energy charge times this rate, spread across `applicableBillingMonth`. */
+export interface FppasRate {
+  id: string;
+  rateFraction: number;
+  notifiedAt: string;
+  applicableBillingMonth: string;
+}

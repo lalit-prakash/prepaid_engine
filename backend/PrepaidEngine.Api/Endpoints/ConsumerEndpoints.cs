@@ -137,6 +137,12 @@ public static class ConsumerEndpoints
                 Network = network,
                 consumer.ConnectionStatus,
                 consumer.ConnectedLoadKw,
+                BillingFacts = new
+                {
+                    consumer.SupplyVoltage, consumer.MeteredOnLtSide,
+                    consumer.TransformerMaintenanceOptedIn, consumer.TransformerCapacityKva,
+                    consumer.CtPtMaintenanceOptedIn, consumer.CtPtWiring,
+                },
                 consumer.IsDisconnectEligibleOnCredit,
                 IsWithinConversionGracePeriod = isWithinConversionGracePeriod,
                 EffectiveDisconnectThreshold = effectiveDisconnectThreshold,
@@ -566,5 +572,41 @@ public static class ConsumerEndpoints
         })
         .WithName("UpdateConsumerMobile")
         .RequireAuthorization("Operations");
+
+        // Records the transformer/CT-PT/metering-side facts an HT/EHT consumer's daily bill needs (LT-side surcharge,
+        // TMC, CPMC — tariff book §4, §5). Restricted to tariff governance: these facts change what the tariff book
+        // actually charges, the same reason a tariff revision itself needs that role.
+        app.MapPut("/api/v1/consumers/{accountNumber}/billing-facts", async (
+            string accountNumber, UpdateBillingFactsRequest request, PrepaidEngineDbContext db, ClaimsPrincipal user) =>
+        {
+            var consumer = await db.Consumers.FirstOrDefaultAsync(c => c.AccountNumber == accountNumber);
+            if (consumer is null)
+                return Results.NotFound();
+
+            try
+            {
+                consumer.SetBillingFacts(
+                    request.SupplyVoltage, request.MeteredOnLtSide,
+                    request.TransformerMaintenanceOptedIn, request.TransformerCapacityKva,
+                    request.CtPtMaintenanceOptedIn, request.CtPtWiring);
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+
+            Audit(db, nameof(Consumer), consumer.Id.ToString(), "BILLING_FACTS_UPDATED", user.Identity?.Name ?? "unknown",
+                oldValue: null, newValue: $"{request.SupplyVoltage}, LT-side={request.MeteredOnLtSide}, TMC={request.TransformerMaintenanceOptedIn}, CPMC={request.CtPtMaintenanceOptedIn}");
+            await db.SaveChangesAsync();
+
+            return Results.Ok(new
+            {
+                consumer.AccountNumber, consumer.SupplyVoltage, consumer.MeteredOnLtSide,
+                consumer.TransformerMaintenanceOptedIn, consumer.TransformerCapacityKva,
+                consumer.CtPtMaintenanceOptedIn, consumer.CtPtWiring,
+            });
+        })
+        .WithName("UpdateConsumerBillingFacts")
+        .RequireAuthorization("TariffGovernanceRole");
     }
 }

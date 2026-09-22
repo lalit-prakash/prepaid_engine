@@ -6,6 +6,7 @@ import {
   ConnectionStatus,
   ConnectivityRequest,
   ConnectivityResult,
+  ConsumerBillingFacts,
   ConsumerDetail,
   ConsumerSearchPage,
   ConsumerSummaryStats,
@@ -79,6 +80,12 @@ export class ConsumerService {
   /** PUT /api/v1/consumers/{account}/mobile: the API normalises the number and answers 400 with a message if it is not valid. */
   updateMobile(accountNumber: string, mobileNumber: string): Observable<{ accountNumber: string; mobileNumber: string }> {
     return this.http.put<{ accountNumber: string; mobileNumber: string }>(`${this.baseUrl}/${encodeURIComponent(accountNumber)}/mobile`, { mobileNumber });
+  }
+
+  /** PUT /api/v1/consumers/{account}/billing-facts: records the HT/EHT transformer/CT-PT/metering-side facts the daily
+   * bill uses for TMC, CPMC and the LT-side surcharge (tariff book §4-§5). Restricted to tariff governance roles. */
+  updateBillingFacts(accountNumber: string, facts: ConsumerBillingFacts): Observable<ConsumerBillingFacts> {
+    return this.http.put<ConsumerBillingFacts>(`${this.baseUrl}/${encodeURIComponent(accountNumber)}/billing-facts`, facts);
   }
 
   getByAccountNumber(accountNumber: string): Observable<ConsumerDetail> {

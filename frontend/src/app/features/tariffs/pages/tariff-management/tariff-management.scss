@@ -139,6 +139,10 @@ tr.row-clickable:hover td { background: var(--color-primary-lighter); }
 .muted { color: var(--text-muted); }
 .hint { color: var(--text-muted); font-size: var(--font-size-meta); margin: var(--space-3) 0; }
 .card { background: var(--surface-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); box-shadow: 0 1px 3px rgba(15, 31, 61, 0.06); padding: var(--space-5); margin-bottom: var(--space-4); }
+.fppas-form { display: flex; align-items: flex-end; gap: var(--space-3); margin-top: var(--space-4); flex-wrap: wrap; }
+.fppas-form label { display: flex; flex-direction: column; gap: 4px; font-size: var(--font-size-meta); color: var(--text-secondary); }
+.fppas-form input { padding: 6px 10px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: var(--font-size-body); width: 10em; }
+.fppas-form__error { color: var(--color-danger-dark); font-size: var(--font-size-meta); width: 100%; }
 .card__title { font-size: 16px; font-weight: 600; margin: 0 0 var(--space-3); }
 .ok { color: var(--color-success-dark, #166534); margin: 0; }
 .diffs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-4); }

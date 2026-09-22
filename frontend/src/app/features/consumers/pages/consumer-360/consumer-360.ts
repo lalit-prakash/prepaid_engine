@@ -17,6 +17,8 @@ import {
 import { AuditEntryService } from '../../../../core/services/audit-entry.service';
 import { AuditEntrySummary } from '../../../../core/models/audit-entry.model';
 import { StatusBadge } from '../../../../shared/components/badge/status-badge';
+import { AuthService } from '../../../../core/services/auth.service';
+import { ConsumerBillingFacts, CtPtWiring, SupplyVoltage } from '../../../../core/models/consumer.model';
 
 export type ConsumerTab = 'overview' | 'wallet' | 'billing' | 'recharge' | 'meter-ops' | 'meter-data' | 'timeline';
 
@@ -102,6 +104,16 @@ export class Consumer360 implements OnInit {
   protected readonly mobileError = signal<string | null>(null);
   protected mobileDraft = '';
 
+  protected readonly SupplyVoltage = SupplyVoltage;
+  protected readonly CtPtWiring = CtPtWiring;
+  protected readonly editingBillingFacts = signal(false);
+  protected readonly billingFactsSaving = signal(false);
+  protected readonly billingFactsError = signal<string | null>(null);
+  protected billingFactsDraft: ConsumerBillingFacts = {
+    supplyVoltage: null, meteredOnLtSide: false, transformerMaintenanceOptedIn: false, transformerCapacityKva: null,
+    ctPtMaintenanceOptedIn: false, ctPtWiring: null,
+  };
+
   protected readonly rechargeSubmitting = signal(false);
   protected readonly rechargeOutcome = signal<RechargeOutcome | null>(null);
 
@@ -119,6 +131,7 @@ export class Consumer360 implements OnInit {
     private readonly connectivityService: ConnectivityCommandService,
     private readonly meterDataService: MeterDataService,
     private readonly auditService: AuditEntryService,
+    protected readonly auth: AuthService,
   ) {}
 
   selectTab(tab: ConsumerTab): void {
@@ -371,6 +384,44 @@ export class Consumer360 implements OnInit {
       error: (err) => {
         this.mobileSaving.set(false);
         this.mobileError.set(err?.error?.error ?? 'Could not save the mobile number.');
+      },
+    });
+  }
+
+  protected startEditBillingFacts(): void {
+    const c = this.consumer();
+    if (!c) return;
+    this.billingFactsDraft = { ...c.billingFacts };
+    this.billingFactsError.set(null);
+    this.editingBillingFacts.set(true);
+  }
+
+  protected cancelEditBillingFacts(): void {
+    this.editingBillingFacts.set(false);
+    this.billingFactsError.set(null);
+  }
+
+  protected saveBillingFacts(): void {
+    const c = this.consumer();
+    if (!c) return;
+    const draft = this.billingFactsDraft;
+    // An LT consumer (no supply voltage) owns none of this equipment — clear it client-side too, so the form
+    // can't submit a combination the API would reject anyway.
+    const facts: ConsumerBillingFacts = draft.supplyVoltage
+      ? draft
+      : { supplyVoltage: null, meteredOnLtSide: false, transformerMaintenanceOptedIn: false, transformerCapacityKva: null, ctPtMaintenanceOptedIn: false, ctPtWiring: null };
+
+    this.billingFactsSaving.set(true);
+    this.billingFactsError.set(null);
+    this.consumerService.updateBillingFacts(c.accountNumber, facts).subscribe({
+      next: (saved) => {
+        this.consumer.set({ ...c, billingFacts: saved });
+        this.billingFactsSaving.set(false);
+        this.editingBillingFacts.set(false);
+      },
+      error: (err) => {
+        this.billingFactsSaving.set(false);
+        this.billingFactsError.set(err?.error?.error ?? 'Could not save these billing facts.');
       },
     });
   }

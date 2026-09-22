@@ -50,6 +50,10 @@ export class AuthService implements OnDestroy {
   /** Roles that may load bulk data such as the network hierarchy. Mirrors the API's "DataAdmin" policy. */
   readonly canManageData = computed(() => ['Admin', 'IT'].includes(this._role() ?? ''));
 
+  /** Roles that may change what the tariff book actually charges a consumer: draft/approve a tariff change, a
+   * consumer's TMC/CPMC/LT-side billing facts, or the notified FPPAS rate. Mirrors the API's "TariffGovernanceRole" policy. */
+  readonly canGovernTariffs = computed(() => ['Admin', 'IT', 'Utility'].includes(this._role() ?? ''));
+
   private renewTimer?: ReturnType<typeof setTimeout>;
 
   constructor(private readonly http: HttpClient) {

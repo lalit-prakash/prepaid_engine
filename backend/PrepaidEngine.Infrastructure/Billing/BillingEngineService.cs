@@ -191,6 +191,7 @@ public class BillingEngineService : IBillingEngineService
                 break;
 
             var consumerIds = batch.Select(c => c.Id).ToList();
+            var fppasShareByConsumer = await FppasDailySharesAsync(consumerIds, billingDate, cancellationToken);
             var dlps = (await _db.DailyLoadProfiles
                     .Where(d => d.ProfileDate == billingDate && consumerIds.Contains(d.ConsumerId))
                     .ToListAsync(cancellationToken))
@@ -240,7 +241,7 @@ public class BillingEngineService : IBillingEngineService
                         continue;
 
                     processed++;
-                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, monthToDate.GetValueOrDefault(consumer.Id), surveyByConsumer.GetValueOrDefault(consumer.Id), cancellationToken) is { } r1)
+                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, monthToDate.GetValueOrDefault(consumer.Id), surveyByConsumer.GetValueOrDefault(consumer.Id), fppasShareByConsumer.GetValueOrDefault(consumer.Id), cancellationToken) is { } r1)
                         AddResult(results, r1);
                     continue;
                 }
@@ -264,7 +265,7 @@ public class BillingEngineService : IBillingEngineService
                 {
                     // Arrived after Stage 1's cutoff but by Stage 2's: bill it now, for real.
                     processed++;
-                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, monthToDate.GetValueOrDefault(consumer.Id), surveyByConsumer.GetValueOrDefault(consumer.Id), cancellationToken) is { } r2)
+                    if (await ChargeFromDlpAsync(consumer, dlp, tariff, billedRefs, stage, monthToDate.GetValueOrDefault(consumer.Id), surveyByConsumer.GetValueOrDefault(consumer.Id), fppasShareByConsumer.GetValueOrDefault(consumer.Id), cancellationToken) is { } r2)
                         AddResult(results, r2);
                     continue;
                 }
@@ -300,7 +301,7 @@ public class BillingEngineService : IBillingEngineService
                 var provisional = DailyLoadProfile.CreateProvisional(Guid.NewGuid(), consumer.Id, consumer.Meter.Id, billingDate, DateTime.UtcNow, estimatedKwh, estimatedKvah);
                 _db.DailyLoadProfiles.Add(provisional);
 
-                var breakdown = BuildBill(tariff, consumer, estimatedKwh, estimatedKvah, monthToDate.GetValueOrDefault(consumer.Id), surveyByConsumer.GetValueOrDefault(consumer.Id));
+                var breakdown = BuildBill(tariff, consumer, estimatedKwh, estimatedKvah, monthToDate.GetValueOrDefault(consumer.Id), surveyByConsumer.GetValueOrDefault(consumer.Id), fppasShareByConsumer.GetValueOrDefault(consumer.Id));
                 var chargeAmount = breakdown.TotalRounded;
                 _db.DailyBills.Add(new DailyBill(Guid.NewGuid(), consumer.Id, tariff.Id, billingDate, $"DLP-PROV:{provisional.Id}", isProvisional: true, breakdown, DateTime.UtcNow));
                 if (chargeAmount > 0)
@@ -397,7 +398,7 @@ public class BillingEngineService : IBillingEngineService
     /// <summary>Shared real-DLP charging logic for both stages: posts one direct debit from the DLP's own
     /// total kWh, idempotent on the DLP's own reference.</summary>
     private async Task<DailyProcessingResult?> ChargeFromDlpAsync(
-        Consumer consumer, DailyLoadProfile dlp, Tariff? tariff, HashSet<string> billedRefs, string stage, MonthToDate monthToDate, List<SurveyInterval>? survey, CancellationToken cancellationToken)
+        Consumer consumer, DailyLoadProfile dlp, Tariff? tariff, HashSet<string> billedRefs, string stage, MonthToDate monthToDate, List<SurveyInterval>? survey, decimal fppasDailyShare, CancellationToken cancellationToken)
     {
         if (dlp.TotalKwh < 0)
             return new DailyProcessingResult(consumer.Id, stage, true, false, 0, true, "DLP has negative total consumption.");
@@ -409,7 +410,7 @@ public class BillingEngineService : IBillingEngineService
         if (billedRefs.Contains(reference) || dlp.Status == DailyProfileStatus.Billed)
             return new DailyProcessingResult(consumer.Id, stage, true, false, 0, true, "This DLP has already been billed.");
 
-        var breakdown = BuildBill(tariff, consumer, dlp.TotalKwh, dlp.TotalKvah, monthToDate, survey);
+        var breakdown = BuildBill(tariff, consumer, dlp.TotalKwh, dlp.TotalKvah, monthToDate, survey, fppasDailyShare);
         var chargeAmount = breakdown.TotalRounded;
         _db.DailyBills.Add(new DailyBill(Guid.NewGuid(), consumer.Id, tariff.Id, dlp.ProfileDate, reference, isProvisional: false, breakdown, DateTime.UtcNow));
         if (chargeAmount > 0)
@@ -453,7 +454,8 @@ public class BillingEngineService : IBillingEngineService
     private readonly record struct MonthToDate(decimal Kwh, decimal Kvah);
 
     /// <summary>One day's bill: the calculator's, with the day's kVAh and, for a Time-of-Day tariff, its bands from the load survey.</summary>
-    private static DailyBillBreakdown BuildBill(Tariff tariff, Consumer consumer, decimal dayKwh, decimal? dayKvah, MonthToDate monthToDate, List<SurveyInterval>? survey)
+    private static DailyBillBreakdown BuildBill(
+        Tariff tariff, Consumer consumer, decimal dayKwh, decimal? dayKvah, MonthToDate monthToDate, List<SurveyInterval>? survey, decimal fppasDailyShare = 0m)
     {
         IReadOnlyDictionary<string, decimal>? bands = null;
         string? bandNote = null;
@@ -465,9 +467,59 @@ public class BillingEngineService : IBillingEngineService
             bandNote = split?.Note;
         }
 
+        var (tmc, cpmc) = MonthlyMaintenanceCharges(consumer);
         var bill = DailyBillCalculator.Calculate(new DailyBillInput(
-            tariff, consumer.ConnectedLoadKw, dayKwh, monthToDate.Kwh, TouKvahByBand: bands, DayKvah: dayKvah, MonthToDateKvahBefore: monthToDate.Kvah));
+            tariff, consumer.ConnectedLoadKw, dayKwh, monthToDate.Kwh, MeteredOnLtSide: consumer.MeteredOnLtSide, TmcMonthly: tmc, CpmcMonthly: cpmc,
+            FppasDailyShare: fppasDailyShare, TouKvahByBand: bands, DayKvah: dayKvah, MonthToDateKvahBefore: monthToDate.Kvah));
         return bandNote is null ? bill : bill with { Notes = bill.Notes.Append(bandNote).ToList() };
+    }
+
+    /// <summary>The consumer's own opted-in TMC/CPMC, from their recorded transformer/CT-PT facts (tariff book §4-§5); zero for an LT
+    /// consumer or one who has not opted in. <see cref="DailyBillCalculator"/> prorates these monthly figures to the day.</summary>
+    private static (decimal Tmc, decimal Cpmc) MonthlyMaintenanceCharges(Consumer consumer)
+    {
+        if (consumer.SupplyVoltage is not { } voltage)
+            return (0m, 0m);
+
+        var tmc = consumer.TransformerMaintenanceOptedIn
+            ? TransformerMaintenanceCharge.CalculateForExclusiveUse(voltage, optedForMepdclMaintenance: true, consumer.TransformerCapacityKva ?? 0m)
+            : 0m;
+        var cpmc = consumer.CtPtMaintenanceOptedIn && consumer.CtPtWiring is { } wiring
+            ? CtPtMaintenanceCharge.Calculate(voltage, wiring, optedForMepdclMaintenance: true)
+            : 0m;
+        return (tmc, cpmc);
+    }
+
+    /// <summary>
+    /// This day's share of the FPPAS rate notified for the billing month (tariff-master, <see cref="FppasRateNotification"/>), for every
+    /// consumer in the batch: each consumer's own prior calendar month's total gross energy charge (from their <see cref="DailyBill"/>
+    /// rows) times the notified rate, spread evenly across the billing month (see <see cref="FppasCharge"/>). Empty when no rate was
+    /// notified for this billing month — the daily run then charges nothing for FPPAS, exactly as it did before this was wired in.
+    /// </summary>
+    private async Task<Dictionary<Guid, decimal>> FppasDailySharesAsync(List<Guid> consumerIds, DateOnly billingDate, CancellationToken cancellationToken)
+    {
+        var billingMonthStart = new DateOnly(billingDate.Year, billingDate.Month, 1);
+        var rate = await _db.FppasRateNotifications.AsNoTracking()
+            .FirstOrDefaultAsync(f => f.ApplicableBillingMonth == billingMonthStart, cancellationToken);
+        if (rate is null)
+            return new Dictionary<Guid, decimal>();
+
+        var priorMonthStart = billingMonthStart.AddMonths(-1);
+        // At most one row per consumer per day of the prior month, summed here rather than in SQL (see the DLP month-to-date sum above).
+        var priorMonthGross = (await _db.DailyBills
+                .Where(b => consumerIds.Contains(b.ConsumerId) && b.BillDate >= priorMonthStart && b.BillDate < billingMonthStart)
+                .Select(b => new { b.ConsumerId, b.GrossEnergyCharge })
+                .ToListAsync(cancellationToken))
+            .GroupBy(b => b.ConsumerId)
+            .ToDictionary(g => g.Key, g => g.Sum(b => b.GrossEnergyCharge));
+
+        var daysInMonth = DateTime.DaysInMonth(billingDate.Year, billingDate.Month);
+        var dayIndex = billingDate.Day - 1;
+        return consumerIds.ToDictionary(id => id, id =>
+        {
+            var charge = new FppasCharge(Guid.NewGuid(), priorMonthGross.GetValueOrDefault(id), rate.RateFraction, rate.NotifiedAt);
+            return charge.AllocateAcrossDaysRoundedToCents(daysInMonth)[dayIndex];
+        });
     }
 
     private async Task RaiseCreditNotificationsAsync(Consumer consumer, CancellationToken cancellationToken)

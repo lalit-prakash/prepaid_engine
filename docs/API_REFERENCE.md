@@ -1,7 +1,7 @@
 # API reference
 
 Every HTTP endpoint the Prepaid Engine API exposes: method, path, who may call it, and its parameters.
-Generated from the running app (142 endpoints), so it matches the code. Do not edit by hand; regenerate with:
+Generated from the running app (145 endpoints), so it matches the code. Do not edit by hand; regenerate with:
 
 ```
 ASPNETCORE_ENVIRONMENT=Production Jwt__Key=<any 32+ characters> dotnet run --project backend/PrepaidEngine.Api -- dump-endpoints docs/API_REFERENCE.md
@@ -103,6 +103,7 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 |---|---|---|---|
 | GET | `/api/v1/consumers` | Any signed-in user | none |
 | GET | `/api/v1/consumers/{accountNumber}` | Any signed-in user | path `accountNumber` string |
+| PUT | `/api/v1/consumers/{accountNumber}/billing-facts` | `TariffGovernanceRole` (Admin, IT, Utility) | path `accountNumber` string<br>**body** `UpdateBillingFactsRequest` { `supplyVoltage` SupplyVoltage (Kv11|Kv33|Kv132)?, `meteredOnLtSide` bool, `transformerMaintenanceOptedIn` bool, `transformerCapacityKva` number?, `ctPtMaintenanceOptedIn` bool, `ctPtWiring` CtPtWiring (ThreePhaseThreeWire|ThreePhaseFourWire)? } |
 | GET | `/api/v1/consumers/{accountNumber}/daily-bills` | Any signed-in user | path `accountNumber` string<br>query `take` int (optional) |
 | POST | `/api/v1/consumers/{accountNumber}/disconnect` | `Operations` (Admin, IT, Operator) | path `accountNumber` string<br>**body** `ConnectivityRequest` { `reason` string, `correlationId` string? } |
 | PUT | `/api/v1/consumers/{accountNumber}/mobile` | `Operations` (Admin, IT, Operator) | path `accountNumber` string<br>**body** `UpdateMobileRequest` { `mobileNumber` string? } |
@@ -305,6 +306,8 @@ Roles: `Admin`, `IT`, `Operator`, `Utility`, `ReadOnly`. See [assumptions-and-se
 | Method | Path | Access | Parameters |
 |---|---|---|---|
 | GET | `/api/v1/tariff-parameters` | Any signed-in user | none |
+| GET | `/api/v1/tariff-parameters/fppas` | Any signed-in user | none |
+| POST | `/api/v1/tariff-parameters/fppas` | `TariffGovernanceRole` (Admin, IT, Utility) | **body** `NotifyFppasRateRequest` { `rateFraction` number, `notifiedAt` date? } |
 
 ## Tariffs
 
