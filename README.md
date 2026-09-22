@@ -23,13 +23,16 @@ Work tracking: https://github.com/users/lalit-prakash/projects/5
 
 ## What is built
 
-Dashboard, Consumers (server-searched list, tabbed detail), Recharge operations, Meter credit, RC/DC,
-Conversion, Reconciliation, Exceptions, Billing (with tariff-version bill detail), Tariffs and tariff
-governance (IT drafts, Utility approves, automatic activation), Meter data (DLP/BP/LS/IP/events/alarms),
-Reports (with zone-to-DTR network filters and breakdowns), Network hierarchy import, Audit logs, Analytics, SLA monitoring, Billing holds, Notifications, Meter replacements and the
-calculation workbench. RMS, meter-command and connectivity integrations are **mock adapters** for local
-and UAT use (the Integrations page says so per adapter); Service Requests, User Management, Roles & Permissions
-and System Settings are placeholders. See [ARCHITECTURE.md](docs/ARCHITECTURE.md) §12 for the full gap list.
+Dashboard, Consumers (server-searched list, tabbed detail, postpaid→prepaid conversion KPIs), Recharge
+operations, Meter credit, RC/DC (disconnection held to the tariff book's 11 AM-4 PM window), Conversion,
+Reconciliation, Exceptions, Billing (with tariff-version bill detail), Tariffs and tariff governance (IT
+drafts, Utility approves, automatic activation, a book-check against the FY 2026-27 tariff book) and the
+calculation workbench, Meter data (DLP/BP/LS/IP/events/alarms, kVAh and Time-of-Day billing from the load
+survey), Reports (with zone-to-DTR network filters and breakdowns), Network hierarchy import, Audit logs,
+SLA monitoring, Billing holds, Notifications, Meter replacements, User Management (with Roles &amp;
+Permissions) and System Settings. RMS, meter-command and connectivity integrations are **mock adapters**
+for local and UAT use (the Integrations page says so per adapter); Service Requests is still a placeholder.
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md) §12 for the full gap list.
 
 ## Requirements
 
@@ -54,8 +57,10 @@ dotnet user-secrets set "DemoAuth:Users:0:Role"         "IT"
 dotnet user-secrets set "Jwt:Key" "<long-random-string>"
 ```
 `appsettings.json` only contains `CHANGE_ME` placeholders. In Development the API applies pending
-migrations and seeds demo data (seven consumers, tariff, bills, recharges) on startup; it does neither
-outside Development.
+migrations and seeds demo data (consumers, tariffs from the FY 2026-27 tariff book, bills, recharges,
+network hierarchy) on startup; it does neither outside Development. Sign-in users are stored in the
+database (`AppUser`) and managed from the User Management screen; `DemoAuth:Users:*` secrets below are
+only a bootstrap login for the very first run.
 
 ### 2. Backend (port 5043)
 ```bash
@@ -92,7 +97,7 @@ string-converted enum columns).
 
 ## Tests
 ```bash
-cd backend && dotnet test          # 397 tests: domain rules, services, adapters, EF mapping, tariff activation
+cd backend && dotnet test          # 661 tests: domain rules, services, adapters, EF mapping, tariff activation and billing
 cd frontend && npm test            # scaffold spec only
 cd frontend && npx ng build        # production build check
 ```
@@ -109,7 +114,8 @@ docs/      architecture, domain rules, sourcing and security notes
 Authentication is JWT bearer: `POST /api/v1/auth/login` returns a 30-minute signed token (renewable up to
 8 hours), passwords are stored as PBKDF2 hashes, and repeated failed sign-ins lock the login id for 15
 minutes. "Forgot password?" on the login page e-mails a 6-digit code (10 minutes, single use) to the user's
-registered address; that needs SMTP settings (`Email:*`) and an `Email` per user. There are five roles with per-endpoint policies, and every write endpoint must name one. The API also
-applies per-IP rate limiting, security headers, HSTS and a request size cap. Users are still configured
-rather than stored in a database, and load testing at scale has not been done. Do not expose this API beyond a
-trusted network until the remaining items are done (see [assumptions-and-security.md](docs/assumptions-and-security.md)).
+registered address; that needs SMTP settings (`Email:*`) and an `Email` per user. There are five roles with
+per-endpoint policies, managed from User Management, and every write endpoint must name one. The API also
+applies per-IP rate limiting, security headers, HSTS and a request size cap. Load testing at scale has not
+been done. Do not expose this API beyond a trusted network until the remaining items are done (see
+[assumptions-and-security.md](docs/assumptions-and-security.md)).

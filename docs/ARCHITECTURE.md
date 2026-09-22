@@ -357,12 +357,14 @@ See the repository [README](../README.md).
 ## 12. Known gaps
 Tracked on the project board: https://github.com/users/lalit-prakash/projects/5
 
-- MFA, token revocation, and a user/role management screen with users stored in the database.
+- MFA and token revocation. User/role management (users stored in the database) and System Settings screens are built.
 - Audit entries are not tamper-evident (no hash chain) and have no retention or archiving policy; system actions carry no role or address.
 - Real MDM/HES adapter for meter credit and RC/DC (needs the endpoint and command contract); the outbox and worker exist, the adapter behind them is still the mock. RC/DC connectivity commands are still sent inline.
 - A scheduler with billing run history and alerting (the billing run is batched, claimed and resumable, and large report exports are background jobs). Export files live on one instance's disk and finishing an export sends no notification.
-- Service Requests module; health checks that call the real RMS/MDM/HES endpoints (today those adapters are simulators, so the Integrations page reports database activity, not remote reachability); tariff fields (code, taxes, thresholds).
+- Service Requests module; health checks that call the real RMS/MDM/HES endpoints (today those adapters are simulators, so the Integrations page reports database activity, not remote reachability).
+- Per-consumer facts a real deployment would need before the daily run can bill them: which side of the transformer an HT consumer is metered on, whether TMC/CPMC are opted in, and the notified FPPAS rate (the Calculation Workbench previews these; the daily run passes zero).
+- No holiday calendar: the tariff book's credit hours also cover official holidays, which this system does not model (the daily 11 AM-4 PM disconnection window is enforced, the holiday exemption is not).
 - Balance history covers totals only (no per-consumer balance history) and starts from the first recorded day.
-- Network hierarchy can be loaded and consumers mapped from CSV (Network Hierarchy screen), but there is no screen to edit or delete a single node, files are limited to 10,000 rows each, and development still seeds a labelled demo network; area analytics on the Analytics page, balance history and abnormal-consumption detection are still open.
+- Network hierarchy can be loaded and consumers mapped from CSV (Network Hierarchy screen), but there is no screen to edit or delete a single node, files are limited to 10,000 rows each, and development still seeds a labelled demo network; balance history and abnormal-consumption detection are still open.
 - Capped (1,000-row) lists on Billing Holds and Consumer-based lookups (the charge-calculation report loads consumers) need keyset paging and search; the cap keeps them safe but not complete.
 - Load and failure testing has not been run.
